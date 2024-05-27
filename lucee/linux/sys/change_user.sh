@@ -197,6 +197,9 @@ function rebuildControlScript {
         TEMP=`echo "" >> $TomcatControlScript`;
         TEMP=`echo "findpid() {" >> $TomcatControlScript`;
         TEMP=`echo "	PID_FOUND=0" >> $TomcatControlScript`;
+        TEMP=`echo "	if [[ /proc -nt $CATALINA_PID ]]; then" >> $TomcatControlScript`;
+        TEMP=`echo "		rm $CATALINA_PID" >> $TomcatControlScript`;
+        TEMP=`echo "	fi" >> $TomcatControlScript`;
         TEMP=`echo "	if [ -f \\"\\$CATALINA_PID\\" ] ; then" >> $TomcatControlScript`;
         TEMP=`echo "                PIDNUMBER=${singleQuote}cat \\"\\$CATALINA_PID\\"${singleQuote}" >> $TomcatControlScript`;
         TEMP=`echo "                TEST_RUNNING=${singleQuote}ps -p \\${PIDNUMBER} | grep \\${PIDNUMBER} | grep java${singleQuote}" >> $TomcatControlScript`;
