@@ -92,6 +92,34 @@ If the / (root path) does not default to index.cfm and you do NOT want it to dis
 RewriteRule ^(.+\.cf[msc])(/.*)?$ /upgrade-in-progress.html [L]
 ```
 
+## Diligence is Key for Security!
+
+You must ensure that every Lucee site on your server is configured to display the upgrade status page when LUCEE_UPGRADE_IN_PROGRESS is defined, otherwise raw Lucee source code is exposed due to temporary
+lack of AJP/Tomcat/Lucee proxying.
+
+So, yes there is a small amount of risk, but it is mitigated by
+the usually short duration of the Lucee upgrade process,
+and of course ... diligence!
+
+You could also create a script which iterates over all sites and 
+ensures that the RewriteRule has been added to each site's VirtualHost.
+
+Many other techniques were attempted, but failed.
+Apache configurations are a mind-numbing maze.
+A global mod_proxy, for example, similar to the AJP proxy, but to
+a static HTML file, did not work as hoped. That would have been ideal.
+Global RewriteRule on Lucee URLs also did not work,
+nor did global 302 redirect.
+
+RewriteURL inside each VirtualHost was the only thing that actually
+(and amazingly) worked. It had been looking like nothing would work,
+so it was quite the relief when it finally did!
+
+If you happen to be aware of a much simpler solution than what is
+presented herein, despite the massive facepalm that would trigger
+after so many hours of head banging on wall (argh) and the
+not overly confident conclusion that This Is The Way ... please do share!
+
 ## Example `/upgrade-in-progress.html`:
 
 When QA testing you can change to: `const numInterval = 1000;`
