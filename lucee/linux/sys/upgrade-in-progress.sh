@@ -13,6 +13,13 @@ if [ "$(id -u)" != "0" ]; then
 	exit 1
 fi
 
+# prep cPanel flag
+if [ -f "/usr/local/cpanel/cpanel" ]; then
+	IS_CPANEL=true
+else
+	IS_CPANEL=false
+fi
+
 if [ "$MODE" == "begin" ]; then
 
 	# Debian/Ubuntu/etc
@@ -21,20 +28,29 @@ if [ "$MODE" == "begin" ]; then
 		a2enconf lucee-upgrade-in-progress >/dev/null
 		echo "Disabling lucee-ajp-and-mod_cfml configuration..."
 		a2disconf lucee-ajp-and-mod_cfml >/dev/null
-		echo "Restarting Apache..."
-		systemctl restart apache2
+		echo "Reloading Apache..."
+		systemctl reload apache2
 	
 	# Redhat/CentOS/AlmaLinux/etc
 	elif [ -d /etc/httpd/conf.d ]; then
-		cd /etc/httpd/conf.d || exit 1
+		if [ "$IS_CPANEL" = true ]; then
+			cd /etc/apache2/conf.d || exit 1
+		else
+			cd /etc/httpd/conf.d || exit 1
+		fi
 		echo "Enabling lucee-upgrade-in-progress configuration..."
-		mv -f lucee-upgrade-in-progress.disabled lucee-upgrade-in-progress
+		mv -f lucee-upgrade-in-progress.disabled lucee-upgrade-in-progress.conf
 		echo "Disabling lucee-ajp-and-mod_cfml configuration..."
 		mv -f lucee-ajp-and-mod_cfml.conf lucee-ajp-and-mod_cfml.conf.disabled
-		echo "Rebuilding httpd configuration..."
-		/scripts/rebuildhttpdconf
-		echo "Restarting httpd..."
-		/scripts/restartsrv_httpd
+		if [ "$IS_CPANEL" = true ]; then
+			echo "Rebuilding httpd configuration..."
+			/scripts/rebuildhttpdconf
+			echo "Restarting httpd..."
+			/scripts/restartsrv_httpd
+		else
+			echo "Reloading httpd..."
+			systemctl reload httpd
+		fi
 	
 	else
 		echo "Unsupported environment (neither a2enconf nor /etc/httpd/conf.d detected)"
@@ -49,21 +65,29 @@ elif [ "$MODE" == "end" ]; then
 		a2enconf lucee-ajp-and-mod_cfml >/dev/null
 		echo "Disabling lucee-upgrade-in-progress configuration..."
 		a2disconf lucee-upgrade-in-progress >/dev/null
-		echo "Restarting Apache..."
-		systemctl restart apache2
-	
+		echo "Reloading Apache..."
+		systemctl reload apache2
+
 	# Redhat/CentOS/AlmaLinux/etc
 	elif [ -d /etc/httpd/conf.d ]; then
-		cd /etc/httpd/conf.d || exit 1
+		if [ "$IS_CPANEL" = true ]; then
+			cd /etc/apache2/conf.d || exit 1
+		else
+			cd /etc/httpd/conf.d || exit 1
+		fi
 		echo "Enabling lucee-ajp-and-mod_cfml configuration..."
 		mv -f lucee-ajp-and-mod_cfml.conf.disabled lucee-ajp-and-mod_cfml.conf
 		echo "Disabling lucee-upgrade-in-progress configuration..."
-		mv -f lucee-upgrade-in-progress lucee-upgrade-in-progress.disabled
-		echo "Rebuilding httpd configuration..."
-		/scripts/rebuildhttpdconf
-		echo "Restarting httpd..."
-		/scripts/restartsrv_httpd
-	
+		mv -f lucee-upgrade-in-progress.conf lucee-upgrade-in-progress.disabled
+		if [ "$IS_CPANEL" = true ]; then
+			echo "Rebuilding httpd.conf..."
+			/scripts/rebuildhttpdconf
+			echo "Restarting httpd..."
+			/scripts/restartsrv_httpd
+		else
+			echo "Reloading httpd..."
+			systemctl reload httpd
+		fi
 	else
 		echo "Unsupported environment (neither a2enconf nor /etc/httpd/conf.d detected)"
 		exit 1

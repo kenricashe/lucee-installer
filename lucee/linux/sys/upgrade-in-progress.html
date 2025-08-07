@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Upgrade In Progress</title>
+<script>
+window.addEventListener('DOMContentLoaded', function() {
+	const numInterval = 60000;
+	function checkUpgradeStatus() {
+		fetch(window.location.href, {
+			method: 'GET',
+			cache: 'no-cache'
+		})
+		.then(response => response.text())
+		.then(html => {
+			if (!html.includes('Upgrade In Progress')) window.location.reload();
+		})
+		.catch(error => {
+			console.log('Error checking upgrade status:', error);
+		});
+	}
+	checkUpgradeStatus();
+	setInterval(checkUpgradeStatus, numInterval);
+});
+</script>
+</head>
+<body>
+<h1>Upgrade In Progress</h1>
+<p>We are currently upgrading our website.</p>
+<p>This page will automatically refresh when the upgrade is complete!</p>
+</body>
+</html>

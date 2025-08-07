@@ -1,8 +1,8 @@
-# "Upgrade in Progress" Lucee/Apache Server-Wide Status Management
+# Scripted "Upgrade in Progress" for Lucee + Apache
 
-The bash shell script `upgrade-in-progress.sh` is used to begin or end upgrade mode. When in upgrade mode, requests for any Lucee file in every website that has been configured for this (see VirtualHost config below) respond with a static HTML "Upgrade in Progress" notification.
+The bash shell script `upgrade-in-progress.sh` is used to begin and then end the display of an "Upgrade in Progress" notification for every Lucee request of every website that has been configured for this flip-a-switch style automation (see VirtualHost config below).
 
-Note how the URL does not change! That way the user can see the upgrade status without being redirected to a different page, and JavaScript is used to automatically refresh the page when the upgrade is complete.
+Note how the user's original requested URL does not change! That way the upgrade status can be shown without redirecting to a different page, and JavaScript is used to automatically refresh the page when the upgrade is complete.
 
 ## Typical upgrade command sequence:
 
@@ -34,6 +34,7 @@ Two separate `.conf` files are used to cleanly manage normal Lucee operation vs 
 
 - Debian/Ubuntu/Pop!_OS/etc: `/etc/apache2/conf-available/`
 - Redhat/CentOS/AlmaLinux/etc: `/etc/httpd/conf.d/`
+- cPanel: `/etc/apache2/conf.d`
 
 If needed, consult Apache documentation for full details on how to enable the `.conf` files.
 
@@ -122,6 +123,9 @@ not overly confident conclusion that This Is The Way ... please do share!
 
 ## Example `/upgrade-in-progress.html`:
 
+This template does the job for any site, or you can customize
+the branding, etc, specific to each site. Deploy as you see fit.
+
 When QA testing you can change to: `const numInterval = 1000;`
 
 ```html
@@ -157,3 +161,9 @@ window.addEventListener('DOMContentLoaded', function() {
 </body>
 </html>
 ```
+
+## Post-Upgrade Testing
+
+If you have a test site where security is not a concern, you can
+exclude the RewriteRule for that one and then test that site to ensure
+Lucee is working before ending the Upgrade in Progress display.
