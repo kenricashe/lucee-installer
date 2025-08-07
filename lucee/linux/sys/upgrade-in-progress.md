@@ -1,6 +1,8 @@
-# Scripted "Upgrade in Progress" for Lucee + Apache
+# "Upgrade in Progress" for Lucee + Apache
 
-The bash shell script `upgrade-in-progress.sh` is used to begin and then end the display of an "Upgrade in Progress" notification for every Lucee request of every website that has been configured for this flip-a-switch style automation (see VirtualHost config below).
+Web-based status notifications during Lucee upgrades are a Catch-22 because Lucee itself is not running during the upgrade, but what if you could easily configure Apache to temporarily display static HTML for every .cf* request? Well ... now you can!
+
+The bash shell script `upgrade-in-progress.sh` is used to begin and end the display of an "Upgrade in Progress" notification for every Lucee request of every website that has been configured for this flip-a-switch style automation (see VirtualHost config below).
 
 Note how the user's original requested URL does not change! That way the upgrade status can be shown without redirecting to a different page, and JavaScript is used to automatically refresh the page when the upgrade is complete.
 
@@ -95,36 +97,21 @@ RewriteRule ^(.+\.cf[msc])(/.*)?$ /upgrade-in-progress.html [L]
 
 ## Diligence is Key for Security!
 
-You must ensure that every Lucee site on your server is configured to display the upgrade status page when LUCEE_UPGRADE_IN_PROGRESS is defined, otherwise raw Lucee source code is exposed due to temporary
-lack of AJP/Tomcat/Lucee proxying.
+You must ensure that every Lucee site on your server is configured to display the upgrade status page when LUCEE_UPGRADE_IN_PROGRESS is defined, otherwise raw Lucee source code is exposed due to temporary lack of AJP/Tomcat/Lucee proxying.
 
-So, yes there is a small amount of risk, but it is mitigated by
-the usually short duration of the Lucee upgrade process,
-and of course ... diligence!
+So, yes there is a small amount of risk, but it is mitigated by the usually short duration of the Lucee upgrade process, and of course ... diligence!
 
-You could also create a script which iterates over all sites and 
-ensures that the RewriteRule has been added to each site's VirtualHost.
+You could also create a script which iterates over all sites and ensures that the RewriteRule has been added to each site's VirtualHost.
 
-Many other techniques were attempted, but failed.
-Apache configurations are a mind-numbing maze.
-A global mod_proxy, for example, similar to the AJP proxy, but to
-a static HTML file, did not work as hoped. That would have been ideal.
-Global RewriteRule on Lucee URLs also did not work,
-nor did global 302 redirect.
+Many other techniques were attempted, but failed. Apache configurations are a mind-numbing maze. A global mod_proxy, for example, similar to the AJP proxy, but to a static HTML file, did not work as hoped. That would have been ideal. Global RewriteRule on Lucee URLs also did not work, nor did global 302 redirect.
 
-RewriteURL inside each VirtualHost was the only thing that actually
-(and amazingly) worked. It had been looking like nothing would work,
-so it was quite the relief when it finally did!
+RewriteURL inside each VirtualHost was the only thing that actually (and amazingly) worked. It had been looking like nothing would work, so it was quite the relief when it finally did!
 
-If you happen to be aware of a much simpler solution than what is
-presented herein, despite the massive facepalm that would trigger
-after so many hours of head banging on wall (argh) and the
-not overly confident conclusion that This Is The Way ... please do share!
+If you happen to be aware of a much simpler solution than what is presented herein, despite the massive facepalm that would trigger after so many hours of head banging on wall (argh) and the not overly confident conclusion that This Is The Way ... please do share!
 
 ## Example `/upgrade-in-progress.html`:
 
-This template does the job for any site, or you can customize
-the branding, etc, specific to each site. Deploy as you see fit.
+This template does the job for any site, or you can customize the branding, etc, specific to each site. Deploy as you see fit.
 
 When QA testing you can change to: `const numInterval = 1000;`
 
@@ -164,6 +151,4 @@ window.addEventListener('DOMContentLoaded', function() {
 
 ## Post-Upgrade Testing
 
-If you have a test site where security is not a concern, you can
-exclude the RewriteRule for that one and then test that site to ensure
-Lucee is working before ending the Upgrade in Progress display.
+If you have a test site where security is not a concern, you can exclude the RewriteRule for that one and then test that site to ensure Lucee is working before ending the Upgrade in Progress display.
