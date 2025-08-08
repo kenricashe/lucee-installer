@@ -22,6 +22,12 @@ fi
 
 if [ "$MODE" == "begin" ]; then
 
+	# The flag file is referenced by cron jobs, etc, to abort during 
+	# Lucee upgrade (just before or after Lucee is stopped).
+	# It is not used by Apache because Define on Apache start/reload
+	# is more efficient than checking for the file's existence on every request.
+	touch /var/lucee-upgrade-in-progress
+
 	# Debian/Ubuntu/etc
 	if command -v a2enconf >/dev/null 2>&1; then
 		echo "Enabling lucee-upgrade-in-progress configuration..."
@@ -92,6 +98,8 @@ elif [ "$MODE" == "end" ]; then
 		echo "Unsupported environment (neither a2enconf nor /etc/httpd/conf.d detected)"
 		exit 1
 	fi
+
+	rm /var/lucee-upgrade-in-progress
 fi
 
 echo "DONE!"
