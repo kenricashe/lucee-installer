@@ -36,10 +36,23 @@ else
 	exit 1
 fi
 
-# Debian/Ubuntu/etc
+# Debian/Ubuntu/Pop!_OS/etc
 if command -v a2enconf >/dev/null 2>&1; then
-	echo "The script hasn't been completed yet for Debian/Ubuntu/etc"
-	exit 1
+	echo "Configuring Lucee sites for scripted 'Upgrade in Progress' notifications ..."
+	
+	# Get data from /opt/lucee/sys/sites-configured-for-upgrade-in-progress.txt
+	while IFS= read -r line; do
+		domain=$(echo "$line" | awk '{print $1}')
+		docroot=$(echo "$line" | awk '{print $2}')
+		site_type=$(echo "$line" | awk '{print $3}')
+		
+		# 🚧 CONTINUE HERE 🚧
+	
+	done < /opt/lucee/sys/sites-configured-for-upgrade-in-progress.txt
+	
+	# Reload or rebuild/restart Apache
+	echo "Reloading Apache..."
+	systemctl reload apache2
 
 # Redhat/CentOS/AlmaLinux/etc
 elif [ -d /etc/httpd/conf.d ]; then

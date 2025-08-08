@@ -1,10 +1,16 @@
 # "Upgrade in Progress" for Lucee + Apache
 
-Web-based status notifications during Lucee upgrades are a Catch-22 because Lucee itself is not running during the upgrade, but what if you could easily configure Apache to temporarily display static HTML for every .cf* request? Well ... now you can!
+Web-based status notifications during Lucee upgrades are a Catch-22 because Lucee itself is not running during the upgrade, which results in an ugly "503 Service Unavailable" error. ARGH WAIT A MINUTE THAT CAN BE CUSTOMIZED!!!
 
-The bash shell script `upgrade-in-progress.sh` is used to begin and end the display of an "Upgrade in Progress" notification for every Lucee request of every website that has been configured for this flip-a-switch style automation (see VirtualHost config below).
+But what if you could easily configure Apache to temporarily display static HTML for every .cf* request? Well ... now you can!
 
-Note how the user's original requested URL does not change! That way the upgrade status can be shown without redirecting to a different page, and JavaScript is used to automatically refresh the page when the upgrade is complete.
+The bash shell script `upgrade-in-progress.sh` is used to begin and end the display of an "Upgrade in Progress" notification for every Lucee request of *every website on your server* that has been configured for this flip-a-switch style automation (see VirtualHost config below).
+
+There are even optional scripts to automatically generate the editable list of sites to be configured, and to apply those configurations.
+
+And the user's original requested URL does not change! That way the upgrade status can be shown without redirecting to a different page.
+
+And finally, JavaScript is used to automatically refresh the page when it detects (via fetch) that the upgrade is complete!
 
 ## Typical upgrade command sequence:
 
