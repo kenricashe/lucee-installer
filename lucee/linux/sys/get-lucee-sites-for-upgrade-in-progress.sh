@@ -8,6 +8,9 @@ if [ "$(id -u)" != "0" ]; then
 	exit 1
 fi
 
+TXTPATH_ALL_DATA="/opt/lucee/sys/sites-configured-for-upgrade-in-progress.txt"
+TXTPATH_ONLY_DOMAINS="/opt/lucee/sys/active-domains-from-get-lucee-sites-for-upgrade-in-progress.txt"
+
 # Function to get domains from Debian/Ubuntu systems
 get_domains_debian() {
 	# Get list of domains from enabled sites
@@ -124,23 +127,34 @@ generate_summary() {
 save_results() {
 	local get_docroot_func=$1
 	
-	echo "Saving to: /opt/lucee/sys/sites-configured-for-upgrade-in-progress.txt"
+	echo "Saving results ..."
 	
-	> /opt/lucee/sys/sites-configured-for-upgrade-in-progress.txt
+	> $TXTPATH_ALL_DATA
+	> $TXTPATH_ONLY_DOMAINS
 	
 	for site in "${sites_with_index_cfm[@]}"; do
 		docroot=$($get_docroot_func "$site")
-		echo "$site $docroot root" >> /opt/lucee/sys/sites-configured-for-upgrade-in-progress.txt
+		echo "$site $docroot root" >> $TXTPATH_ALL_DATA
+		echo "$site" >> $TXTPATH_ONLY_DOMAINS
 	done
 	for site in "${sites_with_other_cfm[@]}"; do
 		docroot=$($get_docroot_func "$site")
-		echo "$site $docroot nonroot" >> /opt/lucee/sys/sites-configured-for-upgrade-in-progress.txt
+		echo "$site $docroot nonroot" >> $TXTPATH_ALL_DATA
+		echo "$site" >> $TXTPATH_ONLY_DOMAINS
 	done
 
 	echo ""
-	echo "Review and if necessary edit that file, then run:"
+	echo "Review and if necessary edit the results file:"
+	echo ""
+	echo "sudo nano $TXTPATH_ALL_DATA"
+	echo ""
+	echo "Then run:"
 	echo ""
 	echo "sudo /opt/lucee/sys/configure-sites-for-upgrade-in-progress.sh"
+	echo ""
+	echo "A domains-only file was also saved as:"
+	echo ""
+	echo "$TXTPATH_ONLY_DOMAINS"
 	echo ""
 }
 
