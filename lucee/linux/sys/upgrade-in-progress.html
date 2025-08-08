@@ -3,9 +3,11 @@
 <head>
 	<title>Server/Software Upgrade In Progress</title>
 	<meta name="robots" content="noindex, nofollow">
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 window.addEventListener('DOMContentLoaded', function() {
-	const numInterval = 60000;
+	const numInterval = window.location.hostname.includes('dev.') ? 1000 : 60000;
 	function checkUpgradeStatus() {
 		fetch(window.location.href, {
 			method: 'GET',
@@ -23,10 +25,33 @@ window.addEventListener('DOMContentLoaded', function() {
 	setInterval(checkUpgradeStatus, numInterval);
 });
 </script>
+<style>
+body {
+	font-family: serif;
+	text-align: center;
+	margin-top: 100px;
+}
+h1, p {
+	margin: 10px 0;
+	text-wrap: balance;
+}
+h1 {
+	font-size: 36px;
+}
+p {
+	font-size: 24px;
+}
+.container {
+	max-width: 600px;
+	margin: 0 auto;
+}
+</style>
 </head>
 <body>
+<div class="container">
 <h1>Server/Software Upgrade In Progress</h1>
 <p>Barring any unforeseen complications, it should take up to about 15 minutes.</p>
 <p>If you're standing by, this page will automatically refresh when the upgrade is complete!</p>
+</div>
 </body>
 </html>
