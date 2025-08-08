@@ -16,13 +16,23 @@ FILES=(
 	"configure-sites-for-upgrade-in-progress.sh"
 	"upgrade-in-progress.sh"
 	"upgrade-in-progress.html"
-	"upgrade-in-progress-root.conf"
-	"upgrade-in-progress-nonroot.conf"
+	"lucee-404-routing.conf"
+	"lucee-detect-upgrade.conf"
 )
 
+# Create apache-configs directory
+mkdir -p /opt/lucee/sys/apache-configs
+
 function copy_and_chmod() {
-	cp ${THISPATH}/$1 /opt/lucee/sys/$1
-	chmod +x /opt/lucee/sys/$1
+	if [[ "$1" == *.conf ]]; then
+		# Copy .conf files to apache-configs directory
+		cp ${THISPATH}/$1 /opt/lucee/sys/apache-configs/$1
+		chmod 644 /opt/lucee/sys/apache-configs/$1
+	else
+		# Copy other files to main sys directory
+		cp ${THISPATH}/$1 /opt/lucee/sys/$1
+		chmod +x /opt/lucee/sys/$1
+	fi
 }
 
 for file in "${FILES[@]}"; do

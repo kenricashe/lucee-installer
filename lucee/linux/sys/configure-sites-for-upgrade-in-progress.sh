@@ -13,8 +13,8 @@
 
 # require root
 if [ "$(id -u)" != "0" ]; then
-echo "This script must be run as root or with sudo."
-exit 1
+	echo "This script must be run as root or with sudo."
+	exit 1
 fi
 
 SITES_FILE="/opt/lucee/sys/sites-configured-for-upgrade-in-progress.txt"
@@ -29,16 +29,103 @@ fi
 # prep cPanel flag
 if [ -f "/usr/local/cpanel/cpanel" ]; then
 	IS_CPANEL=true
+	CPANEL_USERDATA_PATH="/etc/apache2/conf.d/userdata/ssl/2_4"
 else
 	IS_CPANEL=false
-	echo "This script has not been completed yet for non-cPanel environments."
-	echo "Pull requests are welcome!"
-	exit 1
 fi
 
-# Debian/Ubuntu/Pop!_OS/etc
-if command -v a2enconf >/dev/null 2>&1; then
-	echo "Configuring Lucee sites for scripted 'Upgrade in Progress' notifications ..."
+# Function to copy upgrade-in-progress.html to DocumentRoot
+copy_upgrade_html() {
+	local docroot=$1
+	cp -f /opt/lucee/sys/upgrade-in-progress.html ${docroot}/upgrade-in-progress.html
+	chown --reference=${docroot} ${docroot}/upgrade-in-progress.html 2>/dev/null || true
+}
+
+# Function to configure Debian sites
+configure_site_debian() {
+	local domain=$1
+	local docroot=$2
+	local site_type=$3
+	
+	echo "Processing $domain ($site_type site) with DocumentRoot: $docroot"
+	
+	# Copy upgrade-in-progress.html to DocumentRoot
+	copy_upgrade_html "$docroot"
+	
+	# Find the SSL site configuration file
+	ssl_conf_file="/etc/apache2/sites-enabled/${domain}-ssl.conf"
+	if [ ! -f "$ssl_conf_file" ]; then
+		# Try to find by ServerName
+		ssl_conf_file=$(grep -l "ServerName $domain" /etc/apache2/sites-enabled/*-ssl.conf 2>/dev/null | head -1)
+	fi
+	
+	if [ -f "$ssl_conf_file" ]; then
+		echo "  Updating $ssl_conf_file"
+		
+		# Remove any existing Lucee upgrade includes
+		sed -i '/Include.*lucee-detect-upgrade.conf/d' "$ssl_conf_file"
+		sed -i '/Include.*lucee-404-routing.conf/d' "$ssl_conf_file"
+		
+		# Add appropriate includes before the closing </VirtualHost>
+		if [ "$site_type" = "root" ]; then
+			# Root sites get both upgrade detection and 404 routing
+			sed -i 's|</VirtualHost>|\tInclude /opt/lucee/sys/apache-configs/lucee-detect-upgrade.conf\n\tInclude /opt/lucee/sys/apache-configs/lucee-404-routing.conf\n</VirtualHost>|' "$ssl_conf_file"
+		else
+			# Non-root sites get only upgrade detection
+			sed -i 's|</VirtualHost>|\tInclude /opt/lucee/sys/apache-configs/lucee-detect-upgrade.conf\n</VirtualHost>|' "$ssl_conf_file"
+		fi
+	else
+		echo "  Warning: Could not find SSL configuration file for $domain"
+	fi
+}
+
+# Function to configure cPanel sites
+configure_site_cpanel() {
+	local domain=$1
+	local docroot=$2
+	local site_type=$3
+	
+	echo "Processing cPanel site: $domain ($site_type site) with DocumentRoot: $docroot"
+	
+	# expected cPanel docroot: /home/user/public_html
+	user=$(echo "$docroot" | awk -F '/' '{print $3}')
+	
+	# Copy upgrade-in-progress.html to DocumentRoot
+	copy_upgrade_html "$docroot"
+	
+	# Create userdata directory
+	mkdir -p ${CPANEL_USERDATA_PATH}/${user}/${domain}
+	
+	# Create lucee.conf with appropriate includes
+	if [ "$site_type" = "root" ]; then
+		# Root sites get both upgrade detection and 404 routing
+		cat > ${CPANEL_USERDATA_PATH}/${user}/${domain}/lucee.conf << EOF
+# Lucee upgrade detection and 404 routing
+Include /opt/lucee/sys/apache-configs/lucee-detect-upgrade.conf
+Include /opt/lucee/sys/apache-configs/lucee-404-routing.conf
+EOF
+	else
+		# Non-root sites get only upgrade detection
+		cat > ${CPANEL_USERDATA_PATH}/${user}/${domain}/lucee.conf << EOF
+# Lucee upgrade detection
+Include /opt/lucee/sys/apache-configs/lucee-detect-upgrade.conf
+EOF
+	fi
+}
+
+# Function to configure non-cPanel RedHat sites (placeholder)
+configure_site_redhat() {
+	local domain=$1
+	local docroot=$2
+	local site_type=$3
+	
+	echo "Non-cPanel RedHat configuration not implemented yet for $domain"
+	echo "Pull requests are welcome!"
+}
+
+# Function to process all sites from the configuration file
+process_sites() {
+	local configure_func=$1
 	
 	# Get data from /opt/lucee/sys/sites-configured-for-upgrade-in-progress.txt
 	while IFS= read -r line; do
@@ -46,65 +133,50 @@ if command -v a2enconf >/dev/null 2>&1; then
 		docroot=$(echo "$line" | awk '{print $2}')
 		site_type=$(echo "$line" | awk '{print $3}')
 		
-		# 🚧 CONTINUE HERE 🚧
-	
+		$configure_func "$domain" "$docroot" "$site_type"
+		
 	done < /opt/lucee/sys/sites-configured-for-upgrade-in-progress.txt
-	
-	# Reload or rebuild/restart Apache
-	echo "Reloading Apache..."
-	systemctl reload apache2
+}
 
+# Function to reload Apache
+reload_apache() {
+	local apache_service=$1
+	echo "Reloading Apache..."
+	systemctl reload $apache_service
+}
+
+# Main script execution
+echo "Configuring Lucee sites for scripted 'Upgrade in Progress' notifications ..."
+
+# Detect distribution and run appropriate code path
+if command -v a2enconf >/dev/null 2>&1; then
+	# Debian/Ubuntu path
+	process_sites configure_site_debian
+	reload_apache apache2
+	
 # Redhat/CentOS/AlmaLinux/etc
 elif [ -d /etc/httpd/conf.d ]; then
-	echo "Configuring Lucee sites for scripted 'Upgrade in Progress' notifications ..."
-	
-	# Get data from /opt/lucee/sys/sites-configured-for-upgrade-in-progress.txt
-	while IFS= read -r line; do
-		domain=$(echo "$line" | awk '{print $1}')
-		docroot=$(echo "$line" | awk '{print $2}')
-		site_type=$(echo "$line" | awk '{print $3}')
+	if [ "$IS_CPANEL" = true ]; then
+		# cPanel path
+		process_sites configure_site_cpanel
 		
-		if [ "$IS_CPANEL" = true ]; then
-			# expected cPanel docroot: /home/user/public_html
-			user=$(echo "$docroot" | awk -F '/' '{print $3}')
-			# if not exists, copy upgrade-in-progress.conf to cPanel userdata directory
-			# if [ ! -f /etc/apache2/conf.d/userdata/ssl/2_4/${user}/${domain}/upgrade-in-progress.conf ]; then
-				mkdir -p /etc/apache2/conf.d/userdata/ssl/2_4/${user}/${domain}
-				cp -f /opt/lucee/sys/upgrade-in-progress-${site_type}.conf /etc/apache2/conf.d/userdata/ssl/2_4/${user}/${domain}/upgrade-in-progress.conf
-			# fi
-			# if not exists, copy upgrade-in-progress.html to docroot
-			# if [ ! -f ${docroot}/upgrade-in-progress.html ]; then
-				cp -f /opt/lucee/sys/upgrade-in-progress.html ${docroot}/upgrade-in-progress.html
-				chown --reference=${docroot} ${docroot}/upgrade-in-progress.html
-			# fi
-		
-		else
-			# not developed yet
-			echo "This section has not been completed yet for non-cPanel environments."
+		# Rebuild Apache configuration and restart
+		echo "Rebuilding Apache configuration and restarting..."
+		/usr/local/cpanel/scripts/rebuildhttpdconf
+		systemctl restart httpd
+	else
+		# Non-cPanel RedHat path
+		if [ "$IS_CPANEL" = false ]; then
+			echo "This script has not been completed yet for non-cPanel environments."
 			echo "Pull requests are welcome!"
 			exit 1
 		fi
-		
-	
-	done < /opt/lucee/sys/sites-configured-for-upgrade-in-progress.txt
-	
-	# Reload or rebuild/restart Apache
-	if [ "$IS_CPANEL" = true ]; then
-		echo "Rebuilding httpd configuration..."
-		/scripts/rebuildhttpdconf
-		echo "Restarting httpd..."
-		/scripts/restartsrv_httpd
-	elif command -v a2enconf >/dev/null 2>&1; then
-		echo "Reloading Apache..."
-		systemctl reload apache2
-	elif [ -d /etc/httpd/conf.d ]; then
-		echo "Reloading httpd..."
-		systemctl reload httpd
-	else
-		echo "Unsupported environment (neither a2enconf nor /etc/httpd/conf.d detected)"
-		exit 1
+		process_sites configure_site_redhat
+		reload_apache httpd
 	fi
-
+else
+	echo "Unsupported environment (neither a2enconf nor /etc/httpd/conf.d detected)"
+	exit 1
 fi			
 	
 # /etc/apache2/conf.d/userdata/std/2_4/${user}/${domain}/upgrade-in-progress.conf
