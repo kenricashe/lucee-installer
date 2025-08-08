@@ -52,11 +52,30 @@ configure_site_debian() {
 	# Copy upgrade-in-progress.html to DocumentRoot
 	copy_upgrade_html "$docroot"
 	
-	# Find the SSL site configuration file
-	ssl_conf_file="/etc/apache2/sites-enabled/${domain}-ssl.conf"
+	# Check if the SSL site in sites-enabled is a regular file (not a symlink)
+	# This would happen if a previous buggy version of the script replaced the symlink
+	enabled_ssl_conf="/etc/apache2/sites-enabled/${domain}-ssl.conf"
+	if [ -f "$enabled_ssl_conf" ] && [ ! -L "$enabled_ssl_conf" ]; then
+		echo "  Found regular file instead of symlink at $enabled_ssl_conf"
+		echo "  Restoring symlink structure..."
+		
+		# Get the site name without extension
+		site_name="${domain}-ssl"
+		
+		# First manually remove the file to avoid a2dissite warnings
+		rm -f "$enabled_ssl_conf"
+		
+		# Enable the site (creates a proper symlink)
+		a2ensite "$site_name" > /dev/null 2>&1
+		
+		echo "  Symlink restored for $site_name"
+	fi
+	
+	# Find the SSL site configuration file in sites-available directly
+	ssl_conf_file="/etc/apache2/sites-available/${domain}-ssl.conf"
 	if [ ! -f "$ssl_conf_file" ]; then
 		# Try to find by ServerName
-		ssl_conf_file=$(grep -l "ServerName $domain" /etc/apache2/sites-enabled/*-ssl.conf 2>/dev/null | head -1)
+		ssl_conf_file=$(grep -l "ServerName $domain" /etc/apache2/sites-available/*-ssl.conf 2>/dev/null | head -1)
 	fi
 	
 	if [ -f "$ssl_conf_file" ]; then
