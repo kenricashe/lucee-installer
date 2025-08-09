@@ -224,4 +224,22 @@ For QA testing after the upgrade, you can exclude one of your sites from the lis
 
 - `configure-sites.sh` will warn if Apache `mod_headers` is not enabled, since the status page relies on the `X-Lucee-Upgrade` response header for HEAD polling.
 
+### Centralized backups
+
+`configure-sites.sh` saves backups under a centralized root, mirroring the original file paths:
+
+- Root: `/opt/lucee/sys/upgrade-in-progress/backups/`
+- Layout: `<BACKUP_ROOT>/<YYYY-mm-dd-HHMMSS><original_path>` (original_path starts with `/` so each backup set is in its own timestamped folder)
+- All backups from a single run share the same `<YYYY-mm-dd-HHMMSS>` folder for easier rollback.
+
+Examples:
+
+- Debian vhost edit: `/etc/apache2/sites-available/example-ssl.conf` → `/opt/lucee/sys/upgrade-in-progress/backups/2025-01-01-123045/etc/apache2/sites-available/example-ssl.conf`
+- Debian sites-enabled repair: `/etc/apache2/sites-enabled/example-ssl.conf` (unexpected file) → `/opt/lucee/sys/upgrade-in-progress/backups/2025-01-01-123045/etc/apache2/sites-enabled/example-ssl.conf`
+- cPanel userdata: `/etc/apache2/conf.d/userdata/ssl/2_4/user/example.com/lucee.conf` → `/opt/lucee/sys/upgrade-in-progress/backups/2025-01-01-123045/etc/apache2/conf.d/userdata/ssl/2_4/user/example.com/lucee.conf`
+- Docroot asset: `/var/www/example.com/public_html/upgrade-in-progress.html` → `/opt/lucee/sys/upgrade-in-progress/backups/2025-01-01-123045/var/www/example.com/public_html/upgrade-in-progress.html`
+- RHEL/cPanel global: `/etc/httpd/conf.d/lucee-upgrade-in-progress.disabled` (pre-existing) → `/opt/lucee/sys/upgrade-in-progress/backups/2025-01-01-123045/etc/httpd/conf.d/lucee-upgrade-in-progress.disabled`
+
+Backups are created only when a file already exists and is about to be modified or replaced.
+
 Important: Even with HTTP vhosts configured for upgrade mode, you should maintain a proper 80→443 redirect in normal operation to avoid exposure over HTTP.
