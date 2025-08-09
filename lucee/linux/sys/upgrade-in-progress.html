@@ -7,7 +7,7 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 window.addEventListener('DOMContentLoaded', function() {
-	const numInterval = window.location.hostname.includes('dev.') ? 1000 : 60000;
+	const numInterval = window.location.hostname.includes('dev.') ? 2000 : 60000;
 	function checkUpgradeStatus() {
 		fetch(window.location.href, {
 			method: 'GET',
@@ -29,17 +29,17 @@ window.addEventListener('DOMContentLoaded', function() {
 body {
 	font-family: serif;
 	text-align: center;
-	margin-top: 100px;
+	margin-top: 20px;
 }
 h1, p {
 	margin: 10px 0;
 	text-wrap: balance;
 }
 h1 {
-	font-size: 36px;
+	font-size: 32px;
 }
 p {
-	font-size: 24px;
+	font-size: 20px;
 }
 .container {
 	max-width: 600px;
