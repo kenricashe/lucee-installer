@@ -49,6 +49,53 @@ apache_config_test() {
 	fi
 }
 
+# Ensure global Apache confs exist and are set to normal-state defaults
+# Normal state: AJP/mod_cfml enabled; upgrade flag disabled
+ensure_global_confs() {
+	# Debian/Ubuntu
+	if command -v a2enconf >/dev/null 2>&1; then
+		conf_avail="/etc/apache2/conf-available"
+		opt_file="/opt/lucee/sys/upgrade-in-progress/lucee-upgrade-in-progress.conf"
+		if [ -f "$opt_file" ] && [ ! -f "${conf_avail}/lucee-upgrade-in-progress.conf" ]; then
+			echo "Installing global lucee-upgrade-in-progress.conf into ${conf_avail}/"
+			cp -f "$opt_file" "${conf_avail}/lucee-upgrade-in-progress.conf"
+		fi
+		# Ensure upgrade flag is disabled by default
+		a2disconf lucee-upgrade-in-progress >/dev/null 2>&1 || true
+		# Ensure AJP+mod_cfml is enabled if present in conf-available
+		if [ -f "${conf_avail}/lucee-ajp-and-mod_cfml.conf" ]; then
+			a2enconf lucee-ajp-and-mod_cfml >/dev/null 2>&1 || true
+		fi
+		return
+	fi
+
+	# RHEL family and cPanel
+	if [ -d /etc/httpd/conf.d ] || [ -d /etc/apache2/conf.d ]; then
+		if [ "$IS_CPANEL" = true ]; then
+			confd="/etc/apache2/conf.d"
+		else
+			confd="/etc/httpd/conf.d"
+		fi
+		opt_file="/opt/lucee/sys/upgrade-in-progress/lucee-upgrade-in-progress.conf"
+		# Ensure a disabled copy exists if neither form exists
+		if [ -f "$opt_file" ] && [ ! -f "${confd}/lucee-upgrade-in-progress.disabled" ] && [ ! -f "${confd}/lucee-upgrade-in-progress.conf" ]; then
+			echo "Installing global lucee-upgrade-in-progress.disabled into ${confd}/"
+			cp -f "$opt_file" "${confd}/lucee-upgrade-in-progress.disabled"
+		fi
+		# Ensure normal state: upgrade flag disabled
+		if [ -f "${confd}/lucee-upgrade-in-progress.conf" ]; then
+			echo "Disabling lucee-upgrade-in-progress.conf (normal state)"
+			mv -f "${confd}/lucee-upgrade-in-progress.conf" "${confd}/lucee-upgrade-in-progress.disabled"
+		fi
+		# Ensure AJP+mod_cfml is enabled (rename from .disabled if needed)
+		if [ -f "${confd}/lucee-ajp-and-mod_cfml.conf.disabled" ] && [ ! -f "${confd}/lucee-ajp-and-mod_cfml.conf" ]; then
+			echo "Enabling lucee-ajp-and-mod_cfml.conf (normal state)"
+			mv -f "${confd}/lucee-ajp-and-mod_cfml.conf.disabled" "${confd}/lucee-ajp-and-mod_cfml.conf"
+		fi
+		return
+	fi
+}
+
 # Function to copy upgrade-in-progress.html to DocumentRoot
 copy_upgrade_html() {
 	local docroot=$1
@@ -241,6 +288,7 @@ echo "Configuring Lucee sites for scripted 'Upgrade in Progress' notifications .
 # Detect distribution and run appropriate code path
 if command -v a2enconf >/dev/null 2>&1; then
 	# Debian/Ubuntu path
+	ensure_global_confs
 	process_sites configure_site_debian
 	# Validate Apache configuration before reload
 	if ! apache_config_test; then
@@ -253,6 +301,7 @@ if command -v a2enconf >/dev/null 2>&1; then
 elif [ -d /etc/httpd/conf.d ]; then
 	if [ "$IS_CPANEL" = true ]; then
 		# cPanel path
+		ensure_global_confs
 		process_sites configure_site_cpanel
 		
 		# Rebuild Apache configuration and validate
@@ -266,11 +315,7 @@ elif [ -d /etc/httpd/conf.d ]; then
 		/scripts/restartsrv_httpd --graceful
 	else
 		# Non-cPanel RedHat path
-		if [ "$IS_CPANEL" = false ]; then
-			echo "This script has not been completed yet for non-cPanel environments."
-			echo "Pull requests are welcome!"
-			exit 1
-		fi
+		ensure_global_confs
 		process_sites configure_site_redhat
 		# Validate Apache configuration before reload
 		if ! apache_config_test; then

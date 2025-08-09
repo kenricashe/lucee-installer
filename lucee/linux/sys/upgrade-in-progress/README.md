@@ -46,6 +46,24 @@ Two separate `.conf` files are used to cleanly manage normal Lucee operation vs 
 
 If needed, consult Apache documentation for full details on how to enable the `.conf` files.
 
+### Auto-install/ensure of global Apache configs
+
+`configure-sites.sh` will ensure the global toggle files exist and default to a safe normal state (AJP/mod_cfml enabled; upgrade flag disabled):
+
+- __Debian/Ubuntu__
+  - If missing, installs `/opt/lucee/sys/upgrade-in-progress/lucee-upgrade-in-progress.conf` into `/etc/apache2/conf-available/`.
+  - Ensures it is disabled by default (`a2disconf lucee-upgrade-in-progress`).
+  - If `lucee-ajp-and-mod_cfml.conf` exists in `conf-available`, ensures it is enabled (`a2enconf`).
+
+- __RHEL/CentOS/AlmaLinux (non‑cPanel)__
+  - Ensures `/etc/httpd/conf.d/lucee-upgrade-in-progress.disabled` exists (installs from `/opt/...` if needed).
+  - If an active `.conf` exists, renames it to `.disabled` to enforce normal state.
+  - If `lucee-ajp-and-mod_cfml.conf.disabled` exists, renames it to `.conf` to ensure normal state.
+
+- __cPanel__
+  - Same pattern under `/etc/apache2/conf.d/`.
+  - Global changes are followed by `/scripts/rebuildhttpdconf` and a graceful restart when the script completes its site configuration phase.
+
 ## Example `lucee-ajp-and-mod_cfml.conf`:
 
 ```apache
@@ -182,6 +200,9 @@ For QA testing after the upgrade, you can exclude one of your sites from the lis
 ## Automation Notes
 
 - Files deploy to `/opt/lucee/sys/upgrade-in-progress/` via `deploy-to-opt-lucee-sys.sh`.
+- `configure-sites.sh` auto-installs/ensures global Apache configs to safe defaults:
+  - Debian/Ubuntu: installs to `conf-available` if missing, leaves upgrade flag disabled, ensures AJP/mod_cfml enabled if present.
+  - RHEL non‑cPanel and cPanel: ensures `.disabled` exists in `conf.d`, disables active upgrade flag if present, ensures AJP/mod_cfml enabled.
 - `configure-sites.sh` injects per-VirtualHost includes pointing to:
   - `/opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf`
   - `/opt/lucee/sys/upgrade-in-progress/lucee-404-routing.conf` (root sites only)
