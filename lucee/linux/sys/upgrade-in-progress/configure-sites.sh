@@ -66,6 +66,16 @@ ensure_global_confs() {
 		if [ -f "${conf_avail}/lucee-ajp-and-mod_cfml.conf" ]; then
 			a2enconf lucee-ajp-and-mod_cfml >/dev/null 2>&1 || true
 		fi
+		# Warn if no AJP proxying detected in global config
+		ajp_detected=false
+		if [ -f "${conf_avail}/lucee-ajp-and-mod_cfml.conf" ] || [ -f "/etc/apache2/conf-enabled/lucee-ajp-and-mod_cfml.conf" ]; then
+			ajp_detected=true
+		elif grep -Rqi 'ajp://' /etc/apache2/ 2>/dev/null; then
+			ajp_detected=true
+		fi
+		if [ "$ajp_detected" != true ]; then
+			echo "Warning: AJP proxying not detected in global Apache config (Debian/Ubuntu). Normal operation expects AJP/mod_cfml enabled."
+		fi
 		return
 	fi
 
@@ -91,6 +101,16 @@ ensure_global_confs() {
 		if [ -f "${confd}/lucee-ajp-and-mod_cfml.conf.disabled" ] && [ ! -f "${confd}/lucee-ajp-and-mod_cfml.conf" ]; then
 			echo "Enabling lucee-ajp-and-mod_cfml.conf (normal state)"
 			mv -f "${confd}/lucee-ajp-and-mod_cfml.conf.disabled" "${confd}/lucee-ajp-and-mod_cfml.conf"
+		fi
+		# Warn if no AJP proxying detected in global config
+		ajp_detected=false
+		if [ -f "${confd}/lucee-ajp-and-mod_cfml.conf" ] || [ -f "${confd}/lucee-ajp-and-mod_cfml.conf.disabled" ]; then
+			ajp_detected=true
+		elif grep -Rqi 'ajp://' "$confd" 2>/dev/null; then
+			ajp_detected=true
+		fi
+		if [ "$ajp_detected" != true ]; then
+			echo "Warning: AJP proxying not detected in global Apache config (${confd}). Normal operation expects AJP/mod_cfml enabled."
 		fi
 		return
 	fi

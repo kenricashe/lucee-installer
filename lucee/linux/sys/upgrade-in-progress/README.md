@@ -203,6 +203,7 @@ For QA testing after the upgrade, you can exclude one of your sites from the lis
 - `configure-sites.sh` auto-installs/ensures global Apache configs to safe defaults:
   - Debian/Ubuntu: installs to `conf-available` if missing, leaves upgrade flag disabled, ensures AJP/mod_cfml enabled if present.
   - RHEL non‑cPanel and cPanel: ensures `.disabled` exists in `conf.d`, disables active upgrade flag if present, ensures AJP/mod_cfml enabled.
+- `configure-sites.sh` warns if AJP proxying is not detected in the global Apache configuration.
 - `configure-sites.sh` injects per-VirtualHost includes pointing to:
   - `/opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf`
   - `/opt/lucee/sys/upgrade-in-progress/lucee-404-routing.conf` (root sites only)
