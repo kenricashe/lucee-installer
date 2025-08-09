@@ -85,13 +85,16 @@ configure_site_debian() {
 		sed -i '/Include.*lucee-detect-upgrade.conf/d' "$ssl_conf_file"
 		sed -i '/Include.*lucee-404-routing.conf/d' "$ssl_conf_file"
 		
+		# Replace all whitespace just before closing </VirtualHost> with '\n\n'
+		sed -i ':a;N;$!ba;s/\n[[:space:]]*\n*[[:space:]]*<\/VirtualHost>/\n\n<\/VirtualHost>/' "$ssl_conf_file"
+
 		# Add appropriate includes before the closing </VirtualHost>
 		if [ "$site_type" = "root" ]; then
 			# Root sites get both upgrade detection and 404 routing
-			sed -i 's|</VirtualHost>|\n\tInclude /opt/lucee/sys/apache-configs/lucee-detect-upgrade.conf\n\tInclude /opt/lucee/sys/apache-configs/lucee-404-routing.conf\n\n</VirtualHost>|' "$ssl_conf_file"
+			sed -i 's|</VirtualHost>|\tInclude /opt/lucee/sys/apache-configs/lucee-detect-upgrade.conf\n\tInclude /opt/lucee/sys/apache-configs/lucee-404-routing.conf\n\n</VirtualHost>|' "$ssl_conf_file"
 		else
 			# Non-root sites get only upgrade detection
-			sed -i 's|</VirtualHost>|\n\tInclude /opt/lucee/sys/apache-configs/lucee-detect-upgrade.conf\n\n</VirtualHost>|' "$ssl_conf_file"
+			sed -i 's|</VirtualHost>|\tInclude /opt/lucee/sys/apache-configs/lucee-detect-upgrade.conf\n\n</VirtualHost>|' "$ssl_conf_file"
 		fi
 	else
 		echo "  Warning: Could not find SSL configuration file for $domain"
