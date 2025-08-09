@@ -69,6 +69,14 @@ If needed, consult Apache documentation for full details on how to enable the `.
 
 Note: The examples herein include .cfc as that is the Lucee installer's default config, but for maximum security you may prefer to exclude .cfc in all of your Apache configs.
 
+## Example `lucee-404-routing.conf`:
+
+```apache
+<IfDefine !LUCEE_UPGRADE_IN_PROGRESS>
+    ErrorDocument 404 /404.cfm?%{REQUEST_URI}&%{QUERY_STRING}
+</IfDefine>
+```
+
 ## Example `lucee-upgrade-in-progress.conf`:
 
 ```apache
@@ -76,6 +84,21 @@ Define LUCEE_UPGRADE_IN_PROGRESS
 ```
 
 Yes it is just a simple flag! It will be referenced later in each site's VirtualHost config.
+
+## Example `lucee-detect-upgrade.conf`:
+
+```apache
+<IfDefine LUCEE_UPGRADE_IN_PROGRESS>
+    <IfModule mod_rewrite.c>
+        RewriteEngine On
+        RewriteRule ^.*\.(cfm|cfml|cfs|cfc)(/.*)?$ /upgrade-in-progress.html [L]
+    </IfModule>
+    # Friendly url routing e.g. /login => /login.cfm
+    # is normally handled by 404.cfm, but when
+    # Lucee is not running, this is needed:
+    ErrorDocument 404 /upgrade-in-progress.html
+</IfDefine>
+```
 
 ## Example VirtualHost:
 
@@ -85,12 +108,9 @@ Yes it is just a simple flag! It will be referenced later in each site's Virtual
 	ServerName example.com
 	[other config here ...]
 
-	<IfModule mod_rewrite.c>
-		RewriteEngine On
-		<IfDefine LUCEE_UPGRADE_IN_PROGRESS>
-			RewriteRule ^.*\.(cfm|cfml|cfs|cfc)(/.*)?$ /upgrade-in-progress.html [L]
-		</IfDefine>
-	</IfModule>
+	# these Include lines are inserted by configure-sites.sh
+	Include /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf
+	Include /opt/lucee/sys/upgrade-in-progress/lucee-404-routing.conf
 	
 </VirtualHost>
 ```

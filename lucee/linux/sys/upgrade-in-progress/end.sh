@@ -36,8 +36,8 @@ elif [ -d /etc/httpd/conf.d ]; then
 	if [ "$IS_CPANEL" = true ]; then
 		echo "Rebuilding httpd.conf..."
 		/scripts/rebuildhttpdconf
-		echo "Restarting httpd..."
-		/scripts/restartsrv_httpd
+		echo "Gracefully restarting httpd..."
+		/scripts/restartsrv_httpd --graceful
 	else
 		echo "Reloading httpd..."
 		systemctl reload httpd
@@ -47,6 +47,6 @@ else
 	exit 1
 fi
 
-rm /var/lucee-upgrade-in-progress
+rm -f /var/lucee-upgrade-in-progress
 
 echo "DONE!"

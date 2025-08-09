@@ -35,6 +35,20 @@ else
 	IS_CPANEL=false
 fi
 
+# Apache config test helper: prefer apache2ctl, then apachectl, then httpd
+apache_config_test() {
+	if command -v apache2ctl >/dev/null 2>&1; then
+		apache2ctl -t
+	elif command -v apachectl >/dev/null 2>&1; then
+		apachectl -t
+	elif command -v httpd >/dev/null 2>&1; then
+		httpd -t
+	else
+		echo "Warning: No apache control binary found for config test; skipping syntax check."
+		return 0
+	fi
+}
+
 # Function to copy upgrade-in-progress.html to DocumentRoot
 copy_upgrade_html() {
 	local docroot=$1
@@ -81,6 +95,8 @@ configure_site_debian() {
 	
 	if [ -f "$ssl_conf_file" ]; then
 		echo "  Updating $ssl_conf_file"
+		# Backup before editing
+		cp -f "$ssl_conf_file" "${ssl_conf_file}.bak"
 		
 		# Remove any existing Lucee upgrade includes
 		sed -i '/Include.*lucee-detect-upgrade.conf/d' "$ssl_conf_file"
@@ -111,6 +127,8 @@ configure_site_debian() {
 
 	if [ -f "$http_conf_file" ]; then
 		echo "  Updating $http_conf_file"
+		# Backup before editing
+		cp -f "$http_conf_file" "${http_conf_file}.bak"
 		# Remove any existing Lucee upgrade includes
 		sed -i '/Include.*lucee-detect-upgrade.conf/d' "$http_conf_file"
 		sed -i '/Include.*lucee-404-routing.conf/d' "$http_conf_file"
@@ -224,6 +242,11 @@ echo "Configuring Lucee sites for scripted 'Upgrade in Progress' notifications .
 if command -v a2enconf >/dev/null 2>&1; then
 	# Debian/Ubuntu path
 	process_sites configure_site_debian
+	# Validate Apache configuration before reload
+	if ! apache_config_test; then
+		echo "Apache configuration test FAILED. Aborting reload."
+		exit 1
+	fi
 	reload_apache apache2
 	
 # Redhat/CentOS/AlmaLinux/etc
@@ -232,9 +255,14 @@ elif [ -d /etc/httpd/conf.d ]; then
 		# cPanel path
 		process_sites configure_site_cpanel
 		
-		# Rebuild Apache configuration and restart
-		echo "Rebuilding Apache configuration and gracefully restarting..."
+		# Rebuild Apache configuration and validate
+		echo "Rebuilding Apache configuration..."
 		/scripts/rebuildhttpdconf
+		if ! apache_config_test; then
+			echo "Apache configuration test FAILED. Aborting restart."
+			exit 1
+		fi
+		echo "Gracefully restarting httpd..."
 		/scripts/restartsrv_httpd --graceful
 	else
 		# Non-cPanel RedHat path
@@ -244,6 +272,11 @@ elif [ -d /etc/httpd/conf.d ]; then
 			exit 1
 		fi
 		process_sites configure_site_redhat
+		# Validate Apache configuration before reload
+		if ! apache_config_test; then
+			echo "Apache configuration test FAILED. Aborting reload."
+			exit 1
+		fi
 		reload_apache httpd
 	fi
 else
