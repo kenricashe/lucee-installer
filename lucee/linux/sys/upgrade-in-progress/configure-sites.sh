@@ -122,6 +122,10 @@ configure_site_debian() {
 		else
 			sed -i 's|</VirtualHost>|\tInclude /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf\n\n</VirtualHost>|' "$http_conf_file"
 		fi
+		# Best-effort warning if HTTP VirtualHost may not redirect to HTTPS
+		if ! grep -Eiq '(Redirect(\s+(permanent|temp|301|302))?\s+/?\s+https?://|RewriteRule\s+.*https://)' "$http_conf_file"; then
+			echo "  Warning: HTTP vhost for $domain may not redirect to HTTPS. Ensure a proper 80->443 redirect is configured to avoid exposure over HTTP."
+		fi
 	else
 		echo "  Info: No HTTP configuration file found for $domain"
 	fi
@@ -229,9 +233,9 @@ elif [ -d /etc/httpd/conf.d ]; then
 		process_sites configure_site_cpanel
 		
 		# Rebuild Apache configuration and restart
-		echo "Rebuilding Apache configuration and restarting..."
+		echo "Rebuilding Apache configuration and gracefully restarting..."
 		/scripts/rebuildhttpdconf
-		/scripts/restartsrv_httpd
+		/scripts/restartsrv_httpd --graceful
 	else
 		# Non-cPanel RedHat path
 		if [ "$IS_CPANEL" = false ]; then

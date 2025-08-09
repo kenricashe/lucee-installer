@@ -42,8 +42,8 @@ elif [ -d /etc/httpd/conf.d ]; then
 	if [ "$IS_CPANEL" = true ]; then
 		echo "Rebuilding httpd configuration..."
 		/scripts/rebuildhttpdconf
-		echo "Restarting httpd..."
-		/scripts/restartsrv_httpd
+		echo "Gracefully restarting httpd..."
+		/scripts/restartsrv_httpd --graceful
 	else
 		echo "Reloading httpd..."
 		systemctl reload httpd

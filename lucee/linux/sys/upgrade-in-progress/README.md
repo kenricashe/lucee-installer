@@ -158,4 +158,18 @@ window.addEventListener('DOMContentLoaded', function() {
 ## Post-Upgrade Testing
 
 For QA testing after the upgrade, you can exclude one of your sites from the list of sites that will be disabled, simply by editing the `/opt/lucee/sys/upgrade-in-progress/sites-configured.txt` file. Be sure to not provide any public links to that QA site. You may also want to disable it when you are done QA testing.
-**
+
+## Automation Notes
+
+- Files deploy to `/opt/lucee/sys/upgrade-in-progress/` via `deploy-to-opt-lucee-sys.sh`.
+- `configure-sites.sh` injects per-VirtualHost includes pointing to:
+  - `/opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf`
+  - `/opt/lucee/sys/upgrade-in-progress/lucee-404-routing.conf` (root sites only)
+- Debian/Ubuntu: updates both HTTPS vhosts (e.g., `domain-ssl.conf`) and HTTP vhosts (`domain.conf`) where present.
+- cPanel: writes userdata to BOTH trees, then rebuilds httpd config and gracefully restarts:
+  - SSL: `/etc/apache2/conf.d/userdata/ssl/2_4/<user>/<domain>/lucee.conf`
+  - STD: `/etc/apache2/conf.d/userdata/std/2_4/<user>/<domain>/lucee.conf`
+  - Commands: `/scripts/rebuildhttpdconf` and `/scripts/restartsrv_httpd --graceful`
+- Non‑cPanel RHEL path remains a placeholder.
+
+Important: Even with HTTP vhosts configured for upgrade mode, you should maintain a proper 80→443 redirect in normal operation to avoid exposure over HTTP.

@@ -19,6 +19,7 @@ FILES=(
 	"upgrade-in-progress.html"
 	"lucee-404-routing.conf"
 	"lucee-detect-upgrade.conf"
+	"lucee-upgrade-in-progress.conf"
 )
 
 # Create required directories
