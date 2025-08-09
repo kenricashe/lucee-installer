@@ -21,6 +21,8 @@ Disabling lucee-ajp-and-mod_cfml configuration...
 Reloading Apache...
 DONE!
 
+[... UPGRADE AND QA TEST ...]
+
 $ sudo /opt/lucee/sys/upgrade-in-progress/end.sh
 Enabling lucee-ajp-and-mod_cfml configuration...
 Disabling lucee-upgrade-in-progress configuration...
@@ -53,15 +55,17 @@ If needed, consult Apache documentation for full details on how to enable the `.
 - __Debian/Ubuntu__
   - If missing, installs `/opt/lucee/sys/upgrade-in-progress/lucee-upgrade-in-progress.conf` into `/etc/apache2/conf-available/`.
   - Ensures it is disabled by default (`a2disconf lucee-upgrade-in-progress`).
-  - If `lucee-ajp-and-mod_cfml.conf` exists in `conf-available`, ensures it is enabled (`a2enconf`).
+  - If `lucee-ajp-and-mod_cfml.conf` is missing in `conf-available`, auto-generates it from the template by parsing Tomcat's `server.xml` (AJP port/secret and `ModCFML_SharedKey`), then ensures it is enabled (`a2enconf`).
 
 - __RHEL/CentOS/AlmaLinux (non‑cPanel)__
   - Ensures `/etc/httpd/conf.d/lucee-upgrade-in-progress.disabled` exists (installs from `/opt/...` if needed).
   - If an active `.conf` exists, renames it to `.disabled` to enforce normal state.
   - If `lucee-ajp-and-mod_cfml.conf.disabled` exists, renames it to `.conf` to ensure normal state.
+  - If neither `lucee-ajp-and-mod_cfml.conf` nor `.disabled` exists in `conf.d`, auto-generates `lucee-ajp-and-mod_cfml.conf` from the template by parsing `server.xml` (enabled for normal state).
 
 - __cPanel__
   - Same pattern under `/etc/apache2/conf.d/`.
+  - If neither `lucee-ajp-and-mod_cfml.conf` nor `.disabled` exists in `conf.d`, auto-generates `lucee-ajp-and-mod_cfml.conf` from the template by parsing `server.xml` (enabled for normal state).
   - Global changes are followed by `/scripts/rebuildhttpdconf` and a graceful restart when the script completes its site configuration phase.
 
 ## Example `lucee-ajp-and-mod_cfml.conf`:
@@ -148,26 +152,6 @@ Yes it is just a simple flag! It will be referenced later in each site's Virtual
 	
 </VirtualHost>
 ```
-
-If the / (root path) does not default to index.cfm and you do NOT want it to display the upgrade status, change the RewriteRule to:
-
-```apache
-RewriteRule ^(.+\.cf[msc])(/.*)?$ /upgrade-in-progress.html [L]
-```
-
-## Diligence is Key for Security!
-
-You must ensure that every Lucee site on your server is configured to display the upgrade status page when LUCEE_UPGRADE_IN_PROGRESS is defined, otherwise raw Lucee source code is exposed due to temporary lack of AJP/Tomcat/Lucee proxying.
-
-So, yes there is a small amount of risk, but it is mitigated by the usually short duration of the Lucee upgrade process, and of course ... diligence!
-
-You could also create a script which iterates over all sites and ensures that the RewriteRule has been added to each site's VirtualHost.
-
-Many other techniques were attempted, but failed. Apache configurations are a mind-numbing maze. A global mod_proxy, for example, similar to the AJP proxy, but to a static HTML file, did not work as hoped. That would have been ideal. Global RewriteRule on Lucee URLs also did not work, nor did global 302 redirect.
-
-RewriteURL inside each VirtualHost was the only thing that actually (and amazingly) worked. It had been looking like nothing would work, so it was quite the relief when it finally did!
-
-If you happen to be aware of a much simpler solution than what is presented herein, despite the massive facepalm that would trigger after so many hours of head banging on wall (argh) and the not overly confident conclusion that This Is The Way ... please do share!
 
 ## Example `/upgrade-in-progress.html`:
 
