@@ -49,6 +49,22 @@ apache_config_test() {
 	fi
 }
 
+# Check if mod_headers is enabled (needed for X-Lucee-Upgrade header polling)
+headers_module_enabled() {
+	if command -v apache2ctl >/dev/null 2>&1; then
+		apache2ctl -M 2>/dev/null | grep -qi '\bheaders_module\b'
+		return $?
+	elif command -v apachectl >/dev/null 2>&1; then
+		apachectl -M 2>/dev/null | grep -qi '\bheaders_module\b'
+		return $?
+	elif command -v httpd >/dev/null 2>&1; then
+		httpd -M 2>/dev/null | grep -qi '\bheaders_module\b'
+		return $?
+	fi
+	# If we can't detect, do not block; treat as enabled to avoid false alarms
+	return 0
+}
+
 # Warn if conflicting AJP/mod_cfml directives already exist in global config
 warn_existing_ajp_modcfml() {
 	# Args: list of directories to scan
@@ -183,6 +199,12 @@ ensure_global_confs() {
 		if [ "$ajp_detected" != true ]; then
 			echo "Warning: AJP proxying not detected in global Apache config (Debian/Ubuntu). Normal operation expects AJP/mod_cfml enabled."
 		fi
+		# Warn if mod_headers isn't enabled (needed for HEAD-based polling via X-Lucee-Upgrade)
+		if ! headers_module_enabled; then
+			echo "Warning: Apache mod_headers does not appear to be enabled."
+			echo "The upgrade status page relies on X-Lucee-Upgrade header for HEAD polling."
+			echo "Enable with: a2enmod headers && systemctl reload apache2"
+		fi
 		return
 	fi
 
@@ -225,6 +247,12 @@ ensure_global_confs() {
 		fi
 		if [ "$ajp_detected" != true ]; then
 			echo "Warning: AJP proxying not detected in global Apache config (${confd}). Normal operation expects AJP/mod_cfml enabled."
+		fi
+		# Warn if mod_headers isn't enabled (needed for HEAD-based polling via X-Lucee-Upgrade)
+		if ! headers_module_enabled; then
+			echo "Warning: Apache mod_headers does not appear to be enabled."
+			echo "The upgrade status page relies on X-Lucee-Upgrade header for HEAD polling."
+			echo "Ensure headers_module is loaded (usually enabled by default on RHEL/cPanel)."
 		fi
 		return
 	fi

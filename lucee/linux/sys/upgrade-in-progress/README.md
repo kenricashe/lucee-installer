@@ -10,7 +10,7 @@ The bash shell scripts, Apache configuration files, and a status page template a
 
 There are even optional scripts to automatically generate the editable list of sites to be configured, and to apply those configurations.
 
-And finally, from the end user's perspective, their original requested URL does not change. That way the upgrade status can be shown without redirecting to a different page. The user will see the notice of how the page will automatically refresh when the upgrade is complete! (That is implemented via JavaScript fetch.)
+And finally, from the end user's perspective, their original requested URL does not change. That way the upgrade status can be shown without redirecting to a different page. The user will see the notice of how the page will automatically refresh when the upgrade is complete! That is implemented via JavaScript fetch with the HEAD method, which is more efficient than repeatedly refreshing the page.
 
 ## Typical upgrade command sequence:
 
@@ -131,12 +131,21 @@ Yes it is just a simple flag! It will be referenced later in each site's Virtual
         RewriteEngine On
         RewriteRule ^.*\.(cfm|cfml|cfs|cfc)(/.*)?$ /upgrade-in-progress.html [L]
     </IfModule>
+    <IfModule headers_module>
+        # Signal to the status page via HEAD that upgrade mode is active
+        Header set X-Lucee-Upgrade "1"
+        Header set Cache-Control "no-store, no-cache, must-revalidate"
+    </IfModule>
     # Friendly url routing e.g. /login => /login.cfm
     # is normally handled by 404.cfm, but when
     # Lucee is not running, this is needed:
     ErrorDocument 404 /upgrade-in-progress.html
 </IfDefine>
 ```
+
+Note: This relies on Apache mod_headers to set the `X-Lucee-Upgrade` header used by the status page for efficient HEAD polling.
+- Debian/Ubuntu: `a2enmod headers && systemctl reload apache2`
+- RHEL/cPanel: `headers_module` is typically enabled by default.
 
 ## Example VirtualHost:
 
@@ -168,13 +177,10 @@ When QA testing you can change to: `const numInterval = 1000;`
 window.addEventListener('DOMContentLoaded', function() {
 	const numInterval = 60000;
 	function checkUpgradeStatus() {
-		fetch(window.location.href, {
-			method: 'GET',
-			cache: 'no-cache'
-		})
-		.then(response => response.text())
-		.then(html => {
-			if (!html.includes('Upgrade In Progress')) window.location.reload();
+		fetch(window.location.href, { method: 'HEAD', cache: 'no-cache' })
+		.then(response => {
+			const isUpgrade = response.headers.get('X-Lucee-Upgrade') === '1';
+			if (!isUpgrade) window.location.reload();
 		})
 		.catch(error => {
 			console.log('Error checking upgrade status:', error);
@@ -215,5 +221,7 @@ For QA testing after the upgrade, you can exclude one of your sites from the lis
   - STD: `/etc/apache2/conf.d/userdata/std/2_4/<user>/<domain>/lucee.conf`
   - Commands: `/scripts/rebuildhttpdconf` and `/scripts/restartsrv_httpd --graceful`
 - Non‑cPanel RHEL path remains a placeholder.
+
+- `configure-sites.sh` will warn if Apache `mod_headers` is not enabled, since the status page relies on the `X-Lucee-Upgrade` response header for HEAD polling.
 
 Important: Even with HTTP vhosts configured for upgrade mode, you should maintain a proper 80→443 redirect in normal operation to avoid exposure over HTTP.
