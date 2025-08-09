@@ -49,6 +49,25 @@ apache_config_test() {
 	fi
 }
 
+# Warn if conflicting AJP/mod_cfml directives already exist in global config
+warn_existing_ajp_modcfml() {
+	# Args: list of directories to scan
+	local found=""
+	local dir
+	for dir in "$@"; do
+		[ -d "$dir" ] || continue
+		local hits
+		# Only match active (non-commented) lines with AJP/mod_cfml directives, excluding our managed file
+		hits=$(grep -RniE '^[[:space:]]*[^#].*(ProxyPass(Match|Reverse).*ajp://|ModCFML_SharedKey|LoadModule[[:space:]]+modcfml_module)' "$dir" 2>/dev/null | grep -v 'lucee-ajp-and-mod_cfml.conf' || true)
+		[ -n "$hits" ] && found+="\n${hits}"
+	done
+	if [ -n "$found" ]; then
+		echo "Warning: Existing AJP/mod_cfml directives detected in global Apache config."
+		echo "They may conflict with the generated lucee-ajp-and-mod_cfml.conf. Please remove duplicates:"
+		echo "$found"
+	fi
+}
+
 # Resolve Tomcat server.xml path
 resolve_server_xml() {
 	if [ -n "$TOMCAT_SERVER_XML" ] && [ -f "$TOMCAT_SERVER_XML" ]; then
@@ -139,6 +158,10 @@ ensure_global_confs() {
 			echo "Installing global lucee-upgrade-in-progress.conf into ${conf_avail}/"
 			cp -f "$opt_file" "${conf_avail}/lucee-upgrade-in-progress.conf"
 		fi
+		# Warn if conflicting AJP/mod_cfml config is present elsewhere in global dirs
+		warn_existing_ajp_modcfml \
+			"/etc/apache2/conf-available" \
+			"/etc/apache2/conf-enabled"
 		# Ensure AJP+mod_cfml global conf exists (generate from template if missing)
 		if [ ! -f "${conf_avail}/lucee-ajp-and-mod_cfml.conf" ]; then
 			echo "Generating global lucee-ajp-and-mod_cfml.conf in ${conf_avail}/ from template via server.xml"
@@ -176,6 +199,8 @@ ensure_global_confs() {
 			echo "Installing global lucee-upgrade-in-progress.disabled into ${confd}/"
 			cp -f "$opt_file" "${confd}/lucee-upgrade-in-progress.disabled"
 		fi
+		# Warn if conflicting AJP/mod_cfml config is present elsewhere in global dir
+		warn_existing_ajp_modcfml "$confd"
 		# Ensure AJP+mod_cfml global conf exists (generate from template if missing)
 		if [ ! -f "${confd}/lucee-ajp-and-mod_cfml.conf" ] && [ ! -f "${confd}/lucee-ajp-and-mod_cfml.conf.disabled" ]; then
 			echo "Generating global ${confd}/lucee-ajp-and-mod_cfml.conf from template via server.xml (enabled in normal state)"
