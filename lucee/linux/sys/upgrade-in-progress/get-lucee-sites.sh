@@ -8,8 +8,19 @@ if [ "$(id -u)" != "0" ]; then
 	exit 1
 fi
 
-TXTPATH_ALL_DATA="/opt/lucee/sys/upgrade-in-progress/sites-configured.txt"
-TXTPATH_ONLY_DOMAINS="/opt/lucee/sys/upgrade-in-progress/active-domains.txt"
+# Resolve this script directory and compute LUCEE_ROOT and UPG_DIR
+SOURCE="${BASH_SOURCE[0]:-$0}"
+while [ -L "$SOURCE" ]; do
+	DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+	LINK="$(readlink "$SOURCE")"
+	[[ "$LINK" != /* ]] && SOURCE="$DIR/$LINK" || SOURCE="$LINK"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+LUCEE_ROOT="$("$SCRIPT_DIR/get-lucee-root.sh")"
+UPG_DIR="${LUCEE_ROOT}/sys/upgrade-in-progress"
+
+TXTPATH_ALL_DATA="${UPG_DIR}/sites-configured.txt"
+TXTPATH_ONLY_DOMAINS="${UPG_DIR}/active-domains.txt"
 
 # Detect cPanel and set RedHat httpd.conf path
 if [ -f "/usr/local/cpanel/cpanel" ]; then
@@ -159,7 +170,7 @@ save_results() {
 	echo ""
 	echo "Then run:"
 	echo ""
-	echo "sudo /opt/lucee/sys/upgrade-in-progress/configure-sites.sh"
+	echo "sudo ${UPG_DIR}/configure-sites.sh"
 	echo ""
 	echo "A domains-only file was also saved as:"
 	echo ""

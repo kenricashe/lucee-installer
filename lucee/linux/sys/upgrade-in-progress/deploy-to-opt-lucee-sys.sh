@@ -14,6 +14,7 @@ THISPATH=$(dirname "$0")
 FILES=(
 	"get-lucee-sites.sh"
 	"configure-sites.sh"
+	"get-lucee-root.sh"
 	"begin.sh"
 	"end.sh"
 	"upgrade-in-progress.html"
@@ -23,18 +24,22 @@ FILES=(
 	"lucee-upgrade-in-progress.conf"
 )
 
-# Create required directories
-mkdir -p /opt/lucee/sys/upgrade-in-progress
+# Prompt for Lucee root path and deploy there
+DEFAULT_LUCEE_ROOT="/opt/lucee"
+read -r -p "Enter target Lucee root path [${DEFAULT_LUCEE_ROOT}]: " INPUT_LUCEE_ROOT
+LUCEE_ROOT="${INPUT_LUCEE_ROOT:-$DEFAULT_LUCEE_ROOT}"
+DEST_DIR="${LUCEE_ROOT}/sys/upgrade-in-progress"
+mkdir -p "$DEST_DIR"
 
 function copy_and_chmod() {
-	local src="${THISPATH}/$1"
-	local dst="/opt/lucee/sys/upgrade-in-progress/$1"
-	cp "$src" "$dst"
-	if [[ "$1" == *.sh ]]; then
-		chmod +x "$dst"
-	else
-		chmod 644 "$dst"
-	fi
+    local src="${THISPATH}/$1"
+    local dst="${DEST_DIR}/$1"
+    cp "$src" "$dst"
+    if [[ "$1" == *.sh ]]; then
+        chmod +x "$dst"
+    else
+        chmod 644 "$dst"
+    fi
 }
 
 for file in "${FILES[@]}"; do

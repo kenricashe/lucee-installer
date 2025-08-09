@@ -17,10 +17,21 @@ if [ "$(id -u)" != "0" ]; then
 	exit 1
 fi
 
-SITES_FILE="/opt/lucee/sys/upgrade-in-progress/sites-configured.txt"
+# Resolve this script directory and compute LUCEE_ROOT and UPG_DIR
+SOURCE="${BASH_SOURCE[0]:-$0}"
+while [ -L "$SOURCE" ]; do
+	DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+	LINK="$(readlink "$SOURCE")"
+	[[ "$LINK" != /* ]] && SOURCE="$DIR/$LINK" || SOURCE="$LINK"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+LUCEE_ROOT="$("$SCRIPT_DIR/get-lucee-root.sh")"
+UPG_DIR="${LUCEE_ROOT}/sys/upgrade-in-progress"
+
+SITES_FILE="${UPG_DIR}/sites-configured.txt"
 if [ ! -f "$SITES_FILE" ]; then
 	echo "Lucee sites data file not found. You first need to run:"
-	echo "sudo /opt/lucee/sys/upgrade-in-progress/get-lucee-sites.sh"
+	echo "sudo ${UPG_DIR}/get-lucee-sites.sh"
 	echo "Then review and if necessary edit the .txt file"
 	echo "from that before returning to this script."
 	exit 1
@@ -36,9 +47,11 @@ else
 fi
 
 # Centralized backup root; backs up mirror paths beneath this directory
-BACKUP_ROOT="/opt/lucee/sys/upgrade-in-progress/backups"
+BACKUP_ROOT="${UPG_DIR}/backups"
 # Single timestamp for this run; all backups go under this subfolder for easy restore
 BACKUP_TS="$(date +%Y-%m-%d-%H%M%S)"
+
+# LUCEE_ROOT is available via helper; UPG_DIR already computed above
 
 # Apache config test helper: prefer apache2ctl, then apachectl, then httpd
 apache_config_test() {
@@ -104,16 +117,19 @@ warn_existing_ajp_modcfml() {
 resolve_server_xml() {
 	if [ -n "$TOMCAT_SERVER_XML" ] && [ -f "$TOMCAT_SERVER_XML" ]; then
 		echo "$TOMCAT_SERVER_XML"
-		return
+		return 0
 	fi
-	# common defaults
-	for p in \
-		"/opt/lucee/tomcat/conf/server.xml" \
-		"/opt/lucee/tomcat*/conf/server.xml" \
+
+	for candidate in \
+		"${LUCEE_ROOT}/tomcat/conf/server.xml" \
+		"${LUCEE_ROOT}/tomcat*/conf/server.xml" \
 		"/etc/tomcat*/server.xml"; do
-		for f in $p; do
-			[ -f "$f" ] && { echo "$f"; return; }
-		done
+		if ls $candidate >/dev/null 2>&1; then
+			# Return the first match from glob expansion
+			for f in $candidate; do
+				[ -f "$f" ] && { echo "$f"; return 0; }
+			done
+		fi
 	done
 	echo "" # not found
 }
@@ -147,7 +163,7 @@ parse_server_xml() {
 # Render the AJP+mod_cfml template into a destination file
 render_ajp_template() {
 	local dest="$1"
-	local tmpl="/opt/lucee/sys/upgrade-in-progress/lucee-ajp-and-mod_cfml.conf"
+	local tmpl="${UPG_DIR}/lucee-ajp-and-mod_cfml.conf"
 	if [ ! -f "$tmpl" ]; then
 		echo "Warning: Template not found: $tmpl"
 		return 1
@@ -185,7 +201,7 @@ ensure_global_confs() {
 	# Debian/Ubuntu
 	if command -v a2enconf >/dev/null 2>&1; then
 		conf_avail="/etc/apache2/conf-available"
-		opt_file="/opt/lucee/sys/upgrade-in-progress/lucee-upgrade-in-progress.conf"
+		opt_file="${UPG_DIR}/lucee-upgrade-in-progress.conf"
 		if [ -f "$opt_file" ] && [ ! -f "${conf_avail}/lucee-upgrade-in-progress.conf" ]; then
 			echo "Installing global lucee-upgrade-in-progress.conf into ${conf_avail}/"
 			cp -f "$opt_file" "${conf_avail}/lucee-upgrade-in-progress.conf"
@@ -231,7 +247,7 @@ ensure_global_confs() {
 		else
 			confd="/etc/httpd/conf.d"
 		fi
-		opt_file="/opt/lucee/sys/upgrade-in-progress/lucee-upgrade-in-progress.conf"
+		opt_file="${UPG_DIR}/lucee-upgrade-in-progress.conf"
 		# Ensure a disabled copy exists if neither form exists
 		if [ -f "$opt_file" ] && [ ! -f "${confd}/lucee-upgrade-in-progress.disabled" ] && [ ! -f "${confd}/lucee-upgrade-in-progress.conf" ]; then
 			echo "Installing global lucee-upgrade-in-progress.disabled into ${confd}/"
@@ -284,7 +300,7 @@ copy_upgrade_html() {
 	local docroot=$1
 	# Backup existing docroot file (mirrored under BACKUP_ROOT)
 	backup_file ${docroot}/upgrade-in-progress.html
-	cp -f /opt/lucee/sys/upgrade-in-progress/upgrade-in-progress.html ${docroot}/upgrade-in-progress.html
+	cp -f "${UPG_DIR}/upgrade-in-progress.html" ${docroot}/upgrade-in-progress.html
 	chown --reference=${docroot} ${docroot}/upgrade-in-progress.html 2>/dev/null || true
 }
 
@@ -340,10 +356,10 @@ configure_site_debian() {
 		# Add appropriate includes before the closing </VirtualHost>
 		if [ "$site_type" = "root" ]; then
 			# Root sites get both upgrade detection and 404 routing
-			sed -i 's|</VirtualHost>|\tInclude /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf\n\tInclude /opt/lucee/sys/upgrade-in-progress/lucee-404-routing.conf\n\n</VirtualHost>|' "$ssl_conf_file"
+			sed -i "s|</VirtualHost>|\tInclude ${UPG_DIR}/lucee-detect-upgrade.conf\\n\tInclude ${UPG_DIR}/lucee-404-routing.conf\\n\\n</VirtualHost>|" "$ssl_conf_file"
 		else
 			# Non-root sites get only upgrade detection
-			sed -i 's|</VirtualHost>|\tInclude /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf\n\n</VirtualHost>|' "$ssl_conf_file"
+			sed -i "s|</VirtualHost>|\tInclude ${UPG_DIR}/lucee-detect-upgrade.conf\\n\\n</VirtualHost>|" "$ssl_conf_file"
 		fi
 	else
 		echo "  Warning: Could not find SSL configuration file for $domain"
@@ -368,9 +384,9 @@ configure_site_debian() {
 		sed -i ':a;N;$!ba;s/\n[[:space:]]*\n*[[:space:]]*<\/VirtualHost>/\n\n<\/VirtualHost>/' "$http_conf_file"
 		# Add appropriate includes before the closing </VirtualHost>
 		if [ "$site_type" = "root" ]; then
-			sed -i 's|</VirtualHost>|\tInclude /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf\n\tInclude /opt/lucee/sys/upgrade-in-progress/lucee-404-routing.conf\n\n</VirtualHost>|' "$http_conf_file"
+			sed -i "s|</VirtualHost>|\tInclude ${UPG_DIR}/lucee-detect-upgrade.conf\\n\tInclude ${UPG_DIR}/lucee-404-routing.conf\\n\\n</VirtualHost>|" "$http_conf_file"
 		else
-			sed -i 's|</VirtualHost>|\tInclude /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf\n\n</VirtualHost>|' "$http_conf_file"
+			sed -i "s|</VirtualHost>|\tInclude ${UPG_DIR}/lucee-detect-upgrade.conf\\n\\n</VirtualHost>|" "$http_conf_file"
 		fi
 		# Best-effort warning if HTTP VirtualHost may not redirect to HTTPS
 		if ! grep -Eiq '(Redirect(\s+(permanent|temp|301|302))?\s+/?\s+https?://|RewriteRule\s+.*https://)' "$http_conf_file"; then
@@ -406,20 +422,20 @@ configure_site_cpanel() {
 		backup_file ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf
 		cat > ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf << EOF
 # This file is automatically generated and managed by
-# /opt/lucee/sys/upgrade-in-progress/configure-sites.sh
+# ${UPG_DIR}/configure-sites.sh
 # Any manual changes will be overwritten when the script runs
-Include /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf
-Include /opt/lucee/sys/upgrade-in-progress/lucee-404-routing.conf
+Include ${UPG_DIR}/lucee-detect-upgrade.conf
+Include ${UPG_DIR}/lucee-404-routing.conf
 EOF
 		# Also create non-SSL userdata include
 		# Backup existing userdata file before overwriting (mirrored under BACKUP_ROOT)
 		backup_file ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf
 		cat > ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf << EOF
 # This file is automatically generated and managed by
-# /opt/lucee/sys/upgrade-in-progress/configure-sites.sh
+# ${UPG_DIR}/configure-sites.sh
 # Any manual changes will be overwritten when the script runs
-Include /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf
-Include /opt/lucee/sys/upgrade-in-progress/lucee-404-routing.conf
+Include ${UPG_DIR}/lucee-detect-upgrade.conf
+Include ${UPG_DIR}/lucee-404-routing.conf
 EOF
 	else
 		# Non-root sites get only upgrade detection
@@ -427,18 +443,18 @@ EOF
 		backup_file ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf
 		cat > ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf << EOF
 # This file is automatically generated and managed by
-# /opt/lucee/sys/upgrade-in-progress/configure-sites.sh
+# ${UPG_DIR}/configure-sites.sh
 # Any manual changes will be overwritten when the script runs
-Include /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf
+Include ${UPG_DIR}/lucee-detect-upgrade.conf
 EOF
 		# Also create non-SSL userdata include
 		# Backup existing userdata file before overwriting (mirrored under BACKUP_ROOT)
 		backup_file ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf
 		cat > ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf << EOF
 # This file is automatically generated and managed by
-# /opt/lucee/sys/upgrade-in-progress/configure-sites.sh
+# ${UPG_DIR}/configure-sites.sh
 # Any manual changes will be overwritten when the script runs
-Include /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf
+Include ${UPG_DIR}/lucee-detect-upgrade.conf
 EOF
 	fi
 }
