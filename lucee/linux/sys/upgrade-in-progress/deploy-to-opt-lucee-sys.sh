@@ -19,6 +19,7 @@ FILES=(
 	"upgrade-in-progress.html"
 	"lucee-404-routing.conf"
 	"lucee-detect-upgrade.conf"
+	"lucee-ajp-and-mod_cfml.conf"
 	"lucee-upgrade-in-progress.conf"
 )
 

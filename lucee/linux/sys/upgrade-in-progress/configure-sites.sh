@@ -49,6 +49,85 @@ apache_config_test() {
 	fi
 }
 
+# Resolve Tomcat server.xml path
+resolve_server_xml() {
+	if [ -n "$TOMCAT_SERVER_XML" ] && [ -f "$TOMCAT_SERVER_XML" ]; then
+		echo "$TOMCAT_SERVER_XML"
+		return
+	fi
+	# common defaults
+	for p in \
+		"/opt/lucee/tomcat/conf/server.xml" \
+		"/opt/lucee/tomcat*/conf/server.xml" \
+		"/etc/tomcat*/server.xml"; do
+		for f in $p; do
+			[ -f "$f" ] && { echo "$f"; return; }
+		done
+	done
+	echo "" # not found
+}
+
+# Parse AJP port/secret and mod_cfml shared key from server.xml
+parse_server_xml() {
+	local sx="$1"
+	AJP_PORT="8009" # default fallback
+	AJP_SECRET=""
+	MODCFML_SHARED_KEY=""
+	if [ -f "$sx" ]; then
+		# AJP Connector line
+		local ajp_line
+		ajp_line=$(grep -i "<Connector" "$sx" | grep -i "ajp" | head -n1 || true)
+		if [ -n "$ajp_line" ]; then
+			AJP_PORT=$(echo "$ajp_line" | sed -n 's/.*port="\([0-9]\{2,5\}\)".*/\1/p')
+			AJP_SECRET=$(echo "$ajp_line" | sed -n 's/.*secret="\([^"]\+\)".*/\1/p')
+		fi
+		# mod_cfml Valve line
+		local vline
+		vline=$(grep -i "<Valve" "$sx" | grep -i "mod_cfml" | head -n1 || true)
+		if [ -n "$vline" ]; then
+			MODCFML_SHARED_KEY=$(echo "$vline" | sed -n 's/.*sharedKey="\([^"]\+\)".*/\1/p')
+			if [ -z "$MODCFML_SHARED_KEY" ]; then
+				MODCFML_SHARED_KEY=$(echo "$vline" | sed -n 's/.*secret="\([^"]\+\)".*/\1/p')
+			fi
+		fi
+	fi
+}
+
+# Render the AJP+mod_cfml template into a destination file
+render_ajp_template() {
+	local dest="$1"
+	local tmpl="/opt/lucee/sys/upgrade-in-progress/lucee-ajp-and-mod_cfml.conf"
+	if [ ! -f "$tmpl" ]; then
+		echo "Warning: Template not found: $tmpl"
+		return 1
+	fi
+	local sx
+	sx=$(resolve_server_xml)
+	parse_server_xml "$sx"
+	# build replacement values
+	local port="$AJP_PORT"
+	local ajpsec="$AJP_SECRET"
+	local shared="$MODCFML_SHARED_KEY"
+	# escape for sed
+	local esc_ajpsec esc_shared
+	esc_ajpsec=$(printf '%s' "$ajpsec" | sed -e 's/[\&/]/\\&/g')
+	esc_shared=$(printf '%s' "$shared" | sed -e 's/[\&/]/\\&/g')
+	# substitute: port 8009 -> actual port; secrets replace REDACTED
+	sed \
+		-e "s#ajp://127.0.0.1:8009/#ajp://127.0.0.1:${port}/#g" \
+		-e "s#secret=REDACTED#secret=${esc_ajpsec}#g" \
+		-e "s#ModCFML_SharedKey \"REDACTED\"#ModCFML_SharedKey \"${esc_shared}\"#g" \
+		"$tmpl" > "$dest"
+	chmod 644 "$dest"
+	# Post-render warnings
+	if [ -z "$ajpsec" ]; then
+		echo "Warning: AJP secret not found in server.xml (${sx:-unknown}). You should set an AJP secret and update Apache accordingly."
+	fi
+	if [ -z "$shared" ]; then
+		echo "Warning: mod_cfml shared key not found in server.xml (${sx:-unknown}). You should set ModCFML_SharedKey consistently."
+	fi
+}
+
 # Ensure global Apache confs exist and are set to normal-state defaults
 # Normal state: AJP/mod_cfml enabled; upgrade flag disabled
 ensure_global_confs() {
@@ -59,6 +138,11 @@ ensure_global_confs() {
 		if [ -f "$opt_file" ] && [ ! -f "${conf_avail}/lucee-upgrade-in-progress.conf" ]; then
 			echo "Installing global lucee-upgrade-in-progress.conf into ${conf_avail}/"
 			cp -f "$opt_file" "${conf_avail}/lucee-upgrade-in-progress.conf"
+		fi
+		# Ensure AJP+mod_cfml global conf exists (generate from template if missing)
+		if [ ! -f "${conf_avail}/lucee-ajp-and-mod_cfml.conf" ]; then
+			echo "Generating global lucee-ajp-and-mod_cfml.conf in ${conf_avail}/ from template via server.xml"
+			render_ajp_template "${conf_avail}/lucee-ajp-and-mod_cfml.conf" || true
 		fi
 		# Ensure upgrade flag is disabled by default
 		a2disconf lucee-upgrade-in-progress >/dev/null 2>&1 || true
@@ -91,6 +175,11 @@ ensure_global_confs() {
 		if [ -f "$opt_file" ] && [ ! -f "${confd}/lucee-upgrade-in-progress.disabled" ] && [ ! -f "${confd}/lucee-upgrade-in-progress.conf" ]; then
 			echo "Installing global lucee-upgrade-in-progress.disabled into ${confd}/"
 			cp -f "$opt_file" "${confd}/lucee-upgrade-in-progress.disabled"
+		fi
+		# Ensure AJP+mod_cfml global conf exists (generate from template if missing)
+		if [ ! -f "${confd}/lucee-ajp-and-mod_cfml.conf" ] && [ ! -f "${confd}/lucee-ajp-and-mod_cfml.conf.disabled" ]; then
+			echo "Generating global ${confd}/lucee-ajp-and-mod_cfml.conf from template via server.xml (enabled in normal state)"
+			render_ajp_template "${confd}/lucee-ajp-and-mod_cfml.conf" || true
 		fi
 		# Ensure normal state: upgrade flag disabled
 		if [ -f "${confd}/lucee-upgrade-in-progress.conf" ]; then

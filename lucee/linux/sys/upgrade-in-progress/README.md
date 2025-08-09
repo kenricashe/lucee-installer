@@ -87,6 +87,22 @@ If needed, consult Apache documentation for full details on how to enable the `.
 
 Note: The examples herein include .cfc as that is the Lucee installer's default config, but for maximum security you may prefer to exclude .cfc in all of your Apache configs.
 
+### AJP/mod_cfml template and auto-population
+
+- A template file `lucee-ajp-and-mod_cfml.conf` is included in this package at:
+  - `/opt/lucee/sys/upgrade-in-progress/lucee-ajp-and-mod_cfml.conf`
+- `configure-sites.sh` will auto-generate the active global AJP config by reading Tomcat's `server.xml` to fill in:
+  - AJP port (replacing `ajp://127.0.0.1:8009/`)
+  - AJP secret (replacing `secret=REDACTED`)
+  - `ModCFML_SharedKey` (replacing `REDACTED`)
+- Default `server.xml` search paths:
+  - `/opt/lucee/tomcat/conf/server.xml`, `/opt/lucee/tomcat*/conf/server.xml`, `/etc/tomcat*/server.xml`
+- Override via environment variable before running: `export TOMCAT_SERVER_XML=/custom/path/server.xml`
+- The generated active file is written into the appropriate global Apache directory alongside `lucee-upgrade-in-progress`:
+  - Debian/Ubuntu: `/etc/apache2/conf-available/lucee-ajp-and-mod_cfml.conf`
+  - RHEL/Alma/CentOS (non‑cPanel): `/etc/httpd/conf.d/lucee-ajp-and-mod_cfml.conf`
+  - cPanel: `/etc/apache2/conf.d/lucee-ajp-and-mod_cfml.conf`
+
 ## Example `lucee-404-routing.conf`:
 
 ```apache
@@ -204,6 +220,7 @@ For QA testing after the upgrade, you can exclude one of your sites from the lis
   - Debian/Ubuntu: installs to `conf-available` if missing, leaves upgrade flag disabled, ensures AJP/mod_cfml enabled if present.
   - RHEL non‑cPanel and cPanel: ensures `.disabled` exists in `conf.d`, disables active upgrade flag if present, ensures AJP/mod_cfml enabled.
 - `configure-sites.sh` warns if AJP proxying is not detected in the global Apache configuration.
+- `configure-sites.sh` auto-generates `lucee-ajp-and-mod_cfml.conf` in the global Apache directory from the template in `/opt/lucee/sys/upgrade-in-progress/` by parsing Tomcat's `server.xml`. Override with `TOMCAT_SERVER_XML` env var if needed.
 - `configure-sites.sh` injects per-VirtualHost includes pointing to:
   - `/opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf`
   - `/opt/lucee/sys/upgrade-in-progress/lucee-404-routing.conf` (root sites only)
