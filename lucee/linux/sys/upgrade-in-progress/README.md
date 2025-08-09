@@ -1,27 +1,27 @@
 # "Upgrade in Progress" for Lucee + Apache
 
-Web-based status notifications during Lucee upgrades are a Catch-22 because Lucee itself is not running during the upgrade, which results in an ugly "503 Service Unavailable" error. ARGH WAIT A MINUTE THAT CAN BE CUSTOMIZED!!!
+Web-based status notifications during Lucee upgrades are a Catch-22 because Lucee itself is not running during the upgrade, which results in an ugly "503 Service Unavailable" error. `ErrorDocument 503` can be defined to make that error page more user-friendly, but that page is only displayed when Lucee is not running.
 
-But what if you could easily configure Apache to temporarily display static HTML for every .cf* request? Well ... now you can!
+In actual practice it's safest to keep displaying the "Upgrade in Progress" notification not just until after the upgrade is complete, but more importantly until *thorough QA testing* has been completed. (For instructions see below.)
 
-The bash shell script `upgrade-in-progress.sh` is used to begin and end the display of an "Upgrade in Progress" notification for every Lucee request of *every website on your server* that has been configured for this flip-a-switch style automation (see VirtualHost config below).
+If your Lucee scripts are proxied from Apache through AJP/Tomcat (a very common configuration), this package is for you!
+
+The bash shell scripts, Apache configuration files, and a status page template are deployed into `/opt/lucee/sys/upgrade-in-progress/` to begin and end the display of an "Upgrade in Progress" notification in response to Lucee requests for *every website on your server* that has been configured for this flip-a-switch style automation (see VirtualHost config below).
 
 There are even optional scripts to automatically generate the editable list of sites to be configured, and to apply those configurations.
 
-And the user's original requested URL does not change! That way the upgrade status can be shown without redirecting to a different page.
-
-And finally, JavaScript is used to automatically refresh the page when it detects (via fetch) that the upgrade is complete!
+And finally, from the end user's perspective, their original requested URL does not change. That way the upgrade status can be shown without redirecting to a different page. The user will see the notice of how the page will automatically refresh when the upgrade is complete! (That is implemented via JavaScript fetch.)
 
 ## Typical upgrade command sequence:
 
 ```bash
-$ sudo /opt/lucee/sys/upgrade-in-progress.sh begin
+$ sudo /opt/lucee/sys/upgrade-in-progress/upgrade-in-progress.sh begin
 Enabling lucee-upgrade-in-progress configuration...
 Disabling lucee-ajp-and-mod_cfml configuration...
 Restarting Apache...
 DONE!
 
-$ sudo /opt/lucee/sys/upgrade-in-progress.sh end
+$ sudo /opt/lucee/sys/upgrade-in-progress/upgrade-in-progress.sh end
 Enabling lucee-ajp-and-mod_cfml configuration...
 Disabling lucee-upgrade-in-progress configuration...
 Restarting Apache...
@@ -157,4 +157,5 @@ window.addEventListener('DOMContentLoaded', function() {
 
 ## Post-Upgrade Testing
 
-If you have a test site where security is not a concern, you can exclude the RewriteRule for that one and then test that site to ensure Lucee is working before ending the Upgrade in Progress display.
+For QA testing after the upgrade, you can exclude one of your sites from the list of sites that will be disabled, simply by editing the `/opt/lucee/sys/upgrade-in-progress/sites-configured.txt` file. Be sure to not provide any public links to that QA site. You may also want to disable it when you are done QA testing.
+**

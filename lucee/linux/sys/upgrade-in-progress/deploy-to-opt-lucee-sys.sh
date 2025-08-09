@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# chmod +x /path/to/this/script/deploy-upgrade-in-progress-to-opt-lucee-sys.sh
-# sudo /path/to/this/script/deploy-upgrade-in-progress-to-opt-lucee-sys.sh
+# chmod +x /path/to/this/script/deploy-to-opt-lucee-sys.sh
+# sudo /path/to/this/script/deploy-to-opt-lucee-sys.sh
 
 # require root
 if [ "$(id -u)" != "0" ]; then
@@ -12,16 +12,19 @@ fi
 THISPATH=$(dirname "$0")
 
 FILES=(
-	"get-lucee-sites-for-upgrade-in-progress.sh"
-	"configure-sites-for-upgrade-in-progress.sh"
+	"get-lucee-sites.sh"
+	"configure-sites.sh"
 	"upgrade-in-progress.sh"
+	"begin.sh"
+	"end.sh"
 	"upgrade-in-progress.html"
 	"lucee-404-routing.conf"
 	"lucee-detect-upgrade.conf"
 )
 
-# Create apache-configs directory
+# Create required directories
 mkdir -p /opt/lucee/sys/apache-configs
+mkdir -p /opt/lucee/sys/upgrade-in-progress
 
 function copy_and_chmod() {
 	if [[ "$1" == *.conf ]]; then
@@ -29,9 +32,9 @@ function copy_and_chmod() {
 		cp ${THISPATH}/$1 /opt/lucee/sys/apache-configs/$1
 		chmod 644 /opt/lucee/sys/apache-configs/$1
 	else
-		# Copy other files to main sys directory
-		cp ${THISPATH}/$1 /opt/lucee/sys/$1
-		chmod +x /opt/lucee/sys/$1
+		# Copy other files to upgrade-in-progress directory
+		cp ${THISPATH}/$1 /opt/lucee/sys/upgrade-in-progress/$1
+		chmod +x /opt/lucee/sys/upgrade-in-progress/$1
 	fi
 }
 

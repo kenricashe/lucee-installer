@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# sudo /opt/lucee/sys/get-lucee-sites-for-upgrade-in-progress.sh
+# sudo /opt/lucee/sys/upgrade-in-progress/get-lucee-sites.sh
 
 # require root
 if [ "$(id -u)" != "0" ]; then
@@ -8,8 +8,8 @@ if [ "$(id -u)" != "0" ]; then
 	exit 1
 fi
 
-TXTPATH_ALL_DATA="/opt/lucee/sys/sites-configured-for-upgrade-in-progress.txt"
-TXTPATH_ONLY_DOMAINS="/opt/lucee/sys/active-domains-from-get-lucee-sites-for-upgrade-in-progress.txt"
+TXTPATH_ALL_DATA="/opt/lucee/sys/upgrade-in-progress/sites-configured.txt"
+TXTPATH_ONLY_DOMAINS="/opt/lucee/sys/upgrade-in-progress/active-domains.txt"
 
 # Function to get domains from Debian/Ubuntu systems
 get_domains_debian() {
@@ -150,7 +150,7 @@ save_results() {
 	echo ""
 	echo "Then run:"
 	echo ""
-	echo "sudo /opt/lucee/sys/configure-sites-for-upgrade-in-progress.sh"
+	echo "sudo /opt/lucee/sys/upgrade-in-progress/configure-sites.sh"
 	echo ""
 	echo "A domains-only file was also saved as:"
 	echo ""
