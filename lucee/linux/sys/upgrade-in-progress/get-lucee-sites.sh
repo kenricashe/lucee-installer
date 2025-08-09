@@ -11,6 +11,15 @@ fi
 TXTPATH_ALL_DATA="/opt/lucee/sys/upgrade-in-progress/sites-configured.txt"
 TXTPATH_ONLY_DOMAINS="/opt/lucee/sys/upgrade-in-progress/active-domains.txt"
 
+# Detect cPanel and set RedHat httpd.conf path
+if [ -f "/usr/local/cpanel/cpanel" ]; then
+	IS_CPANEL=true
+	RHEL_HTTPD_CONF="/etc/apache2/conf/httpd.conf"
+else
+	IS_CPANEL=false
+	RHEL_HTTPD_CONF="/etc/httpd/conf/httpd.conf"
+fi
+
 # Function to get domains from Debian/Ubuntu systems
 get_domains_debian() {
 	# Get list of domains from enabled sites
@@ -33,7 +42,7 @@ get_docroot_debian() {
 
 # Function to get domains from RedHat/CentOS systems
 get_domains_redhat() {
-	grep -i 'ServerName' /etc/apache2/conf/httpd.conf | awk '{print $2}' | 
+	grep -i 'ServerName' "$RHEL_HTTPD_CONF" | awk '{print $2}' | 
 	grep -vE '^(cpanel|webmail|whm|mail|webdisk|default|bounce|_wildcard_|proxy-subdomains-vhost|acpaneltest|mta1|news)(\.|$)' | 
 	sort -u
 }
@@ -41,7 +50,7 @@ get_domains_redhat() {
 # Function to get DocumentRoot for a domain on RedHat/CentOS systems
 get_docroot_redhat() {
 	local domain=$1
-	grep -A 10 -B 5 "ServerName $domain" /etc/apache2/conf/httpd.conf | grep -i "DocumentRoot" | awk '{print $2}' | head -1
+	grep -A 10 -B 5 "ServerName $domain" "$RHEL_HTTPD_CONF" | grep -i "DocumentRoot" | awk '{print $2}' | head -1
 }
 
 # Function to analyze sites and categorize them
@@ -72,8 +81,8 @@ analyze_sites() {
 		
 		echo "  DocumentRoot: $docroot"
 		
-		# Check for index.cfm or Application.cf* in DocumentRoot or any subfolder
-		index_files=$(find "$docroot" -name "index.cfm" -o -name "Application.cfm" -o -name "Application.cfc" 2>/dev/null)
+		# Check for index.cfm or Application.cf* in DocumentRoot only (not subfolders)
+		index_files=$(find "$docroot" -maxdepth 1 -type f \( -iname "index.cfm" -o -iname "Application.cfm" -o -iname "Application.cfc" \) 2>/dev/null)
 		if [ -n "$index_files" ]; then
 			echo "  ✓ Found index.cfm or Application.cf*"
 			sites_with_index_cfm+=("$domain")

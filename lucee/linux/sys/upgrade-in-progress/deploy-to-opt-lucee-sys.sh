@@ -14,7 +14,6 @@ THISPATH=$(dirname "$0")
 FILES=(
 	"get-lucee-sites.sh"
 	"configure-sites.sh"
-	"upgrade-in-progress.sh"
 	"begin.sh"
 	"end.sh"
 	"upgrade-in-progress.html"
@@ -23,18 +22,16 @@ FILES=(
 )
 
 # Create required directories
-mkdir -p /opt/lucee/sys/apache-configs
 mkdir -p /opt/lucee/sys/upgrade-in-progress
 
 function copy_and_chmod() {
-	if [[ "$1" == *.conf ]]; then
-		# Copy .conf files to apache-configs directory
-		cp ${THISPATH}/$1 /opt/lucee/sys/apache-configs/$1
-		chmod 644 /opt/lucee/sys/apache-configs/$1
+	local src="${THISPATH}/$1"
+	local dst="/opt/lucee/sys/upgrade-in-progress/$1"
+	cp "$src" "$dst"
+	if [[ "$1" == *.sh ]]; then
+		chmod +x "$dst"
 	else
-		# Copy other files to upgrade-in-progress directory
-		cp ${THISPATH}/$1 /opt/lucee/sys/upgrade-in-progress/$1
-		chmod +x /opt/lucee/sys/upgrade-in-progress/$1
+		chmod 644 "$dst"
 	fi
 }
 
