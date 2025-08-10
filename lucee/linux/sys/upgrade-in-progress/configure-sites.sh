@@ -99,6 +99,40 @@ backup_file() {
 	cp -f "$src" "$dest"
 }
 
+# Inline legacy Include lines that reference lucee-404-routing.conf by replacing
+# the Include line with the contents of the referenced file. If the referenced
+# file is missing, the Include line is removed and a comment is left.
+inline_legacy_include() {
+	local target_file="$1"
+	[ -f "$target_file" ] || return 0
+	local tmp
+	tmp=$(mktemp)
+	local changed=false
+	while IFS= read -r line; do
+		if echo "$line" | grep -qE '^[[:space:]]*Include(Optional)?[[:space:]]+.*lucee-404-routing\.conf([[:space:]]|$)'; then
+			# Extract the included path (handles quoted and unquoted, strips trailing comments)
+			local inc_path
+			inc_path=$(echo "$line" | awk '{ for (i=2;i<=NF;i++){ gsub(/^"|"$/,"",$i); if ($i ~ /lucee-404-routing\.conf$/){ print $i; exit } } }')
+			if [ -n "$inc_path" ] && [ -f "$inc_path" ]; then
+				echo "# Begin inlined legacy: $inc_path" >> "$tmp"
+				cat "$inc_path" >> "$tmp"
+				echo "# End inlined legacy" >> "$tmp"
+				changed=true
+			else
+				echo "# Removed legacy Include (missing $inc_path)" >> "$tmp"
+				changed=true
+			fi
+		else
+			echo "$line" >> "$tmp"
+		fi
+	done < "$target_file"
+	if [ "$changed" = true ]; then
+		mv -f "$tmp" "$target_file"
+	else
+		rm -f "$tmp"
+	fi
+}
+
 # Extract the first matching ErrorDocument 404 *.cf* line and its contiguous preceding comments
 # Prints the block to stdout; returns non-zero if not found
 extract_404_block() {
@@ -439,9 +473,9 @@ configure_site_debian() {
 		# Backup before editing (mirrored under BACKUP_ROOT)
 		backup_file "$ssl_conf_file"
 		
-		# Remove any existing Lucee upgrade includes and legacy 404 include
+		# Remove any existing Lucee upgrade include; inline legacy 404 include if present
 		sed -i '/Include.*lucee-detect-upgrade.conf/d' "$ssl_conf_file"
-		sed -i '/Include.*lucee-404-routing.conf/d' "$ssl_conf_file"
+		inline_legacy_include "$ssl_conf_file"
 		# If site has a local 404 in this vhost, capture then remove it
 		local ssl_404_block=""
 		if echo "" | grep -q ""; then :; fi # keep shellcheck quiet about local before use
@@ -485,9 +519,9 @@ configure_site_debian() {
 		echo "  Updating $http_conf_file"
 		# Backup before editing (mirrored under BACKUP_ROOT)
 		backup_file "$http_conf_file"
-		# Remove any existing Lucee upgrade includes and legacy 404 include
+		# Remove any existing Lucee upgrade include; inline legacy 404 include if present
 		sed -i '/Include.*lucee-detect-upgrade.conf/d' "$http_conf_file"
-		sed -i '/Include.*lucee-404-routing.conf/d' "$http_conf_file"
+		inline_legacy_include "$http_conf_file"
 		# Capture then remove local 404 in this vhost, if any
 		local http_404_block=""
 		http_404_block=$(extract_404_block "$http_conf_file" || true)
@@ -549,7 +583,7 @@ configure_site_cpanel() {
 	# Create userdata directory
 	mkdir -p ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}
 	mkdir -p ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}
-	
+
 	# Prepare a 404 block from existing userdata or .htaccess if site had one previously
 	local cp_404_block=""
 	if [ "$site_type" = "with404" ]; then
