@@ -36,7 +36,7 @@ if [ ! -f "$UPG_HTML" ]; then
 fi
 
 # Use [.] instead of \. to avoid awk treating "\." as an escape in string constants
-ERROR404_REGEX='^[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+/[^[:space:]]*[.](cfm|cfml|cfc|cfs)([^[:alnum:]_]|$)'
+LUCEE404_REGEX='^[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+/[^[:space:]]*[.](cfm|cfml|cfc|cfs)([^[:alnum:]_]|$)'
 # Any ErrorDocument 404 (any target), for precedence checks and comment-all behavior
 ANY404_REGEX='^[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+'
 
@@ -81,7 +81,7 @@ apache_config_test() {
 extract_404_block_allow_commented() {
 	local file="$1"
 	[ -f "$file" ] || return 1
-	awk -v IGNORECASE=1 -v pat="$ERROR404_REGEX" '
+	awk -v IGNORECASE=1 -v pat="$LUCEE404_REGEX" '
 		{ lines[++n]=$0 }
 		# match active or commented ErrorDocument 404 *.cf*
 		$0 ~ /^[\t ]*#?[\t ]*ErrorDocument[\t ]+404[\t ]+/ && $0 ~ pat { ln=n }
@@ -215,7 +215,7 @@ inline_legacy_include() {
 extract_404_block() {
 	local file="$1"
 	[ -f "$file" ] || return 1
-	awk -v IGNORECASE=1 -v pat="$ERROR404_REGEX" '
+	awk -v IGNORECASE=1 -v pat="$LUCEE404_REGEX" '
 		{ lines[++n]=$0 }
 		$0 ~ pat { ln=n }
 		END {
@@ -238,7 +238,7 @@ remove_404_block() {
 	base=$(basename "$file")
 	if [ "$base" = ".htaccess" ]; then
 		# In .htaccess: comment out ALL ErrorDocument 404 lines with a note; migration uses the last via extract_404_block()
-		awk -v IGNORECASE=1 -v pat="$ERROR404_REGEX" -v note="# NOTE: ErrorDocument 404 moved by /opt/lucee/sys/upgrade-in-progress/configure-apache.sh into Apache vhost/userdata and disabled during upgrades. See per-site Include to /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf" '
+		awk -v IGNORECASE=1 -v pat="$LUCEE404_REGEX" -v note="# NOTE: ErrorDocument 404 moved by /opt/lucee/sys/upgrade-in-progress/configure-apache.sh into Apache vhost/userdata and disabled during upgrades. See per-site Include to /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf" '
 			{ lines[++n]=$0 }
 			END {
 				for (i=1;i<=n;i++) {
@@ -257,7 +257,7 @@ remove_404_block() {
 		' "$file" > "$tmp"
 	else
 		# In vhost/userdata files: comment out ALL ErrorDocument 404 lines with a note
-		awk -v IGNORECASE=1 -v pat="$ERROR404_REGEX" -v note="# NOTE: ErrorDocument 404 disabled/commented by /opt/lucee/sys/upgrade-in-progress/configure-apache.sh (managed inline and wrapped in vhost/userdata)." '
+		awk -v IGNORECASE=1 -v pat="$LUCEE404_REGEX" -v note="# NOTE: ErrorDocument 404 disabled/commented by /opt/lucee/sys/upgrade-in-progress/configure-apache.sh (managed inline and wrapped in vhost/userdata)." '
 			{ lines[++n]=$0 }
 			END {
 				for (i=1;i<=n;i++) {
