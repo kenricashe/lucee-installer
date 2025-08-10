@@ -160,7 +160,7 @@ remove_404_block() {
 	base=$(basename "$file")
 	if [ "$base" = ".htaccess" ]; then
 		# In .htaccess: comment out ALL ErrorDocument 404 lines with a note; migration uses the last via extract_404_block()
-		awk -v IGNORECASE=1 -v pat="$ERROR404_REGEX" -v note="# NOTE: ErrorDocument 404 moved by configure-sites.sh into Apache vhost/userdata and disabled during upgrades. See per-site Include to /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf" '
+		awk -v IGNORECASE=1 -v pat="$ERROR404_REGEX" -v note="# NOTE: ErrorDocument 404 moved by /opt/lucee/sys/upgrade-in-progress/configure-sites.sh into Apache vhost/userdata and disabled during upgrades. See per-site Include to /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf" '
 			{ lines[++n]=$0 }
 			END {
 				for (i=1;i<=n;i++) {
@@ -179,7 +179,7 @@ remove_404_block() {
 		' "$file" > "$tmp"
 	else
 		# In vhost/userdata files: comment out ALL ErrorDocument 404 lines with a note
-		awk -v IGNORECASE=1 -v pat="$ERROR404_REGEX" -v note="# NOTE: ErrorDocument 404 disabled/commented by configure-sites.sh (managed inline and wrapped in vhost/userdata)." '
+		awk -v IGNORECASE=1 -v pat="$ERROR404_REGEX" -v note="# NOTE: ErrorDocument 404 disabled/commented by /opt/lucee/sys/upgrade-in-progress/configure-sites.sh (managed inline and wrapped in vhost/userdata)." '
 			{ lines[++n]=$0 }
 			END {
 				for (i=1;i<=n;i++) {
