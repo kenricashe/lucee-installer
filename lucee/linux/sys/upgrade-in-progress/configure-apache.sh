@@ -632,22 +632,38 @@ configure_site_debian() {
 	
 	if [ -f "$ssl_conf_file" ]; then
 		echo "  Updating $ssl_conf_file"
-		# Backup before editing (mirrored under BACKUP_ROOT)
-		backup_file "$ssl_conf_file"
-		
-		# Remove any existing Lucee upgrade include; inline legacy 404 include if present
-		sed -i '/Include.*lucee-detect-upgrade.conf/d' "$ssl_conf_file"
-		inline_legacy_include "$ssl_conf_file"
-		# Skip re-wrapping if a wrapped 404 already exists
+		# Determine current state before deciding to edit
 		local ssl_404_block=""
 		local ssl_from_htaccess="false"
 		local ssl_has_wrapped="false"
+		local ssl_include_present="false"
+		local ssl_needs_wrapper="false"
+		if grep -q 'Include /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf' "$ssl_conf_file"; then
+			ssl_include_present="true"
+		fi
 		if has_wrapped_404_block "$ssl_conf_file"; then
+			ssl_has_wrapped="true"
+		fi
+		# Decide if this vhost actually needs a wrapped 404
+		if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
+			ssl_needs_wrapper="true"
+		fi
+		if [ "$ssl_needs_wrapper" != "true" ] && last_404_is_cf "$ssl_conf_file"; then
+			ssl_needs_wrapper="true"
+		fi
+		if [ "$ssl_needs_wrapper" != "true" ] && [ -f "$docroot/.htaccess" ] && grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
+			ssl_needs_wrapper="true"
+		fi
+		# If both wrapped block and Include already present, leave file untouched (idempotent)
+		if [ "$ssl_include_present" = "true" ] && { [ "$ssl_has_wrapped" = "true" ] || [ "$ssl_needs_wrapper" != "true" ]; }; then
 			echo "  Existing wrapped 404 block detected in SSL vhost; leaving as-is"
 			# Extract it so HTTP vhost can reuse if needed
 			ssl_404_block=$(extract_404_block "$ssl_conf_file" || true)
-			ssl_has_wrapped="true"
 		else
+			# We will modify the file; make a backup (mirrored under BACKUP_ROOT)
+			backup_file "$ssl_conf_file"
+			# Inline legacy 404 Include, if present
+			inline_legacy_include "$ssl_conf_file"
 			# Prefer .htaccess (more specific) over vhost for effective 404
 			if echo "" | grep -q ""; then :; fi # keep shellcheck quiet about local before use
 			if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
@@ -682,14 +698,7 @@ configure_site_debian() {
 					comment_all_404_lines "$ssl_conf_file"
 				fi
 			fi
-		fi
-		
-		# Replace all whitespace just before closing </VirtualHost> with '\n\n'
-		sed -i ':a;N;$!ba;s/\n[[:space:]]*\n*[[:space:]]*<\/VirtualHost>/\n\n<\/VirtualHost>/' "$ssl_conf_file"
-
-		# Always include global detect config
-		sed -i "s|</VirtualHost>|\tInclude /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf\\n\\n</VirtualHost>|" "$ssl_conf_file"
-		# If we have a 404 block and no existing wrapped block, insert it wrapped into the matching vhost for this domain
+			# If we have a 404 block and no existing wrapped block, insert it wrapped into the matching vhost for this domain
 			if [ -n "$ssl_404_block" ] && [ "$ssl_has_wrapped" != "true" ]; then
 				if insert_wrapped_block_before_vhost_close "$ssl_conf_file" "$ssl_404_block" "$domain"; then
 					# Only now, after confirmed insert, comment .htaccess if it was the source and not already commented with our note
@@ -699,6 +708,11 @@ configure_site_debian() {
 					fi
 				fi
 			fi
+			# Ensure Include is present; insert only if missing (do not reorder if already present)
+			if [ "$ssl_include_present" != "true" ]; then
+				sed -i "s|</VirtualHost>|\tInclude /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf\\n\\n</VirtualHost>|" "$ssl_conf_file"
+			fi
+		fi
 	else
 		echo "  Warning: Could not find SSL configuration file for $domain"
 	fi
@@ -713,17 +727,35 @@ configure_site_debian() {
 
 	if [ -f "$http_conf_file" ]; then
 		echo "  Updating $http_conf_file"
-		# Backup before editing (mirrored under BACKUP_ROOT)
-		backup_file "$http_conf_file"
-		# Remove any existing Lucee upgrade include; inline legacy 404 include if present
-		sed -i '/Include.*lucee-detect-upgrade.conf/d' "$http_conf_file"
-		inline_legacy_include "$http_conf_file"
-		# Skip re-wrapping if a wrapped 404 already exists
+		# Determine current state before deciding to edit
 		local http_404_block=""
 		local http_from_htaccess="false"
+		local http_include_present="false"
+		local http_has_wrapped="false"
+		local http_needs_wrapper="false"
+		if grep -q 'Include /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf' "$http_conf_file"; then
+			http_include_present="true"
+		fi
 		if has_wrapped_404_block "$http_conf_file"; then
+			http_has_wrapped="true"
+		fi
+		# Decide if this vhost actually needs a wrapped 404
+		if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
+			http_needs_wrapper="true"
+		fi
+		if [ "$http_needs_wrapper" != "true" ] && last_404_is_cf "$http_conf_file"; then
+			http_needs_wrapper="true"
+		fi
+		if [ "$http_needs_wrapper" != "true" ] && [ -f "$docroot/.htaccess" ] && grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
+			http_needs_wrapper="true"
+		fi
+		if [ "$http_include_present" = "true" ] && { [ "$http_has_wrapped" = "true" ] || [ "$http_needs_wrapper" != "true" ]; }; then
 			echo "  Existing wrapped 404 block detected in HTTP vhost; leaving as-is"
 		else
+			# We will modify the file; make a backup (mirrored under BACKUP_ROOT)
+			backup_file "$http_conf_file"
+			# Inline legacy 404 Include, if present
+			inline_legacy_include "$http_conf_file"
 			# Prefer .htaccess (more specific) over vhost for effective 404
 			if echo "" | grep -q ""; then :; fi # keep shellcheck quiet about local before use
 			if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
@@ -757,7 +789,6 @@ configure_site_debian() {
 					comment_all_404_lines "$http_conf_file"
 				fi
 			fi
-		fi
 			# If we prepared a 404 block in this branch, insert it now (before fallback logic)
 			if [ -n "$http_404_block" ]; then
 				if insert_wrapped_block_before_vhost_close "$http_conf_file" "$http_404_block" "$domain"; then
@@ -767,11 +798,11 @@ configure_site_debian() {
 					fi
 				fi
 			fi
-		# keep processing inside HTTP vhost block
-		# Normalize whitespace before </VirtualHost>
-		sed -i ':a;N;$!ba;s/\n[[:space:]]*\n*[[:space:]]*<\/VirtualHost>/\n\n<\/VirtualHost>/' "$http_conf_file"
-		# Always include global detect config
-		sed -i "s|</VirtualHost>|\tInclude /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf\\n\\n</VirtualHost>|" "$http_conf_file"
+			# Ensure Include is present; insert only if missing (do not reorder if already present)
+			if [ "$http_include_present" != "true" ]; then
+				sed -i "s|</VirtualHost>|\tInclude /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf\\n\\n</VirtualHost>|" "$http_conf_file"
+			fi
+		fi
 		# Best-effort warning if HTTP VirtualHost may not redirect to HTTPS
 		if ! grep -Eiq '(Redirect(\s+(permanent|temp|301|302))?\s+/?\s+https?://|RewriteRule\s+.*https://)' "$http_conf_file"; then
 			echo "  Warning: HTTP vhost for $domain may not redirect to HTTPS. Ensure a proper 80->443 redirect is configured to avoid exposure over HTTP."
