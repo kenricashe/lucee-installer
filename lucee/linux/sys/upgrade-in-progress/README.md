@@ -113,8 +113,13 @@ For sites that use a local ErrorDocument 404 pointing to a CFML handler (e.g., `
 
 - The existing `ErrorDocument 404` line targeting any `.cf*` file is wrapped in:
   - `<IfDefine !LUCEE_UPGRADE_IN_PROGRESS> ... </IfDefine>`
-- If the directive is located in `.htaccess`, it is migrated into the vhost/userdata file and removed from `.htaccess`, because `<IfDefine>` is not supported in `.htaccess`. Any contiguous preceding comments are preserved during migration.
+- If the directive is located in `.htaccess`, it is migrated into the vhost/userdata file and the original line in `.htaccess` is commented out with a note (since `<IfDefine>` is not supported in `.htaccess`). Any contiguous preceding comments are preserved during migration.
 - When upgrade mode is active, the wrapper prevents the local 404 from intercepting requests; Apache instead serves `upgrade-in-progress.html` via the per-site Include to `/opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf`.
+
+Note on precedence and normalization:
+- Only the last effective `ErrorDocument 404` is migrated (Apache treats the last one as effective).
+- All matching `ErrorDocument 404` lines in `.htaccess` are commented out with an explanatory note.
+- If `.htaccess` contains a 404, any pre-existing 404 handlers in vhost/userdata are also commented out as superseded; the wrapped block inserted by this script becomes authoritative.
 
 ## Example `lucee-upgrade-in-progress.conf`:
 
@@ -217,7 +222,7 @@ For QA testing after the upgrade, you can exclude one of your sites from the lis
   
   Additional per-site handling:
   - For sites WITH a local `ErrorDocument 404` pointing to a `.cf*` target (with404): the directive is wrapped inline within the vhost/userdata under `<IfDefine !LUCEE_UPGRADE_IN_PROGRESS>`.
-  - For sites where the directive exists in `.htaccess`: it is migrated to the vhost/userdata (contiguous preceding comments preserved) and removed from `.htaccess`.
+  - For sites where the directive exists in `.htaccess`: it is migrated to the vhost/userdata (contiguous preceding comments preserved) and the original line in `.htaccess` is commented out with a note explaining the migration.
   - For sites WITHOUT such a directive (no404): only the per-site Include to `/opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf` is added; no local 404 is injected.
 - Debian/Ubuntu: updates both HTTPS vhosts (e.g., `domain-ssl.conf`) and HTTP vhosts (`domain.conf`) where present.
 - cPanel: writes userdata to BOTH trees, then rebuilds httpd config and gracefully restarts:
