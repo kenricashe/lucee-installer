@@ -21,19 +21,19 @@ fi
 SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd)"
 . "${SCRIPT_DIR}/get-env.sh"
 
-	# preflight: required files must exist at /opt path used by per-site Includes and docroot copy
-	DETECT_CONF="${UPG_DIR}/lucee-detect-upgrade.conf"
-	UPG_HTML="${UPG_DIR}/upgrade-in-progress.html"
-	if [ ! -f "$DETECT_CONF" ]; then
-		echo "Error: Required include not found: $DETECT_CONF"
-		echo "Run deploy-to-opt-lucee-sys.sh to deploy the package, then retry."
-		exit 1
-	fi
-	if [ ! -f "$UPG_HTML" ]; then
-		echo "Error: Required HTML not found: $UPG_HTML"
-		echo "Run deploy-to-opt-lucee-sys.sh to deploy the package, then retry."
-		exit 1
-	fi
+# preflight: required files must exist at /opt path used by per-site Includes and docroot copy
+DETECT_CONF="${UPG_DIR}/lucee-detect-upgrade.conf"
+UPG_HTML="${UPG_DIR}/upgrade-in-progress.html"
+if [ ! -f "$DETECT_CONF" ]; then
+	echo "Error: Required include not found: $DETECT_CONF"
+	echo "Run deploy-to-opt-lucee-sys.sh to deploy the package, then retry."
+	exit 1
+fi
+if [ ! -f "$UPG_HTML" ]; then
+	echo "Error: Required HTML not found: $UPG_HTML"
+	echo "Run deploy-to-opt-lucee-sys.sh to deploy the package, then retry."
+	exit 1
+fi
 
 # Use [.] instead of \. to avoid awk treating "\." as an escape in string constants
 ERROR404_REGEX='^[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+/[^[:space:]]*[.](cfm|cfml|cfc|cfs)([^[:alnum:]_]|$)'
