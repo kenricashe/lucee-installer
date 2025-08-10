@@ -46,7 +46,6 @@ UPG_DIR="${LUCEE_ROOT}/sys/upgrade-in-progress"
 		exit 1
 	fi
 
-ERROR404_LINE='ErrorDocument 404 /404.cfm?%{REQUEST_URI}&%{QUERY_STRING}'
 ERROR404_REGEX='^[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+/[^[:space:]]*\.(cfm|cfml|cfc|cfs)([^[:alnum:]_]|$)'
 
 SITES_FILE="${UPG_DIR}/sites-configured.txt"
@@ -437,7 +436,11 @@ configure_site_debian() {
 	local docroot=$2
 	local site_type=$3
 	
-	echo "Processing $domain ($site_type site) with DocumentRoot: $docroot"
+	if [ -n "$site_type" ]; then
+		echo "Processing $domain ($site_type site) with DocumentRoot: $docroot"
+	else
+		echo "Processing $domain with DocumentRoot: $docroot"
+	fi
 	
 	# Copy upgrade-in-progress.html to DocumentRoot
 	copy_upgrade_html "$docroot"
@@ -492,7 +495,7 @@ configure_site_debian() {
 		# Always include global detect config
 		sed -i "s|</VirtualHost>|\tInclude /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf\\n\\n</VirtualHost>|" "$ssl_conf_file"
 		# If we have a 404 block from this vhost or from .htaccess (handled below), insert it wrapped
-		if [ -z "$ssl_404_block" ] && [ "$site_type" = "with404" ] && [ -f "$docroot/.htaccess" ] && grep -qiE "$ERROR404_REGEX" "$docroot/.htaccess"; then
+		if [ -z "$ssl_404_block" ] && [ -f "$docroot/.htaccess" ] && grep -qiE "$ERROR404_REGEX" "$docroot/.htaccess"; then
 			ssl_404_block=$(extract_404_block "$docroot/.htaccess" || true)
 			if [ -n "$ssl_404_block" ]; then
 				echo "  Migrating 404 from .htaccess into SSL vhost"
@@ -534,8 +537,8 @@ configure_site_debian() {
 		sed -i ':a;N;$!ba;s/\n[[:space:]]*\n*[[:space:]]*<\/VirtualHost>/\n\n<\/VirtualHost>/' "$http_conf_file"
 		# Always include global detect config
 		sed -i "s|</VirtualHost>|\tInclude /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf\\n\\n</VirtualHost>|" "$http_conf_file"
-		# If no 404 came from HTTP vhost, and site_type says with404, try to reuse from SSL or pull from .htaccess
-		if [ -z "$http_404_block" ] && [ "$site_type" = "with404" ]; then
+		# If no 404 came from HTTP vhost, try to reuse from SSL or pull from .htaccess
+		if [ -z "$http_404_block" ]; then
 			if [ -n "$ssl_404_block" ]; then
 				http_404_block="$ssl_404_block"
 			elif [ -f "$docroot/.htaccess" ] && grep -qiE "$ERROR404_REGEX" "$docroot/.htaccess"; then
@@ -572,7 +575,11 @@ configure_site_cpanel() {
 	local docroot=$2
 	local site_type=$3
 	
-	echo "Processing cPanel site: $domain ($site_type site) with DocumentRoot: $docroot"
+	if [ -n "$site_type" ]; then
+		echo "Processing cPanel site: $domain ($site_type site) with DocumentRoot: $docroot"
+	else
+		echo "Processing cPanel site: $domain with DocumentRoot: $docroot"
+	fi
 	
 	# expected cPanel docroot: /home/user/public_html
 	user=$(echo "$docroot" | awk -F '/' '{print $3}')
@@ -586,18 +593,17 @@ configure_site_cpanel() {
 
 	# Prepare a 404 block from existing userdata or .htaccess if site had one previously
 	local cp_404_block=""
-	if [ "$site_type" = "with404" ]; then
 		# Prefer .htaccess for comment preservation
-		if [ -f "$docroot/.htaccess" ] && grep -qiE "$ERROR404_REGEX" "$docroot/.htaccess"; then
+	if [ -f "$docroot/.htaccess" ] && grep -qiE "$ERROR404_REGEX" "$docroot/.htaccess"; then
 			cp_404_block=$(extract_404_block "$docroot/.htaccess" || true)
 			if [ -n "$cp_404_block" ]; then
 				echo "  Migrating 404 from .htaccess into userdata"
 				backup_file "$docroot/.htaccess"
 				remove_404_block "$docroot/.htaccess"
 			fi
-		fi
-		# If still empty, try to find in existing userdata files
-		if [ -z "$cp_404_block" ]; then
+	fi
+	# If still empty, try to find in existing userdata files
+	if [ -z "$cp_404_block" ]; then
 			for d in "${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}" "${CPANEL_USERDATA_STD_PATH}/${user}/${domain}"; do
 				[ -d "$d" ] || continue
 				while IFS= read -r f; do
@@ -613,10 +619,9 @@ configure_site_cpanel() {
 					break
 				fi
 			done
-		fi
 	fi
 	# Create lucee.conf with appropriate includes
-	if [ "$site_type" = "with404" ]; then
+	if [ -n "$cp_404_block" ]; then
 		# Root sites get both upgrade detection and 404 routing
 		# Backup existing userdata files before overwriting (mirrored under BACKUP_ROOT)
 		backup_file ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf
@@ -669,7 +674,11 @@ configure_site_redhat() {
 	local docroot=$2
 	local site_type=$3
 	
-	echo "Non-cPanel RedHat configuration not implemented yet for $domain"
+	if [ -n "$site_type" ]; then
+		echo "Non-cPanel RedHat configuration not implemented yet for $domain ($site_type)"
+	else
+		echo "Non-cPanel RedHat configuration not implemented yet for $domain"
+	fi
 	echo "Pull requests are welcome!"
 }
 
