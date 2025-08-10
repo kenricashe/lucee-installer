@@ -255,9 +255,13 @@ insert_wrapped_block_before_vhost_close() {
 	awk -v blk="$block_text" '
 		BEGIN{ done=0 }
 		/<\/VirtualHost>/ && !done {
+			# indent each line of the block by one tab for readability
+			blk_indented = blk
+			gsub(/\n/, "\n\t", blk_indented)
 			print "\t<IfDefine !LUCEE_UPGRADE_IN_PROGRESS>"
-			print blk
+			print "\t" blk_indented
 			print "\t</IfDefine>"
+			print ""  # blank line before closing </VirtualHost>
 			done=1
 		}
 		{ print }
