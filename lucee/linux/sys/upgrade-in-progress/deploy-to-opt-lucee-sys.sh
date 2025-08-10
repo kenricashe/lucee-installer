@@ -13,8 +13,8 @@ THISPATH=$(dirname "$0")
 
 FILES=(
 	"get-lucee-sites.sh"
-	"configure-sites.sh"
-	"get-lucee-root.sh"
+	"configure-apache.sh"
+	"get-env.sh"
 	"begin.sh"
 	"end.sh"
 	"upgrade-in-progress.html"

@@ -6,20 +6,9 @@ if [ "$(id -u)" != "0" ]; then
 	exit 1
 fi
 
-# Resolve this script directory and compute LUCEE_ROOT and UPG_DIR
-SOURCE="${BASH_SOURCE[0]:-$0}"
-while [ -L "$SOURCE" ]; do
-	DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
-	LINK="$(readlink "$SOURCE")"
-	if [[ "$LINK" != /* ]]; then
-		SOURCE="$DIR/$LINK"
-	else
-		SOURCE="$LINK"
-	fi
-done
-SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
-LUCEE_ROOT="$("$SCRIPT_DIR/get-lucee-root.sh")"
-UPG_DIR="${LUCEE_ROOT}/sys/upgrade-in-progress"
+# Source shared helper for LUCEE_ROOT, UPG_DIR, IS_CPANEL
+SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd)"
+. "${SCRIPT_DIR}/get-env.sh"
 
 # preflight: ensure detect include exists at the deployed UPG_DIR
 DETECT_CONF="${UPG_DIR}/lucee-detect-upgrade.conf"
@@ -30,12 +19,7 @@ if [ ! -f "$DETECT_CONF" ]; then
 	exit 1
 fi
 
-# prep cPanel flag
-if [ -f "/usr/local/cpanel/cpanel" ]; then
-	IS_CPANEL=true
-else
-	IS_CPANEL=false
-fi
+# IS_CPANEL is provided by get-env.sh
 
 # The flag file is referenced by cron jobs, etc, to abort during 
 # Lucee upgrade (just before or after Lucee is stopped).

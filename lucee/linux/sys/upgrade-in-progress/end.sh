@@ -1,16 +1,13 @@
 #!/bin/bash
 
+# Source shared helper for IS_CPANEL (LUCEE_ROOT/UPG_DIR not needed here)
+SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd)"
+. "${SCRIPT_DIR}/get-env.sh"
+
 # require root
 if [ "$(id -u)" != "0" ]; then
 	echo "This script must be run as root"
 	exit 1
-fi
-
-# prep cPanel flag
-if [ -f "/usr/local/cpanel/cpanel" ]; then
-	IS_CPANEL=true
-else
-	IS_CPANEL=false
 fi
 
 # Debian/Ubuntu/etc

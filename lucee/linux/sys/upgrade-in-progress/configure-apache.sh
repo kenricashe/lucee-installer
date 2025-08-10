@@ -2,14 +2,14 @@
 
 # Deploy:
 # cd /path/to/this/script
-# cp ./configure-sites.sh /opt/lucee/sys/upgrade-in-progress/configure-sites.sh
-# chmod +x /opt/lucee/sys/upgrade-in-progress/configure-sites.sh
+# cp ./configure-apache.sh /opt/lucee/sys/upgrade-in-progress/configure-apache.sh
+# chmod +x /opt/lucee/sys/upgrade-in-progress/configure-apache.sh
 
 # Update:
-# cat ./configure-sites.sh | sudo tee /opt/lucee/sys/upgrade-in-progress/configure-sites.sh
+# cat ./configure-apache.sh | sudo tee /opt/lucee/sys/upgrade-in-progress/configure-apache.sh
 
 # Execute:
-# sudo /opt/lucee/sys/upgrade-in-progress/configure-sites.sh
+# sudo /opt/lucee/sys/upgrade-in-progress/configure-apache.sh
 
 # require root
 if [ "$(id -u)" != "0" ]; then
@@ -17,20 +17,9 @@ if [ "$(id -u)" != "0" ]; then
 	exit 1
 fi
 
-# Resolve this script directory and compute LUCEE_ROOT and UPG_DIR
-SOURCE="${BASH_SOURCE[0]:-$0}"
-while [ -L "$SOURCE" ]; do
-	DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
-	LINK="$(readlink "$SOURCE")"
-	if [[ "$LINK" != /* ]]; then
-		SOURCE="$DIR/$LINK"
-	else
-		SOURCE="$LINK"
-	fi
-done
-SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
-LUCEE_ROOT="$("$SCRIPT_DIR/get-lucee-root.sh")"
-UPG_DIR="${LUCEE_ROOT}/sys/upgrade-in-progress"
+# Source shared helper for LUCEE_ROOT, UPG_DIR, IS_CPANEL
+SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd)"
+. "${SCRIPT_DIR}/get-env.sh"
 
 	# preflight: required files must exist at /opt path used by per-site Includes and docroot copy
 	DETECT_CONF="${UPG_DIR}/lucee-detect-upgrade.conf"
@@ -59,13 +48,10 @@ if [ ! -f "$SITES_FILE" ]; then
 	exit 1
 fi
 
-# prep cPanel flag
-if [ -f "/usr/local/cpanel/cpanel" ]; then
-	IS_CPANEL=true
+# cPanel userdata paths (IS_CPANEL provided by get-env.sh)
+if [ "$IS_CPANEL" = true ]; then
 	CPANEL_USERDATA_SSL_PATH="/etc/apache2/conf.d/userdata/ssl/2_4"
 	CPANEL_USERDATA_STD_PATH="/etc/apache2/conf.d/userdata/std/2_4"
-else
-	IS_CPANEL=false
 fi
 
 # Centralized backup root; backs up mirror paths beneath this directory
@@ -113,7 +99,7 @@ comment_all_404_lines() {
 	tmp=$(mktemp)
 	base=$(basename "$file")
 	if [ "$base" = ".htaccess" ]; then
-		awk -v IGNORECASE=1 -v pat="$ANY404_REGEX" -v note="# NOTE: ErrorDocument 404 moved by /opt/lucee/sys/upgrade-in-progress/configure-sites.sh into Apache vhost/userdata and disabled during upgrades. See per-site Include to /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf" '
+		awk -v IGNORECASE=1 -v pat="$ANY404_REGEX" -v note="# NOTE: ErrorDocument 404 moved by /opt/lucee/sys/upgrade-in-progress/configure-apache.sh into Apache vhost/userdata and disabled during upgrades. See per-site Include to /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf" '
 			{ lines[++n]=$0 }
 			END {
 				for (i=1;i<=n;i++) {
@@ -125,7 +111,7 @@ comment_all_404_lines() {
 			}
 		' "$file" > "$tmp"
 	else
-		awk -v IGNORECASE=1 -v pat="$ANY404_REGEX" -v note="# NOTE: ErrorDocument 404 disabled/commented by /opt/lucee/sys/upgrade-in-progress/configure-sites.sh (managed inline and wrapped in vhost/userdata)." '
+		awk -v IGNORECASE=1 -v pat="$ANY404_REGEX" -v note="# NOTE: ErrorDocument 404 disabled/commented by /opt/lucee/sys/upgrade-in-progress/configure-apache.sh (managed inline and wrapped in vhost/userdata)." '
 			{ lines[++n]=$0 }
 			END {
 				for (i=1;i<=n;i++) {
@@ -213,7 +199,7 @@ remove_404_block() {
 	base=$(basename "$file")
 	if [ "$base" = ".htaccess" ]; then
 		# In .htaccess: comment out ALL ErrorDocument 404 lines with a note; migration uses the last via extract_404_block()
-		awk -v IGNORECASE=1 -v pat="$ERROR404_REGEX" -v note="# NOTE: ErrorDocument 404 moved by /opt/lucee/sys/upgrade-in-progress/configure-sites.sh into Apache vhost/userdata and disabled during upgrades. See per-site Include to /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf" '
+		awk -v IGNORECASE=1 -v pat="$ERROR404_REGEX" -v note="# NOTE: ErrorDocument 404 moved by /opt/lucee/sys/upgrade-in-progress/configure-apache.sh into Apache vhost/userdata and disabled during upgrades. See per-site Include to /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf" '
 			{ lines[++n]=$0 }
 			END {
 				for (i=1;i<=n;i++) {
@@ -232,7 +218,7 @@ remove_404_block() {
 		' "$file" > "$tmp"
 	else
 		# In vhost/userdata files: comment out ALL ErrorDocument 404 lines with a note
-		awk -v IGNORECASE=1 -v pat="$ERROR404_REGEX" -v note="# NOTE: ErrorDocument 404 disabled/commented by /opt/lucee/sys/upgrade-in-progress/configure-sites.sh (managed inline and wrapped in vhost/userdata)." '
+		awk -v IGNORECASE=1 -v pat="$ERROR404_REGEX" -v note="# NOTE: ErrorDocument 404 disabled/commented by /opt/lucee/sys/upgrade-in-progress/configure-apache.sh (managed inline and wrapped in vhost/userdata)." '
 			{ lines[++n]=$0 }
 			END {
 				for (i=1;i<=n;i++) {
@@ -752,7 +738,7 @@ configure_site_cpanel() {
 		backup_file ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf
 		cat > ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf << EOF
 # This file is automatically generated and managed by
-# ${UPG_DIR}/configure-sites.sh
+# ${UPG_DIR}/configure-apache.sh
 # Any manual changes will be overwritten when the script runs
 Include /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf
 <IfDefine !LUCEE_UPGRADE_IN_PROGRESS>
@@ -764,7 +750,7 @@ EOF
 		backup_file ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf
 		cat > ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf << EOF
 # This file is automatically generated and managed by
-# ${UPG_DIR}/configure-sites.sh
+# ${UPG_DIR}/configure-apache.sh
 # Any manual changes will be overwritten when the script runs
 Include /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf
 <IfDefine !LUCEE_UPGRADE_IN_PROGRESS>
@@ -777,7 +763,7 @@ EOF
 		backup_file ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf
 		cat > ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf << EOF
 # This file is automatically generated and managed by
-# ${UPG_DIR}/configure-sites.sh
+# ${UPG_DIR}/configure-apache.sh
 # Any manual changes will be overwritten when the script runs
 Include /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf
 EOF
@@ -786,7 +772,7 @@ EOF
 		backup_file ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf
 		cat > ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf << EOF
 # This file is automatically generated and managed by
-# ${UPG_DIR}/configure-sites.sh
+# ${UPG_DIR}/configure-apache.sh
 # Any manual changes will be overwritten when the script runs
 Include /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf
 EOF
