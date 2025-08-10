@@ -567,6 +567,8 @@ configure_site_debian() {
 		local ssl_404_block=""
 		if has_wrapped_404_block "$ssl_conf_file"; then
 			echo "  Existing wrapped 404 block detected in SSL vhost; leaving as-is"
+			# Extract it so HTTP vhost can reuse if needed
+			ssl_404_block=$(extract_404_block "$ssl_conf_file" || true)
 		else
 			# Prefer .htaccess (more specific) over vhost for effective 404
 			if echo "" | grep -q ""; then :; fi # keep shellcheck quiet about local before use
@@ -650,6 +652,10 @@ configure_site_debian() {
 					backup_file "$http_conf_file"
 					comment_all_404_lines "$http_conf_file"
 				fi
+			fi
+			# If we prepared a 404 block in this branch, insert it now (before fallback logic)
+			if [ -n "$http_404_block" ]; then
+				insert_wrapped_block_before_vhost_close "$http_conf_file" "$http_404_block"
 			fi
 		fi
 		# Normalize whitespace before </VirtualHost>
