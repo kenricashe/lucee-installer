@@ -683,11 +683,13 @@ configure_site_debian() {
 		echo "  Info: No HTTP configuration file found for $domain"
 	fi
 
-	# If last .htaccess 404 is CF-targeting and anything remains, comment out all 404s with a note
-	if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess" && grep -qiE "$ANY404_REGEX" "$docroot/.htaccess"; then
-		echo "  Commenting out 404 ErrorDocument in $docroot/.htaccess and adding note"
-		backup_file "$docroot/.htaccess"
-		comment_all_404_lines "$docroot/.htaccess"
+	# Final normalization: if a wrapped 404 exists in either vhost and .htaccess still has any 404s, comment them out
+	if [ -f "$docroot/.htaccess" ] && grep -qiE "$ANY404_REGEX" "$docroot/.htaccess"; then
+		if has_wrapped_404_block "$ssl_conf_file" || has_wrapped_404_block "$http_conf_file"; then
+			echo "  Commenting out 404 ErrorDocument in $docroot/.htaccess and adding note"
+			backup_file "$docroot/.htaccess"
+			comment_all_404_lines "$docroot/.htaccess"
+		fi
 	fi
 }
 
