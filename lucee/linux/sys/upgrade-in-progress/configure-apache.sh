@@ -641,10 +641,12 @@ configure_site_debian() {
 		# Skip re-wrapping if a wrapped 404 already exists
 		local ssl_404_block=""
 		local ssl_from_htaccess="false"
+		local ssl_has_wrapped="false"
 		if has_wrapped_404_block "$ssl_conf_file"; then
 			echo "  Existing wrapped 404 block detected in SSL vhost; leaving as-is"
 			# Extract it so HTTP vhost can reuse if needed
 			ssl_404_block=$(extract_404_block "$ssl_conf_file" || true)
+			ssl_has_wrapped="true"
 		else
 			# Prefer .htaccess (more specific) over vhost for effective 404
 			if echo "" | grep -q ""; then :; fi # keep shellcheck quiet about local before use
@@ -687,8 +689,8 @@ configure_site_debian() {
 
 		# Always include global detect config
 		sed -i "s|</VirtualHost>|\tInclude /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf\\n\\n</VirtualHost>|" "$ssl_conf_file"
-		# If we have a 404 block, insert it wrapped into the matching vhost for this domain
-			if [ -n "$ssl_404_block" ]; then
+		# If we have a 404 block and no existing wrapped block, insert it wrapped into the matching vhost for this domain
+			if [ -n "$ssl_404_block" ] && [ "$ssl_has_wrapped" != "true" ]; then
 				if insert_wrapped_block_before_vhost_close "$ssl_conf_file" "$ssl_404_block" "$domain"; then
 					# Only now, after confirmed insert, comment .htaccess if it was the source and not already commented with our note
 					if [ "$ssl_from_htaccess" = "true" ] && ! grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
