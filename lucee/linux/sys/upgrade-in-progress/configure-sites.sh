@@ -27,6 +27,7 @@ done
 SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 LUCEE_ROOT="$("$SCRIPT_DIR/get-lucee-root.sh")"
 UPG_DIR="${LUCEE_ROOT}/sys/upgrade-in-progress"
+ERROR404_LINE='ErrorDocument 404 /404.cfm?%{REQUEST_URI}&%{QUERY_STRING}'
 
 SITES_FILE="${UPG_DIR}/sites-configured.txt"
 if [ ! -f "$SITES_FILE" ]; then
@@ -349,12 +350,17 @@ configure_site_debian() {
 		# Remove any existing Lucee upgrade includes
 		sed -i '/Include.*lucee-detect-upgrade.conf/d' "$ssl_conf_file"
 		sed -i '/Include.*lucee-404-routing.conf/d' "$ssl_conf_file"
+		# If site previously had a local 404 directive, remove it now to defer to centralized include
+		if [ "$site_type" = "with404" ] && grep -q "$ERROR404_LINE" "$ssl_conf_file"; then
+			echo "  Removing local 404 ErrorDocument from $ssl_conf_file"
+			sed -i '/[[:space:]]*ErrorDocument[[:space:]]\+404[[:space:]]\+\/404\.cfm.*%{REQUEST_URI}&%{QUERY_STRING}/d' "$ssl_conf_file"
+		fi
 		
 		# Replace all whitespace just before closing </VirtualHost> with '\n\n'
 		sed -i ':a;N;$!ba;s/\n[[:space:]]*\n*[[:space:]]*<\/VirtualHost>/\n\n<\/VirtualHost>/' "$ssl_conf_file"
 
 		# Add appropriate includes before the closing </VirtualHost>
-		if [ "$site_type" = "root" ]; then
+		if [ "$site_type" = "with404" ]; then
 			# Root sites get both upgrade detection and 404 routing
 			sed -i "s|</VirtualHost>|\tInclude ${UPG_DIR}/lucee-detect-upgrade.conf\\n\tInclude ${UPG_DIR}/lucee-404-routing.conf\\n\\n</VirtualHost>|" "$ssl_conf_file"
 		else
@@ -380,10 +386,15 @@ configure_site_debian() {
 		# Remove any existing Lucee upgrade includes
 		sed -i '/Include.*lucee-detect-upgrade.conf/d' "$http_conf_file"
 		sed -i '/Include.*lucee-404-routing.conf/d' "$http_conf_file"
+		# If site previously had a local 404 directive, remove it now to defer to centralized include
+		if [ "$site_type" = "with404" ] && grep -q "$ERROR404_LINE" "$http_conf_file"; then
+			echo "  Removing local 404 ErrorDocument from $http_conf_file"
+			sed -i '/[[:space:]]*ErrorDocument[[:space:]]\+404[[:space:]]\+\/404\.cfm.*%{REQUEST_URI}&%{QUERY_STRING}/d' "$http_conf_file"
+		fi
 		# Normalize whitespace before </VirtualHost>
 		sed -i ':a;N;$!ba;s/\n[[:space:]]*\n*[[:space:]]*<\/VirtualHost>/\n\n<\/VirtualHost>/' "$http_conf_file"
 		# Add appropriate includes before the closing </VirtualHost>
-		if [ "$site_type" = "root" ]; then
+		if [ "$site_type" = "with404" ]; then
 			sed -i "s|</VirtualHost>|\tInclude ${UPG_DIR}/lucee-detect-upgrade.conf\\n\tInclude ${UPG_DIR}/lucee-404-routing.conf\\n\\n</VirtualHost>|" "$http_conf_file"
 		else
 			sed -i "s|</VirtualHost>|\tInclude ${UPG_DIR}/lucee-detect-upgrade.conf\\n\\n</VirtualHost>|" "$http_conf_file"
@@ -394,6 +405,13 @@ configure_site_debian() {
 		fi
 	else
 		echo "  Info: No HTTP configuration file found for $domain"
+	fi
+
+	# Remove local 404 directive from docroot .htaccess if present
+	if [ "$site_type" = "with404" ] && [ -f "$docroot/.htaccess" ] && grep -q "$ERROR404_LINE" "$docroot/.htaccess"; then
+		echo "  Removing local 404 ErrorDocument from $docroot/.htaccess"
+		backup_file "$docroot/.htaccess"
+		sed -i '/[[:space:]]*ErrorDocument[[:space:]]\+404[[:space:]]\+\/404\.cfm.*%{REQUEST_URI}&%{QUERY_STRING}/d' "$docroot/.htaccess"
 	fi
 }
 
@@ -415,8 +433,28 @@ configure_site_cpanel() {
 	mkdir -p ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}
 	mkdir -p ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}
 	
+	# For sites previously using a local 404 directive, remove it from any existing userdata files and .htaccess
+	if [ "$site_type" = "with404" ]; then
+		for d in "${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}" "${CPANEL_USERDATA_STD_PATH}/${user}/${domain}"; do
+			if [ -d "$d" ]; then
+				# Remove from any existing userdata include files that contain the directive
+				while IFS= read -r f; do
+					[ -f "$f" ] || continue
+					echo "  Removing local 404 ErrorDocument from $f"
+					backup_file "$f"
+					sed -i '/[[:space:]]*ErrorDocument[[:space:]]\+404[[:space:]]\+\/404\.cfm.*%{REQUEST_URI}&%{QUERY_STRING}/d' "$f"
+				done < <(grep -Rls "$ERROR404_LINE" "$d" 2>/dev/null || true)
+			fi
+		done
+		# Remove from .htaccess if present
+		if [ -f "$docroot/.htaccess" ] && grep -q "$ERROR404_LINE" "$docroot/.htaccess"; then
+			echo "  Removing local 404 ErrorDocument from $docroot/.htaccess"
+			backup_file "$docroot/.htaccess"
+			sed -i '/[[:space:]]*ErrorDocument[[:space:]]\+404[[:space:]]\+\/404\.cfm.*%{REQUEST_URI}&%{QUERY_STRING}/d' "$docroot/.htaccess"
+		fi
+	fi
 	# Create lucee.conf with appropriate includes
-	if [ "$site_type" = "root" ]; then
+	if [ "$site_type" = "with404" ]; then
 		# Root sites get both upgrade detection and 404 routing
 		# Backup existing userdata files before overwriting (mirrored under BACKUP_ROOT)
 		backup_file ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf

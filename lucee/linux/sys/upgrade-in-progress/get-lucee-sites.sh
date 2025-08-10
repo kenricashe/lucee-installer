@@ -64,55 +64,81 @@ get_docroot_redhat() {
 	grep -A 10 -B 5 "ServerName $domain" "$RHEL_HTTPD_CONF" | grep -i "DocumentRoot" | awk '{print $2}' | head -1
 }
 
-# Function to analyze sites and categorize them
+ERROR404_LINE='ErrorDocument 404 /404.cfm?%{REQUEST_URI}&%{QUERY_STRING}'
+
+# Function to analyze sites and detect presence of local 404 ErrorDocument directive
 analyze_sites() {
 	local domains=$1
 	local get_docroot_func=$2
-	
+
 	# Arrays to store categorized sites
-	sites_with_index_cfm=()
-	sites_with_other_cfm=()
-	sites_without_cfm=()
-	
+	sites_with_local_404=()
+	sites_without_local_404=()
+
 	# Iterate through each domain
 	while IFS= read -r domain; do
 		if [ -z "$domain" ]; then
 			continue
 		fi
-		
+
 		echo "Checking domain: $domain"
-		
+
 		# Find DocumentRoot for this domain using the provided function
 		docroot=$($get_docroot_func "$domain")
-		
+
 		if [ -z "$docroot" ] || [ ! -d "$docroot" ]; then
 			echo "  Warning: Could not find DocumentRoot for $domain or directory does not exist"
 			continue
 		fi
-		
+
 		echo "  DocumentRoot: $docroot"
-		
-		# Check for index.cfm or Application.cf* in DocumentRoot only (not subfolders)
-		index_files=$(find "$docroot" -maxdepth 1 -type f \( -iname "index.cfm" -o -iname "Application.cfm" -o -iname "Application.cfc" \) 2>/dev/null)
-		if [ -n "$index_files" ]; then
-			echo "  ✓ Found index.cfm or Application.cf*"
-			sites_with_index_cfm+=("$domain")
+
+		# Detect directive in vhost/.htaccess, platform-aware
+		has404=false
+		if command -v a2enconf >/dev/null 2>&1; then
+			# Debian/Ubuntu: check -ssl and non-ssl vhost files and docroot .htaccess
+			ssl_conf_file="/etc/apache2/sites-available/${domain}-ssl.conf"
+			if [ ! -f "$ssl_conf_file" ]; then
+				ssl_conf_file=$(grep -l "ServerName $domain" /etc/apache2/sites-available/*-ssl.conf 2>/dev/null | head -1)
+			fi
+			[ -f "$ssl_conf_file" ] && grep -q "$ERROR404_LINE" "$ssl_conf_file" && has404=true
+			if [ "$has404" = false ]; then
+				http_conf_file="/etc/apache2/sites-available/${domain}.conf"
+				if [ ! -f "$http_conf_file" ]; then
+					http_conf_file=$(grep -l "ServerName $domain" /etc/apache2/sites-available/*.conf 2>/dev/null | grep -v -- '-ssl\.conf' | head -1)
+				fi
+				[ -f "$http_conf_file" ] && grep -q "$ERROR404_LINE" "$http_conf_file" && has404=true
+			fi
+			if [ "$has404" = false ] && [ -f "$docroot/.htaccess" ]; then
+				grep -q "$ERROR404_LINE" "$docroot/.htaccess" && has404=true
+			fi
+		elif [ "$IS_CPANEL" = true ]; then
+			# cPanel: check userdata includes and docroot .htaccess
+			user=$(echo "$docroot" | awk -F '/' '{print $3}')
+			ssl_dir="/etc/apache2/conf.d/userdata/ssl/2_4/${user}/${domain}"
+			std_dir="/etc/apache2/conf.d/userdata/std/2_4/${user}/${domain}"
+			if [ -d "$ssl_dir" ] && grep -Rqs "$ERROR404_LINE" "$ssl_dir"; then
+				has404=true
+			elif [ -d "$std_dir" ] && grep -Rqs "$ERROR404_LINE" "$std_dir"; then
+				has404=true
+			elif [ -f "$docroot/.htaccess" ] && grep -q "$ERROR404_LINE" "$docroot/.htaccess"; then
+				has404=true
+			fi
 		else
-			echo "  ✗ No index.cfm or Application.cf* found"
-			# Check for any other .cfm files in DocumentRoot and subdirectories
-			other_cfm_files=$(find "$docroot" -name "*.cfm" -type f 2>/dev/null | head -5)
-			if [ -n "$other_cfm_files" ]; then
-				echo "  ✓ Found other .cfm files:"
-				echo "$other_cfm_files" | while read -r cfm_file; do
-					echo "    - $(basename "$cfm_file") in $(dirname "$cfm_file")"
-				done
-				sites_with_other_cfm+=("$domain")
-			else
-				echo "  ✗ No .cfm files found"
-				sites_without_cfm+=("$domain")
+			# Non-cPanel RHEL not fully implemented; best-effort: docroot .htaccess
+			if [ -f "$docroot/.htaccess" ] && grep -q "$ERROR404_LINE" "$docroot/.htaccess"; then
+				has404=true
 			fi
 		fi
-		
+
+		if [ "$has404" = true ]; then
+			echo "  Found local 404 ErrorDocument directive"
+			sites_with_local_404+=("$domain")
+		else
+			echo "  No local 404 ErrorDocument directive found"
+			sites_without_local_404+=("$domain")
+		fi
+
 		echo ""
 	done <<< "$domains"
 }
@@ -123,21 +149,15 @@ generate_summary() {
 	echo "LUCEE SITE ANALYSIS SUMMARY"
 	echo "=========================================="
 	echo ""
-	
-	echo "Sites with index.cfm or Application.cf* in DocumentRoot (${#sites_with_index_cfm[@]}):"
-	for site in "${sites_with_index_cfm[@]}"; do
+
+	echo "Sites WITH local 404 ErrorDocument (${#sites_with_local_404[@]}):"
+	for site in "${sites_with_local_404[@]}"; do
 		echo "  - $site"
 	done
 	echo ""
-	
-	echo "Sites with other .cfm files but no index.cfm or Application.cf* (${#sites_with_other_cfm[@]}):"
-	for site in "${sites_with_other_cfm[@]}"; do
-		echo "  - $site"
-	done
-	echo ""
-	
-	echo "Sites with no .cfm files (${#sites_without_cfm[@]}):"
-	for site in "${sites_without_cfm[@]}"; do
+
+	echo "Sites WITHOUT local 404 ErrorDocument (${#sites_without_local_404[@]}):"
+	for site in "${sites_without_local_404[@]}"; do
 		echo "  - $site"
 	done
 	echo ""
@@ -146,20 +166,20 @@ generate_summary() {
 # Function to save results to file
 save_results() {
 	local get_docroot_func=$1
-	
+
 	echo "Saving results ..."
-	
+
 	> $TXTPATH_ALL_DATA
 	> $TXTPATH_ONLY_DOMAINS
-	
-	for site in "${sites_with_index_cfm[@]}"; do
+
+	for site in "${sites_with_local_404[@]}"; do
 		docroot=$($get_docroot_func "$site")
-		echo "$site $docroot root" >> $TXTPATH_ALL_DATA
+		echo "$site $docroot with404" >> $TXTPATH_ALL_DATA
 		echo "$site" >> $TXTPATH_ONLY_DOMAINS
 	done
-	for site in "${sites_with_other_cfm[@]}"; do
+	for site in "${sites_without_local_404[@]}"; do
 		docroot=$($get_docroot_func "$site")
-		echo "$site $docroot nonroot" >> $TXTPATH_ALL_DATA
+		echo "$site $docroot no404" >> $TXTPATH_ALL_DATA
 		echo "$site" >> $TXTPATH_ONLY_DOMAINS
 	done
 
