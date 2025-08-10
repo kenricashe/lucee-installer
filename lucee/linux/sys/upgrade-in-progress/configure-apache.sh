@@ -35,7 +35,8 @@ SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd
 		exit 1
 	fi
 
-ERROR404_REGEX='^[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+/[^[:space:]]*\.(cfm|cfml|cfc|cfs)([^[:alnum:]_]|$)'
+# Use [.] instead of \. to avoid awk treating "\." as an escape in string constants
+ERROR404_REGEX='^[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+/[^[:space:]]*[.](cfm|cfml|cfc|cfs)([^[:alnum:]_]|$)'
 # Any ErrorDocument 404 (any target), for precedence checks and comment-all behavior
 ANY404_REGEX='^[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+'
 
