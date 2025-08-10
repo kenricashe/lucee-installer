@@ -274,6 +274,18 @@ insert_wrapped_block_before_vhost_close() {
 	fi
 }
 
+# Return 0 if a 404 block already exists inside our IfDefine wrapper in the given file
+has_wrapped_404_block() {
+	local file="$1"
+	[ -f "$file" ] || return 1
+	awk -v IGNORECASE=1 '
+		/<IfDefine[\t ]+!LUCEE_UPGRADE_IN_PROGRESS>/,/<\/IfDefine>/ {
+			if ($0 ~ /^[\t ]*ErrorDocument[\t ]+404[\t ]+/) { found=1 }
+		}
+		END { exit found ? 0 : 1 }
+	' "$file"
+}
+
 # Check if mod_headers is enabled (needed for X-Lucee-Upgrade header polling)
 headers_module_enabled() {
 	if command -v apache2ctl >/dev/null 2>&1; then
@@ -551,32 +563,37 @@ configure_site_debian() {
 		# Remove any existing Lucee upgrade include; inline legacy 404 include if present
 		sed -i '/Include.*lucee-detect-upgrade.conf/d' "$ssl_conf_file"
 		inline_legacy_include "$ssl_conf_file"
-		# Prefer .htaccess (more specific) over vhost for effective 404
+		# Skip re-wrapping if a wrapped 404 already exists
 		local ssl_404_block=""
-		if echo "" | grep -q ""; then :; fi # keep shellcheck quiet about local before use
-		if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
-			ssl_404_block=$(extract_404_block "$docroot/.htaccess" || true)
-			if [ -n "$ssl_404_block" ]; then
-				echo "  Migrating 404 from .htaccess into SSL vhost (authoritative)"
-				backup_file "$docroot/.htaccess"
-				comment_all_404_lines "$docroot/.htaccess"
-				# Comment out any pre-existing 404s in vhost as they are superseded
-				if grep -qiE "$ANY404_REGEX" "$ssl_conf_file"; then
-					echo "  Commenting out pre-existing 404s in SSL vhost (superseded by .htaccess)"
+		if has_wrapped_404_block "$ssl_conf_file"; then
+			echo "  Existing wrapped 404 block detected in SSL vhost; leaving as-is"
+		else
+			# Prefer .htaccess (more specific) over vhost for effective 404
+			if echo "" | grep -q ""; then :; fi # keep shellcheck quiet about local before use
+			if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
+				ssl_404_block=$(extract_404_block "$docroot/.htaccess" || true)
+				if [ -n "$ssl_404_block" ]; then
+					echo "  Migrating 404 from .htaccess into SSL vhost (authoritative)"
+					backup_file "$docroot/.htaccess"
+					comment_all_404_lines "$docroot/.htaccess"
+					# Comment out any pre-existing 404s in vhost as they are superseded
+					if grep -qiE "$ANY404_REGEX" "$ssl_conf_file"; then
+						echo "  Commenting out pre-existing 404s in SSL vhost (superseded by .htaccess)"
+						backup_file "$ssl_conf_file"
+						comment_all_404_lines "$ssl_conf_file"
+					fi
+				fi
+			fi
+			# If no .htaccess 404, fallback to local vhost 404
+			if [ -z "$ssl_404_block" ]; then
+				if last_404_is_cf "$ssl_conf_file"; then
+					ssl_404_block=$(extract_404_block "$ssl_conf_file" || true)
+				fi
+				if [ -n "$ssl_404_block" ]; then
+					echo "  Found local 404 in SSL vhost; wrapping inline"
 					backup_file "$ssl_conf_file"
 					comment_all_404_lines "$ssl_conf_file"
 				fi
-			fi
-		fi
-		# If no .htaccess 404, fallback to local vhost 404
-		if [ -z "$ssl_404_block" ]; then
-			if last_404_is_cf "$ssl_conf_file"; then
-				ssl_404_block=$(extract_404_block "$ssl_conf_file" || true)
-			fi
-			if [ -n "$ssl_404_block" ]; then
-				echo "  Found local 404 in SSL vhost; wrapping inline"
-				backup_file "$ssl_conf_file"
-				comment_all_404_lines "$ssl_conf_file"
 			fi
 		fi
 		
@@ -608,43 +625,14 @@ configure_site_debian() {
 		# Remove any existing Lucee upgrade include; inline legacy 404 include if present
 		sed -i '/Include.*lucee-detect-upgrade.conf/d' "$http_conf_file"
 		inline_legacy_include "$http_conf_file"
-		# Prefer .htaccess (more specific) over vhost for effective 404
+		# Skip re-wrapping if a wrapped 404 already exists
 		local http_404_block=""
-		if echo "" | grep -q ""; then :; fi # keep shellcheck quiet about local before use
-		if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
-			http_404_block=$(extract_404_block "$docroot/.htaccess" || true)
-			if [ -n "$http_404_block" ]; then
-				echo "  Migrating 404 from .htaccess into HTTP vhost (authoritative)"
-				backup_file "$docroot/.htaccess"
-				comment_all_404_lines "$docroot/.htaccess"
-				# Comment out any pre-existing 404s in vhost as they are superseded
-				if grep -qiE "$ANY404_REGEX" "$http_conf_file"; then
-					echo "  Commenting out pre-existing 404s in HTTP vhost (superseded by .htaccess)"
-					backup_file "$http_conf_file"
-					comment_all_404_lines "$http_conf_file"
-				fi
-			fi
-		fi
-		# If no .htaccess 404, fallback to local vhost 404
-		if [ -z "$http_404_block" ]; then
-			if last_404_is_cf "$http_conf_file"; then
-				http_404_block=$(extract_404_block "$http_conf_file" || true)
-			fi
-			if [ -n "$http_404_block" ]; then
-				echo "  Found local 404 in HTTP vhost; wrapping inline"
-				backup_file "$http_conf_file"
-				comment_all_404_lines "$http_conf_file"
-			fi
-		fi
-		# Normalize whitespace before </VirtualHost>
-		sed -i ':a;N;$!ba;s/\n[[:space:]]*\n*[[:space:]]*<\/VirtualHost>/\n\n<\/VirtualHost>/' "$http_conf_file"
-		# Always include global detect config
-		sed -i "s|</VirtualHost>|\tInclude /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf\\n\\n</VirtualHost>|" "$http_conf_file"
-		# If no 404 came from HTTP vhost, try to reuse from SSL or pull from .htaccess
-		if [ -z "$http_404_block" ]; then
-			if [ -n "$ssl_404_block" ]; then
-				http_404_block="$ssl_404_block"
-			elif [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
+		if has_wrapped_404_block "$http_conf_file"; then
+			echo "  Existing wrapped 404 block detected in HTTP vhost; leaving as-is"
+		else
+			# Prefer .htaccess (more specific) over vhost for effective 404
+			if echo "" | grep -q ""; then :; fi # keep shellcheck quiet about local before use
+			if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
 				http_404_block=$(extract_404_block "$docroot/.htaccess" || true)
 				if [ -n "$http_404_block" ]; then
 					echo "  Migrating 404 from .htaccess into HTTP vhost (authoritative)"
@@ -652,9 +640,40 @@ configure_site_debian() {
 					comment_all_404_lines "$docroot/.htaccess"
 				fi
 			fi
+			# If no .htaccess 404, fallback to local vhost 404
+			if [ -z "$http_404_block" ]; then
+				if last_404_is_cf "$http_conf_file"; then
+					http_404_block=$(extract_404_block "$http_conf_file" || true)
+				fi
+				if [ -n "$http_404_block" ]; then
+					echo "  Found local 404 in HTTP vhost; wrapping inline"
+					backup_file "$http_conf_file"
+					comment_all_404_lines "$http_conf_file"
+				fi
+			fi
 		fi
-		if [ -n "$http_404_block" ]; then
-			insert_wrapped_block_before_vhost_close "$http_conf_file" "$http_404_block"
+		# Normalize whitespace before </VirtualHost>
+		sed -i ':a;N;$!ba;s/\n[[:space:]]*\n*[[:space:]]*<\/VirtualHost>/\n\n<\/VirtualHost>/' "$http_conf_file"
+		# Always include global detect config
+		sed -i "s|</VirtualHost>|\tInclude /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf\\n\\n</VirtualHost>|" "$http_conf_file"
+		# If no 404 came from HTTP vhost, try to reuse from SSL or pull from .htaccess
+		# but only if we don't already have a wrapped 404 block present
+		if ! has_wrapped_404_block "$http_conf_file"; then
+			if [ -z "$http_404_block" ]; then
+				if [ -n "$ssl_404_block" ]; then
+					http_404_block="$ssl_404_block"
+				elif [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
+					http_404_block=$(extract_404_block "$docroot/.htaccess" || true)
+					if [ -n "$http_404_block" ]; then
+						echo "  Migrating 404 from .htaccess into HTTP vhost (authoritative)"
+						backup_file "$docroot/.htaccess"
+						comment_all_404_lines "$docroot/.htaccess"
+					fi
+				fi
+			fi
+			if [ -n "$http_404_block" ]; then
+				insert_wrapped_block_before_vhost_close "$http_conf_file" "$http_404_block"
+			fi
 		fi
 		# Best-effort warning if HTTP VirtualHost may not redirect to HTTPS
 		if ! grep -Eiq '(Redirect(\s+(permanent|temp|301|302))?\s+/?\s+https?://|RewriteRule\s+.*https://)' "$http_conf_file"; then
