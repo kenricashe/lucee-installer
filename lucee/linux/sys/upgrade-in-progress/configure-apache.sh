@@ -123,6 +123,11 @@ comment_all_404_lines() {
 	local file="$1"
 	[ -f "$file" ] || return 0
 	local tmp base
+	# Preserve ownership and mode (important for user-owned .htaccess)
+	local _uid _gid _mode
+	_uid=$(stat -c '%u' "$file" 2>/dev/null || echo "")
+	_gid=$(stat -c '%g' "$file" 2>/dev/null || echo "")
+	_mode=$(stat -c '%a' "$file" 2>/dev/null || echo "")
 	tmp=$(mktemp)
 	base=$(basename "$file")
 	if [ "$base" = ".htaccess" ]; then
@@ -151,6 +156,13 @@ comment_all_404_lines() {
 		' "$file" > "$tmp"
 	fi
 	mv "$tmp" "$file"
+	# Restore ownership/mode if we could read them (chown/chmod may fail for non-root; ignore errors)
+	if [ -n "$_uid" ] && [ -n "$_gid" ]; then
+		chown "$_uid:$_gid" "$file" 2>/dev/null || true
+	fi
+	if [ -n "$_mode" ]; then
+		chmod "$_mode" "$file" 2>/dev/null || true
+	fi
 }
 
 # Backup helper: mirror source path under ${BACKUP_ROOT}/${BACKUP_TS}
@@ -714,6 +726,11 @@ configure_site_debian() {
 					echo "  Recovered 404 from commented .htaccess for HTTP vhost"
 					http_from_htaccess="true"
 				fi
+			fi
+			# If still empty, reuse the SSL 404 block
+			if [ -z "$http_404_block" ] && [ -n "$ssl_404_block" ]; then
+				echo "  Reusing 404 from SSL vhost for HTTP vhost"
+				http_404_block="$ssl_404_block"
 			fi
 			# If no .htaccess 404, fallback to local vhost 404
 			if [ -z "$http_404_block" ]; then
