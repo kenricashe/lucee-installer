@@ -155,7 +155,9 @@ comment_all_404_lines() {
 			}
 		' "$file" > "$tmp"
 	fi
-	mv "$tmp" "$file"
+	# Write back in place to preserve existing mode/ownership
+	cat "$tmp" > "$file"
+	rm -f "$tmp"
 	# Restore ownership/mode if we could read them (chown/chmod may fail for non-root; ignore errors)
 	if [ -n "$_uid" ] && [ -n "$_gid" ]; then
 		chown "$_uid:$_gid" "$file" 2>/dev/null || true
