@@ -47,6 +47,8 @@ UPG_DIR="${LUCEE_ROOT}/sys/upgrade-in-progress"
 	fi
 
 ERROR404_REGEX='^[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+/[^[:space:]]*\.(cfm|cfml|cfc|cfs)([^[:alnum:]_]|$)'
+# Any ErrorDocument 404 (any target), for precedence checks and comment-all behavior
+ANY404_REGEX='^[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+'
 
 SITES_FILE="${UPG_DIR}/sites-configured.txt"
 if [ ! -f "$SITES_FILE" ]; then
@@ -85,6 +87,57 @@ apache_config_test() {
 		echo "Warning: No apache control binary found for config test; skipping syntax check."
 		return 0
 	fi
+}
+
+# Return 0 if the last ErrorDocument 404 in file targets .cf*, else return 1
+last_404_is_cf() {
+	local file="$1"
+	[ -f "$file" ] || return 1
+	awk -v IGNORECASE=1 '
+		/^[\t ]*#/ { next }
+		# capture last ErrorDocument 404 target (rest of line after the code)
+		match($0, /^[\t ]*ErrorDocument[\t ]+404[\t ]+(.*)$/, m) { last=m[1] }
+		END {
+			if (!length(last)) exit 1
+			# consider it CF only if it ends with .cfm/.cfml/.cfc/.cfs (optionally followed by non-word chars)
+			if (last ~ /\.(cfm|cfml|cfc|cfs)([^[:alnum:]_]|$)/) exit 0; else exit 1
+		}
+	' "$file"
+}
+
+# Comment out ALL ErrorDocument 404 lines (any target) with an explanatory note
+comment_all_404_lines() {
+	local file="$1"
+	[ -f "$file" ] || return 0
+	local tmp base
+	tmp=$(mktemp)
+	base=$(basename "$file")
+	if [ "$base" = ".htaccess" ]; then
+		awk -v IGNORECASE=1 -v pat="$ANY404_REGEX" -v note="# NOTE: ErrorDocument 404 moved by /opt/lucee/sys/upgrade-in-progress/configure-sites.sh into Apache vhost/userdata and disabled during upgrades. See per-site Include to /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf" '
+			{ lines[++n]=$0 }
+			END {
+				for (i=1;i<=n;i++) {
+					if (lines[i] ~ pat) {
+						print note
+						if (lines[i] ~ /^[\t ]*#/) { print lines[i] } else { print "# " lines[i] }
+					} else { print lines[i] }
+				}
+			}
+		' "$file" > "$tmp"
+	else
+		awk -v IGNORECASE=1 -v pat="$ANY404_REGEX" -v note="# NOTE: ErrorDocument 404 disabled/commented by /opt/lucee/sys/upgrade-in-progress/configure-sites.sh (managed inline and wrapped in vhost/userdata)." '
+			{ lines[++n]=$0 }
+			END {
+				for (i=1;i<=n;i++) {
+					if (lines[i] ~ pat) {
+						print note
+						if (lines[i] ~ /^[\t ]*#/) { print lines[i] } else { print "# " lines[i] }
+					} else { print lines[i] }
+				}
+			}
+		' "$file" > "$tmp"
+	fi
+	mv "$tmp" "$file"
 }
 
 # Backup helper: mirror source path under ${BACKUP_ROOT}/${BACKUP_TS}
@@ -510,27 +563,29 @@ configure_site_debian() {
 		# Prefer .htaccess (more specific) over vhost for effective 404
 		local ssl_404_block=""
 		if echo "" | grep -q ""; then :; fi # keep shellcheck quiet about local before use
-		if [ -f "$docroot/.htaccess" ] && grep -qiE "$ERROR404_REGEX" "$docroot/.htaccess"; then
+		if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
 			ssl_404_block=$(extract_404_block "$docroot/.htaccess" || true)
 			if [ -n "$ssl_404_block" ]; then
 				echo "  Migrating 404 from .htaccess into SSL vhost (authoritative)"
 				backup_file "$docroot/.htaccess"
-				remove_404_block "$docroot/.htaccess"
+				comment_all_404_lines "$docroot/.htaccess"
 				# Comment out any pre-existing 404s in vhost as they are superseded
-				if grep -qiE "$ERROR404_REGEX" "$ssl_conf_file"; then
+				if grep -qiE "$ANY404_REGEX" "$ssl_conf_file"; then
 					echo "  Commenting out pre-existing 404s in SSL vhost (superseded by .htaccess)"
 					backup_file "$ssl_conf_file"
-					remove_404_block "$ssl_conf_file"
+					comment_all_404_lines "$ssl_conf_file"
 				fi
 			fi
 		fi
 		# If no .htaccess 404, fallback to local vhost 404
 		if [ -z "$ssl_404_block" ]; then
-			ssl_404_block=$(extract_404_block "$ssl_conf_file" || true)
+			if last_404_is_cf "$ssl_conf_file"; then
+				ssl_404_block=$(extract_404_block "$ssl_conf_file" || true)
+			fi
 			if [ -n "$ssl_404_block" ]; then
 				echo "  Found local 404 in SSL vhost; wrapping inline"
 				backup_file "$ssl_conf_file"
-				remove_404_block "$ssl_conf_file"
+				comment_all_404_lines "$ssl_conf_file"
 			fi
 		fi
 		
@@ -565,27 +620,29 @@ configure_site_debian() {
 		# Prefer .htaccess (more specific) over vhost for effective 404
 		local http_404_block=""
 		if echo "" | grep -q ""; then :; fi # keep shellcheck quiet about local before use
-		if [ -f "$docroot/.htaccess" ] && grep -qiE "$ERROR404_REGEX" "$docroot/.htaccess"; then
+		if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
 			http_404_block=$(extract_404_block "$docroot/.htaccess" || true)
 			if [ -n "$http_404_block" ]; then
 				echo "  Migrating 404 from .htaccess into HTTP vhost (authoritative)"
 				backup_file "$docroot/.htaccess"
-				remove_404_block "$docroot/.htaccess"
+				comment_all_404_lines "$docroot/.htaccess"
 				# Comment out any pre-existing 404s in vhost as they are superseded
-				if grep -qiE "$ERROR404_REGEX" "$http_conf_file"; then
+				if grep -qiE "$ANY404_REGEX" "$http_conf_file"; then
 					echo "  Commenting out pre-existing 404s in HTTP vhost (superseded by .htaccess)"
 					backup_file "$http_conf_file"
-					remove_404_block "$http_conf_file"
+					comment_all_404_lines "$http_conf_file"
 				fi
 			fi
 		fi
 		# If no .htaccess 404, fallback to local vhost 404
 		if [ -z "$http_404_block" ]; then
-			http_404_block=$(extract_404_block "$http_conf_file" || true)
+			if last_404_is_cf "$http_conf_file"; then
+				http_404_block=$(extract_404_block "$http_conf_file" || true)
+			fi
 			if [ -n "$http_404_block" ]; then
 				echo "  Found local 404 in HTTP vhost; wrapping inline"
 				backup_file "$http_conf_file"
-				remove_404_block "$http_conf_file"
+				comment_all_404_lines "$http_conf_file"
 			fi
 		fi
 		# Normalize whitespace before </VirtualHost>
@@ -596,12 +653,12 @@ configure_site_debian() {
 		if [ -z "$http_404_block" ]; then
 			if [ -n "$ssl_404_block" ]; then
 				http_404_block="$ssl_404_block"
-			elif [ -f "$docroot/.htaccess" ] && grep -qiE "$ERROR404_REGEX" "$docroot/.htaccess"; then
+			elif [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
 				http_404_block=$(extract_404_block "$docroot/.htaccess" || true)
 				if [ -n "$http_404_block" ]; then
-					echo "  Migrating 404 from .htaccess into HTTP vhost"
+					echo "  Migrating 404 from .htaccess into HTTP vhost (authoritative)"
 					backup_file "$docroot/.htaccess"
-					remove_404_block "$docroot/.htaccess"
+					comment_all_404_lines "$docroot/.htaccess"
 				fi
 			fi
 		fi
@@ -616,11 +673,11 @@ configure_site_debian() {
 		echo "  Info: No HTTP configuration file found for $domain"
 	fi
 
-	# If anything remains in .htaccess matching the pattern, comment it out with a note (already migrated above if with404)
-	if [ -f "$docroot/.htaccess" ] && grep -qiE "$ERROR404_REGEX" "$docroot/.htaccess"; then
+	# If last .htaccess 404 is CF-targeting and anything remains, comment out all 404s with a note
+	if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess" && grep -qiE "$ANY404_REGEX" "$docroot/.htaccess"; then
 		echo "  Commenting out 404 ErrorDocument in $docroot/.htaccess and adding note"
 		backup_file "$docroot/.htaccess"
-		remove_404_block "$docroot/.htaccess"
+		comment_all_404_lines "$docroot/.htaccess"
 	fi
 }
 
@@ -648,22 +705,22 @@ configure_site_cpanel() {
 
 	# Prepare a 404 block from existing userdata or .htaccess if site had one previously
 	local cp_404_block=""
-	# Prefer .htaccess for comment preservation and precedence
-	if [ -f "$docroot/.htaccess" ] && grep -qiE "$ERROR404_REGEX" "$docroot/.htaccess"; then
+	# Prefer .htaccess for comment preservation and precedence; proceed only if last 404 is CF
+	if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
 		cp_404_block=$(extract_404_block "$docroot/.htaccess" || true)
 		if [ -n "$cp_404_block" ]; then
 			echo "  Migrating 404 from .htaccess into cPanel userdata (authoritative)"
 			backup_file "$docroot/.htaccess"
-			remove_404_block "$docroot/.htaccess"
-			# Comment out any pre-existing 404s in existing userdata files as superseded
+			comment_all_404_lines "$docroot/.htaccess"
+			# Comment out any pre-existing 404s in existing userdata files as superseded (any target)
 			for d in "${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}" "${CPANEL_USERDATA_STD_PATH}/${user}/${domain}"; do
 				[ -d "$d" ] || continue
 				while IFS= read -r f; do
 					[ -f "$f" ] || continue
-					if grep -qiE "$ERROR404_REGEX" "$f"; then
+					if grep -qiE "$ANY404_REGEX" "$f"; then
 						echo "  Commenting out pre-existing 404s in userdata file: $f (superseded by .htaccess)"
 						backup_file "$f"
-						remove_404_block "$f"
+						comment_all_404_lines "$f"
 					fi
 				done < <(find "$d" -type f -maxdepth 1 2>/dev/null)
 			done
@@ -675,10 +732,11 @@ configure_site_cpanel() {
 				[ -d "$d" ] || continue
 				while IFS= read -r f; do
 					[ -f "$f" ] || continue
-					if grep -qiE "$ERROR404_REGEX" "$f"; then
+					# Only proceed if the last 404 in this file is CF
+					if last_404_is_cf "$f"; then
 						cp_404_block=$(extract_404_block "$f" || true)
 						backup_file "$f"
-						remove_404_block "$f"
+						comment_all_404_lines "$f"
 						break
 					fi
 				done < <(find "$d" -type f -maxdepth 1 2>/dev/null)

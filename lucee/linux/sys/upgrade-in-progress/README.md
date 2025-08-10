@@ -113,13 +113,15 @@ For sites that use a local ErrorDocument 404 pointing to a CFML handler (e.g., `
 
 - The existing `ErrorDocument 404` line targeting any `.cf*` file is wrapped in:
   - `<IfDefine !LUCEE_UPGRADE_IN_PROGRESS> ... </IfDefine>`
-- If the directive is located in `.htaccess`, it is migrated into the vhost/userdata file and the original line in `.htaccess` is commented out with a note (since `<IfDefine>` is not supported in `.htaccess`). Any contiguous preceding comments are preserved during migration.
+- If the directive is located in `.htaccess`, it is migrated into the vhost/userdata file and the original line in `.htaccess` is commented out with a note (see rationale below). Any contiguous preceding comments are preserved during migration.
 - When upgrade mode is active, the wrapper prevents the local 404 from intercepting requests; Apache instead serves `upgrade-in-progress.html` via the per-site Include to `/opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf`.
 
 Note on precedence and normalization:
-- Only the last effective `ErrorDocument 404` is migrated (Apache treats the last one as effective).
-- All matching `ErrorDocument 404` lines in `.htaccess` are commented out with an explanatory note.
-- If `.htaccess` contains a 404, any pre-existing 404 handlers in vhost/userdata are also commented out as superseded; the wrapped block inserted by this script becomes authoritative.
+- Migration/wrapping occurs only if the last effective `ErrorDocument 404` targets a CFML handler (`.cfm/.cfml/.cfc/.cfs`). If the last 404 is non‑CF, local 404 handling is left unchanged.
+- When migration/wrapping occurs, all `ErrorDocument 404` directives in the same scope are commented out with an explanatory note (this includes non‑CF targets).
+- If `.htaccess` has an eligible 404 (last is CF), it takes precedence: all 404s in `.htaccess` are commented, and any 404s in vhost/userdata are also commented as superseded; the inserted wrapped block becomes authoritative.
+
+Rationale: Apache applies the last `ErrorDocument 404` directive in a scope; `.htaccess` cannot use `<IfDefine>`. To exactly mirror Apache’s behavior and to make upgrade toggling reliable, we only migrate when the last handler is CF, and we comment out all other 404 directives. This yields one authoritative handler wrapped in `<IfDefine>`.
 
 ## Example `lucee-upgrade-in-progress.conf`:
 
