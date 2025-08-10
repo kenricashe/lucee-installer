@@ -324,8 +324,11 @@ insert_wrapped_block_before_vhost_close() {
 				line=_b[k]
 				if (!seen_content && line ~ /^[ \t]*$/) continue
 				seen_content=1
+				# Remove any carriage returns to avoid losing indentation due to \r
+				gsub(/\r/, "", line)
 				sub(/^[ \t]*/, "", line)
-				blk_norm = blk_norm "\t" line "\n"
+				# Indent content two tabs inside the <IfDefine> block
+				blk_norm = blk_norm "\t\t" line "\n"
 			}
 			for (i=1;i<=n;i++) {
 				if (i==target_close) {
