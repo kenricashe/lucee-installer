@@ -316,12 +316,21 @@ insert_wrapped_block_before_vhost_close() {
 		END {
 			if (target_close==0) target_close=last
 			if (target_close==0) exit 1
+			# Normalize and indent block: remove leading blank lines and strip leading whitespace
+			nbl=split(blk, _b, /\n/)
+			blk_norm=""
+			seen_content=0
+			for (k=1;k<=nbl;k++) {
+				line=_b[k]
+				if (!seen_content && line ~ /^[ \t]*$/) continue
+				seen_content=1
+				sub(/^[ \t]*/, "", line)
+				blk_norm = blk_norm "\t" line "\n"
+			}
 			for (i=1;i<=n;i++) {
 				if (i==target_close) {
-					blk_indented = blk
-					gsub(/\n/, "\n\t", blk_indented)
 					print "\t<IfDefine !LUCEE_UPGRADE_IN_PROGRESS>"
-					print "\t" blk_indented
+					printf "%s", blk_norm
 					print "\t</IfDefine>"
 					print ""
 				}
