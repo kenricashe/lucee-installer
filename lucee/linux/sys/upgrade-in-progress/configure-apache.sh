@@ -76,6 +76,32 @@ apache_config_test() {
 	fi
 }
 
+# Extract the last matching ErrorDocument 404 *.cf* even if it is commented (e.g., from prior runs)
+# Strips leading '# ' from the extracted lines and excludes our NOTE lines
+extract_404_block_allow_commented() {
+	local file="$1"
+	[ -f "$file" ] || return 1
+	awk -v IGNORECASE=1 -v pat="$ERROR404_REGEX" '
+		{ lines[++n]=$0 }
+		# match active or commented ErrorDocument 404 *.cf*
+		$0 ~ /^[\t ]*#?[\t ]*ErrorDocument[\t ]+404[\t ]+/ && $0 ~ pat { ln=n }
+		END {
+			if (!ln) exit 1
+			start=ln-1
+			while (start>=1 && (lines[start] ~ /^[\t ]*#/ || lines[start] ~ /^[\t ]*$/)) start--
+			for (i=start+1; i<ln; i++) {
+				if (lines[i] ~ /NOTE: ErrorDocument 404/) continue
+				# strip leading comment markers
+				sub(/^[\t ]*#[\t ]?/, "", lines[i])
+				print lines[i]
+			}
+			line=lines[ln]
+			sub(/^[\t ]*#[\t ]?/, "", line)
+			print line
+		}
+	' "$file"
+}
+
 # Return 0 if the last ErrorDocument 404 in file targets .cf*, else return 1
 last_404_is_cf() {
 	local file="$1"
@@ -245,26 +271,51 @@ remove_404_block() {
 	fi
 }
 
-# Insert a wrapped block before </VirtualHost> in the given vhost file
+# Insert a wrapped block before the closing </VirtualHost> of the block whose ServerName/ServerAlias matches domain (3rd arg).
+# If no matching block is found, fall back to the last </VirtualHost> in the file.
 insert_wrapped_block_before_vhost_close() {
 	local vhost_file="$1"
 	local block_text="$2"
+	local domain_match="$3"
 	[ -f "$vhost_file" ] || return 1
 	local tmp
 	tmp=$(mktemp)
-	awk -v blk="$block_text" '
-		BEGIN{ done=0 }
-		/<\/VirtualHost>/ && !done {
-			# indent each line of the block by one tab for readability
-			blk_indented = blk
-			gsub(/\n/, "\n\t", blk_indented)
-			print "\t<IfDefine !LUCEE_UPGRADE_IN_PROGRESS>"
-			print "\t" blk_indented
-			print "\t</IfDefine>"
-			print ""  # blank line before closing </VirtualHost>
-			done=1
+	awk -v blk="$block_text" -v dom="$domain_match" '
+		BEGIN { inblk=0; match_this=0; done=0; n=0; last=0; target_close=0 }
+		{ lines[++n]=$0 }
+		/<VirtualHost[> \t]/ { inblk=1; match_this=0 }
+		inblk && tolower($0) ~ /^[\t ]*server(name|alias)[\t ]+/ {
+			if (dom == "") { match_this=1 }
+			else {
+				low=$0; for (i=1;i<=length(low);i++) {}
+				# token-based match: exact domain appears as a separate token
+				if (tolower(low) ~ /(^|[\t ])[\t ]*server(name|alias)[\t ]+([^#]*)/) {
+					names=tolower(substr(low, RSTART+RLENGTH- length(substr(low, RSTART+RLENGTH))+1))
+					split(names, a, /[\t ]+/)
+					for (j in a) { if (a[j]==tolower(dom)) { match_this=1; break } }
+				}
+			}
 		}
-		{ print }
+		/<\/VirtualHost>/ {
+			last=n
+			if (inblk && target_close==0 && (dom=="" || match_this)) { target_close=n }
+			inblk=0; match_this=0
+		}
+		END {
+			if (target_close==0) target_close=last
+			if (target_close==0) exit 1
+			for (i=1;i<=n;i++) {
+				if (i==target_close) {
+					blk_indented = blk
+					gsub(/\n/, "\n\t", blk_indented)
+					print "\t<IfDefine !LUCEE_UPGRADE_IN_PROGRESS>"
+					print "\t" blk_indented
+					print "\t</IfDefine>"
+					print ""
+				}
+				print lines[i]
+			}
+		}
 	' "$vhost_file" > "$tmp"
 	if [ $? -eq 0 ]; then
 		mv -f "$tmp" "$vhost_file"
@@ -565,6 +616,7 @@ configure_site_debian() {
 		inline_legacy_include "$ssl_conf_file"
 		# Skip re-wrapping if a wrapped 404 already exists
 		local ssl_404_block=""
+		local ssl_from_htaccess="false"
 		if has_wrapped_404_block "$ssl_conf_file"; then
 			echo "  Existing wrapped 404 block detected in SSL vhost; leaving as-is"
 			# Extract it so HTTP vhost can reuse if needed
@@ -576,14 +628,21 @@ configure_site_debian() {
 				ssl_404_block=$(extract_404_block "$docroot/.htaccess" || true)
 				if [ -n "$ssl_404_block" ]; then
 					echo "  Migrating 404 from .htaccess into SSL vhost (authoritative)"
-					backup_file "$docroot/.htaccess"
-					comment_all_404_lines "$docroot/.htaccess"
+					ssl_from_htaccess="true"
 					# Comment out any pre-existing 404s in vhost as they are superseded
 					if grep -qiE "$ANY404_REGEX" "$ssl_conf_file"; then
 						echo "  Commenting out pre-existing 404s in SSL vhost (superseded by .htaccess)"
 						backup_file "$ssl_conf_file"
 						comment_all_404_lines "$ssl_conf_file"
 					fi
+				fi
+			fi
+			# If .htaccess has already been commented by a prior run, recover the 404 from it
+			if [ -z "$ssl_404_block" ] && [ -f "$docroot/.htaccess" ] && grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
+				ssl_404_block=$(extract_404_block_allow_commented "$docroot/.htaccess" || true)
+				if [ -n "$ssl_404_block" ]; then
+					echo "  Recovered 404 from commented .htaccess for SSL vhost"
+					ssl_from_htaccess="true"
 				fi
 			fi
 			# If no .htaccess 404, fallback to local vhost 404
@@ -604,10 +663,16 @@ configure_site_debian() {
 
 		# Always include global detect config
 		sed -i "s|</VirtualHost>|\tInclude /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf\\n\\n</VirtualHost>|" "$ssl_conf_file"
-		# If we have a 404 block, insert it wrapped
-		if [ -n "$ssl_404_block" ]; then
-			insert_wrapped_block_before_vhost_close "$ssl_conf_file" "$ssl_404_block"
-		fi
+		# If we have a 404 block, insert it wrapped into the matching vhost for this domain
+			if [ -n "$ssl_404_block" ]; then
+				if insert_wrapped_block_before_vhost_close "$ssl_conf_file" "$ssl_404_block" "$domain"; then
+					# Only now, after confirmed insert, comment .htaccess if it was the source and not already commented with our note
+					if [ "$ssl_from_htaccess" = "true" ] && ! grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
+						backup_file "$docroot/.htaccess"
+						comment_all_404_lines "$docroot/.htaccess"
+					fi
+				fi
+			fi
 	else
 		echo "  Warning: Could not find SSL configuration file for $domain"
 	fi
@@ -629,6 +694,7 @@ configure_site_debian() {
 		inline_legacy_include "$http_conf_file"
 		# Skip re-wrapping if a wrapped 404 already exists
 		local http_404_block=""
+		local http_from_htaccess="false"
 		if has_wrapped_404_block "$http_conf_file"; then
 			echo "  Existing wrapped 404 block detected in HTTP vhost; leaving as-is"
 		else
@@ -638,8 +704,15 @@ configure_site_debian() {
 				http_404_block=$(extract_404_block "$docroot/.htaccess" || true)
 				if [ -n "$http_404_block" ]; then
 					echo "  Migrating 404 from .htaccess into HTTP vhost (authoritative)"
-					backup_file "$docroot/.htaccess"
-					comment_all_404_lines "$docroot/.htaccess"
+					http_from_htaccess="true"
+				fi
+			fi
+			# If .htaccess has already been commented by a prior run, recover the 404 from it
+			if [ -z "$http_404_block" ] && [ -f "$docroot/.htaccess" ] && grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
+				http_404_block=$(extract_404_block_allow_commented "$docroot/.htaccess" || true)
+				if [ -n "$http_404_block" ]; then
+					echo "  Recovered 404 from commented .htaccess for HTTP vhost"
+					http_from_htaccess="true"
 				fi
 			fi
 			# If no .htaccess 404, fallback to local vhost 404
@@ -653,34 +726,21 @@ configure_site_debian() {
 					comment_all_404_lines "$http_conf_file"
 				fi
 			fi
+		fi
 			# If we prepared a 404 block in this branch, insert it now (before fallback logic)
 			if [ -n "$http_404_block" ]; then
-				insert_wrapped_block_before_vhost_close "$http_conf_file" "$http_404_block"
-			fi
-		fi
-		# Normalize whitespace before </VirtualHost>
-		sed -i ':a;N;$!ba;s/\n[[:space:]]*\n*[[:space:]]*<\/VirtualHost>/\n\n<\/VirtualHost>/' "$http_conf_file"
-		# Always include global detect config
-		sed -i "s|</VirtualHost>|\tInclude /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf\\n\\n</VirtualHost>|" "$http_conf_file"
-		# If no 404 came from HTTP vhost, try to reuse from SSL or pull from .htaccess
-		# but only if we don't already have a wrapped 404 block present
-		if ! has_wrapped_404_block "$http_conf_file"; then
-			if [ -z "$http_404_block" ]; then
-				if [ -n "$ssl_404_block" ]; then
-					http_404_block="$ssl_404_block"
-				elif [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
-					http_404_block=$(extract_404_block "$docroot/.htaccess" || true)
-					if [ -n "$http_404_block" ]; then
-						echo "  Migrating 404 from .htaccess into HTTP vhost (authoritative)"
+				if insert_wrapped_block_before_vhost_close "$http_conf_file" "$http_404_block" "$domain"; then
+					if [ "$http_from_htaccess" = "true" ] && ! grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
 						backup_file "$docroot/.htaccess"
 						comment_all_404_lines "$docroot/.htaccess"
 					fi
 				fi
 			fi
-			if [ -n "$http_404_block" ]; then
-				insert_wrapped_block_before_vhost_close "$http_conf_file" "$http_404_block"
-			fi
-		fi
+		# keep processing inside HTTP vhost block
+		# Normalize whitespace before </VirtualHost>
+		sed -i ':a;N;$!ba;s/\n[[:space:]]*\n*[[:space:]]*<\/VirtualHost>/\n\n<\/VirtualHost>/' "$http_conf_file"
+		# Always include global detect config
+		sed -i "s|</VirtualHost>|\tInclude /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf\\n\\n</VirtualHost>|" "$http_conf_file"
 		# Best-effort warning if HTTP VirtualHost may not redirect to HTTPS
 		if ! grep -Eiq '(Redirect(\s+(permanent|temp|301|302))?\s+/?\s+https?://|RewriteRule\s+.*https://)' "$http_conf_file"; then
 			echo "  Warning: HTTP vhost for $domain may not redirect to HTTPS. Ensure a proper 80->443 redirect is configured to avoid exposure over HTTP."
