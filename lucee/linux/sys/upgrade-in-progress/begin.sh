@@ -6,6 +6,16 @@ if [ "$(id -u)" != "0" ]; then
 	exit 1
 fi
 
+# preflight: ensure detect include exists at /opt path used by per-site Includes
+UPG_DIR="/opt/lucee/sys/upgrade-in-progress"
+DETECT_CONF="${UPG_DIR}/lucee-detect-upgrade.conf"
+if [ ! -f "$DETECT_CONF" ]; then
+	echo "Error: Required file not found: $DETECT_CONF"
+	echo "Upgrade mode cannot be enabled safely without this include."
+	echo "Ensure the upgrade-in-progress package is deployed to $UPG_DIR and try again."
+	exit 1
+fi
+
 # prep cPanel flag
 if [ -f "/usr/local/cpanel/cpanel" ]; then
 	IS_CPANEL=true

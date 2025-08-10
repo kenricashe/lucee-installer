@@ -10,7 +10,11 @@ if command -v readlink >/dev/null 2>&1; then
 	while [ -L "$SOURCE" ]; do
 		DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 		LINK="$(readlink "$SOURCE")"
-		[[ "$LINK" != /* ]] && SOURCE="$DIR/$LINK" || SOURCE="$LINK"
+		if [[ "$LINK" != /* ]]; then
+			SOURCE="$DIR/$LINK"
+		else
+			SOURCE="$LINK"
+		fi
 	done
 fi
 SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"

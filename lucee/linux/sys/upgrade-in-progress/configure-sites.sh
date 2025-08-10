@@ -22,12 +22,32 @@ SOURCE="${BASH_SOURCE[0]:-$0}"
 while [ -L "$SOURCE" ]; do
 	DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 	LINK="$(readlink "$SOURCE")"
-	[[ "$LINK" != /* ]] && SOURCE="$DIR/$LINK" || SOURCE="$LINK"
+	if [[ "$LINK" != /* ]]; then
+		SOURCE="$DIR/$LINK"
+	else
+		SOURCE="$LINK"
+	fi
 done
 SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 LUCEE_ROOT="$("$SCRIPT_DIR/get-lucee-root.sh")"
 UPG_DIR="${LUCEE_ROOT}/sys/upgrade-in-progress"
+
+	# preflight: required files must exist at /opt path used by per-site Includes and docroot copy
+	DETECT_CONF="${UPG_DIR}/lucee-detect-upgrade.conf"
+	UPG_HTML="${UPG_DIR}/upgrade-in-progress.html"
+	if [ ! -f "$DETECT_CONF" ]; then
+		echo "Error: Required include not found: $DETECT_CONF"
+		echo "Run deploy-to-opt-lucee-sys.sh to deploy the package, then retry."
+		exit 1
+	fi
+	if [ ! -f "$UPG_HTML" ]; then
+		echo "Error: Required HTML not found: $UPG_HTML"
+		echo "Run deploy-to-opt-lucee-sys.sh to deploy the package, then retry."
+		exit 1
+	fi
+
 ERROR404_LINE='ErrorDocument 404 /404.cfm?%{REQUEST_URI}&%{QUERY_STRING}'
+ERROR404_REGEX='^[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+/[^[:space:]]*\.(cfm|cfml|cfc|cfs)([^[:alnum:]_]|$)'
 
 SITES_FILE="${UPG_DIR}/sites-configured.txt"
 if [ ! -f "$SITES_FILE" ]; then
@@ -79,16 +99,86 @@ backup_file() {
 	cp -f "$src" "$dest"
 }
 
+# Extract the first matching ErrorDocument 404 *.cf* line and its contiguous preceding comments
+# Prints the block to stdout; returns non-zero if not found
+extract_404_block() {
+	local file="$1"
+	[ -f "$file" ] || return 1
+	awk -v IGNORECASE=1 -v pat="$ERROR404_REGEX" '
+		{ lines[++n]=$0 }
+		$0 ~ pat && ln==0 { ln=n }
+		END {
+			if (!ln) exit 1
+			start=ln-1
+			while (start>=1 && (lines[start] ~ /^[\t ]*#/ || lines[start] ~ /^[\t ]*$/)) start--
+			for (i=start+1; i<ln; i++) print lines[i]
+			print lines[ln]
+		}
+	' "$file"
+}
+
+# Remove the first matching ErrorDocument 404 *.cf* line and its contiguous preceding comments from file (in-place)
+remove_404_block() {
+	local file="$1"
+	[ -f "$file" ] || return 0
+	local tmp
+	tmp=$(mktemp)
+	awk -v IGNORECASE=1 -v pat="$ERROR404_REGEX" '
+		{ lines[++n]=$0 }
+		$0 ~ pat && ln==0 { ln=n }
+		END {
+			if (!ln) {
+				for (i=1;i<=n;i++) print lines[i]
+				exit 0
+			}
+			start=ln-1
+			while (start>=1 && (lines[start] ~ /^[\t ]*#/ || lines[start] ~ /^[\t ]*$/)) start--
+			for (i=1;i<=n;i++) if (i<start+1 || i>ln) print lines[i]
+		}
+	' "$file" > "$tmp"
+	if [ $? -eq 0 ]; then
+		mv -f "$tmp" "$file"
+	else
+		rm -f "$tmp"
+		return 1
+	fi
+}
+
+# Insert a wrapped block before </VirtualHost> in the given vhost file
+insert_wrapped_block_before_vhost_close() {
+	local vhost_file="$1"
+	local block_text="$2"
+	[ -f "$vhost_file" ] || return 1
+	local tmp
+	tmp=$(mktemp)
+	awk -v blk="$block_text" '
+		BEGIN{ done=0 }
+		/<\/VirtualHost>/ && !done {
+			print "\t<IfDefine !LUCEE_UPGRADE_IN_PROGRESS>"
+			print blk
+			print "\t</IfDefine>"
+			done=1
+		}
+		{ print }
+	' "$vhost_file" > "$tmp"
+	if [ $? -eq 0 ]; then
+		mv -f "$tmp" "$vhost_file"
+	else
+		rm -f "$tmp"
+		return 1
+	fi
+}
+
 # Check if mod_headers is enabled (needed for X-Lucee-Upgrade header polling)
 headers_module_enabled() {
 	if command -v apache2ctl >/dev/null 2>&1; then
-		apache2ctl -M 2>/dev/null | grep -qi '\bheaders_module\b'
+		apache2ctl -M 2>/dev/null | grep -qiE '(^|[^[:alnum:]_])headers_module([^[:alnum:]_]|$)'
 		return $?
 	elif command -v apachectl >/dev/null 2>&1; then
-		apachectl -M 2>/dev/null | grep -qi '\bheaders_module\b'
+		apachectl -M 2>/dev/null | grep -qiE '(^|[^[:alnum:]_])headers_module([^[:alnum:]_]|$)'
 		return $?
 	elif command -v httpd >/dev/null 2>&1; then
-		httpd -M 2>/dev/null | grep -qi '\bheaders_module\b'
+		httpd -M 2>/dev/null | grep -qiE '(^|[^[:alnum:]_])headers_module([^[:alnum:]_]|$)'
 		return $?
 	fi
 	# If we can't detect, do not block; treat as enabled to avoid false alarms
@@ -105,7 +195,9 @@ warn_existing_ajp_modcfml() {
 		local hits
 		# Only match active (non-commented) lines with AJP/mod_cfml directives, excluding our managed file
 		hits=$(grep -RniE '^[[:space:]]*[^#].*(ProxyPass(Match|Reverse).*ajp://|ModCFML_SharedKey|LoadModule[[:space:]]+modcfml_module)' "$dir" 2>/dev/null | grep -v 'lucee-ajp-and-mod_cfml.conf' || true)
-		[ -n "$hits" ] && found+="\n${hits}"
+		if [ -n "$hits" ]; then
+			found+="\n${hits}"
+		fi
 	done
 	if [ -n "$found" ]; then
 		echo "Warning: Existing AJP/mod_cfml directives detected in global Apache config."
@@ -207,11 +299,6 @@ ensure_global_confs() {
 			echo "Installing global lucee-upgrade-in-progress.conf into ${conf_avail}/"
 			cp -f "$opt_file" "${conf_avail}/lucee-upgrade-in-progress.conf"
 		fi
-		# Ensure lucee-detect-upgrade.conf is installed in conf-available (not referenced from ${UPG_DIR})
-		if [ -f "${UPG_DIR}/lucee-detect-upgrade.conf" ] && [ ! -f "${conf_avail}/lucee-detect-upgrade.conf" ]; then
-			echo "Installing lucee-detect-upgrade.conf into ${conf_avail}/"
-			cp -f "${UPG_DIR}/lucee-detect-upgrade.conf" "${conf_avail}/lucee-detect-upgrade.conf"
-		fi
 		# Warn if conflicting AJP/mod_cfml config is present elsewhere in global dirs
 		warn_existing_ajp_modcfml \
 			"/etc/apache2/conf-available" \
@@ -258,11 +345,6 @@ ensure_global_confs() {
 		if [ -f "$opt_file" ] && [ ! -f "${confd}/lucee-upgrade-in-progress.disabled" ] && [ ! -f "${confd}/lucee-upgrade-in-progress.conf" ]; then
 			echo "Installing global lucee-upgrade-in-progress.disabled into ${confd}/"
 			cp -f "$opt_file" "${confd}/lucee-upgrade-in-progress.disabled"
-		fi
-		# Ensure lucee-detect-upgrade.conf is installed in the global conf.d directory
-		if [ -f "${UPG_DIR}/lucee-detect-upgrade.conf" ] && [ ! -f "${confd}/lucee-detect-upgrade.conf" ]; then
-			echo "Installing lucee-detect-upgrade.conf into ${confd}/"
-			cp -f "${UPG_DIR}/lucee-detect-upgrade.conf" "${confd}/lucee-detect-upgrade.conf"
 		fi
 		# Warn if conflicting AJP/mod_cfml config is present elsewhere in global dir
 		warn_existing_ajp_modcfml "$confd"
@@ -357,25 +439,35 @@ configure_site_debian() {
 		# Backup before editing (mirrored under BACKUP_ROOT)
 		backup_file "$ssl_conf_file"
 		
-		# Remove any existing Lucee upgrade includes
+		# Remove any existing Lucee upgrade includes and legacy 404 include
 		sed -i '/Include.*lucee-detect-upgrade.conf/d' "$ssl_conf_file"
 		sed -i '/Include.*lucee-404-routing.conf/d' "$ssl_conf_file"
-		# If site previously had a local 404 directive, remove it now to defer to centralized include
-		if [ "$site_type" = "with404" ] && grep -q "$ERROR404_LINE" "$ssl_conf_file"; then
-			echo "  Removing local 404 ErrorDocument from $ssl_conf_file"
-			sed -i '/[[:space:]]*ErrorDocument[[:space:]]\+404[[:space:]]\+\/404\.cfm.*%{REQUEST_URI}&%{QUERY_STRING}/d' "$ssl_conf_file"
+		# If site has a local 404 in this vhost, capture then remove it
+		local ssl_404_block=""
+		if echo "" | grep -q ""; then :; fi # keep shellcheck quiet about local before use
+		ssl_404_block=$(extract_404_block "$ssl_conf_file" || true)
+		if [ -n "$ssl_404_block" ]; then
+			echo "  Found local 404 in SSL vhost; wrapping inline"
+			backup_file "$ssl_conf_file"
+			remove_404_block "$ssl_conf_file"
 		fi
 		
 		# Replace all whitespace just before closing </VirtualHost> with '\n\n'
 		sed -i ':a;N;$!ba;s/\n[[:space:]]*\n*[[:space:]]*<\/VirtualHost>/\n\n<\/VirtualHost>/' "$ssl_conf_file"
 
-		# Add appropriate includes before the closing </VirtualHost>
-		if [ "$site_type" = "with404" ]; then
-			# Root sites get both upgrade detection and 404 routing
-			sed -i "s|</VirtualHost>|\tInclude /etc/apache2/conf-available/lucee-detect-upgrade.conf\\n\tInclude ${UPG_DIR}/lucee-404-routing.conf\\n\\n</VirtualHost>|" "$ssl_conf_file"
-		else
-			# Non-root sites get only upgrade detection
-			sed -i "s|</VirtualHost>|\tInclude /etc/apache2/conf-available/lucee-detect-upgrade.conf\\n\\n</VirtualHost>|" "$ssl_conf_file"
+		# Always include global detect config
+		sed -i "s|</VirtualHost>|\tInclude /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf\\n\\n</VirtualHost>|" "$ssl_conf_file"
+		# If we have a 404 block from this vhost or from .htaccess (handled below), insert it wrapped
+		if [ -z "$ssl_404_block" ] && [ "$site_type" = "with404" ] && [ -f "$docroot/.htaccess" ] && grep -qiE "$ERROR404_REGEX" "$docroot/.htaccess"; then
+			ssl_404_block=$(extract_404_block "$docroot/.htaccess" || true)
+			if [ -n "$ssl_404_block" ]; then
+				echo "  Migrating 404 from .htaccess into SSL vhost"
+				backup_file "$docroot/.htaccess"
+				remove_404_block "$docroot/.htaccess"
+			fi
+		fi
+		if [ -n "$ssl_404_block" ]; then
+			insert_wrapped_block_before_vhost_close "$ssl_conf_file" "$ssl_404_block"
 		fi
 	else
 		echo "  Warning: Could not find SSL configuration file for $domain"
@@ -393,21 +485,36 @@ configure_site_debian() {
 		echo "  Updating $http_conf_file"
 		# Backup before editing (mirrored under BACKUP_ROOT)
 		backup_file "$http_conf_file"
-		# Remove any existing Lucee upgrade includes
+		# Remove any existing Lucee upgrade includes and legacy 404 include
 		sed -i '/Include.*lucee-detect-upgrade.conf/d' "$http_conf_file"
 		sed -i '/Include.*lucee-404-routing.conf/d' "$http_conf_file"
-		# If site previously had a local 404 directive, remove it now to defer to centralized include
-		if [ "$site_type" = "with404" ] && grep -q "$ERROR404_LINE" "$http_conf_file"; then
-			echo "  Removing local 404 ErrorDocument from $http_conf_file"
-			sed -i '/[[:space:]]*ErrorDocument[[:space:]]\+404[[:space:]]\+\/404\.cfm.*%{REQUEST_URI}&%{QUERY_STRING}/d' "$http_conf_file"
+		# Capture then remove local 404 in this vhost, if any
+		local http_404_block=""
+		http_404_block=$(extract_404_block "$http_conf_file" || true)
+		if [ -n "$http_404_block" ]; then
+			echo "  Found local 404 in HTTP vhost; wrapping inline"
+			backup_file "$http_conf_file"
+			remove_404_block "$http_conf_file"
 		fi
 		# Normalize whitespace before </VirtualHost>
 		sed -i ':a;N;$!ba;s/\n[[:space:]]*\n*[[:space:]]*<\/VirtualHost>/\n\n<\/VirtualHost>/' "$http_conf_file"
-		# Add appropriate includes before the closing </VirtualHost>
-		if [ "$site_type" = "with404" ]; then
-			sed -i "s|</VirtualHost>|\tInclude /etc/apache2/conf-available/lucee-detect-upgrade.conf\\n\tInclude ${UPG_DIR}/lucee-404-routing.conf\\n\\n</VirtualHost>|" "$http_conf_file"
-		else
-			sed -i "s|</VirtualHost>|\tInclude /etc/apache2/conf-available/lucee-detect-upgrade.conf\\n\\n</VirtualHost>|" "$http_conf_file"
+		# Always include global detect config
+		sed -i "s|</VirtualHost>|\tInclude /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf\\n\\n</VirtualHost>|" "$http_conf_file"
+		# If no 404 came from HTTP vhost, and site_type says with404, try to reuse from SSL or pull from .htaccess
+		if [ -z "$http_404_block" ] && [ "$site_type" = "with404" ]; then
+			if [ -n "$ssl_404_block" ]; then
+				http_404_block="$ssl_404_block"
+			elif [ -f "$docroot/.htaccess" ] && grep -qiE "$ERROR404_REGEX" "$docroot/.htaccess"; then
+				http_404_block=$(extract_404_block "$docroot/.htaccess" || true)
+				if [ -n "$http_404_block" ]; then
+					echo "  Migrating 404 from .htaccess into HTTP vhost"
+					backup_file "$docroot/.htaccess"
+					remove_404_block "$docroot/.htaccess"
+				fi
+			fi
+		fi
+		if [ -n "$http_404_block" ]; then
+			insert_wrapped_block_before_vhost_close "$http_conf_file" "$http_404_block"
 		fi
 		# Best-effort warning if HTTP VirtualHost may not redirect to HTTPS
 		if ! grep -Eiq '(Redirect(\s+(permanent|temp|301|302))?\s+/?\s+https?://|RewriteRule\s+.*https://)' "$http_conf_file"; then
@@ -417,11 +524,11 @@ configure_site_debian() {
 		echo "  Info: No HTTP configuration file found for $domain"
 	fi
 
-	# Remove local 404 directive from docroot .htaccess if present
-	if [ "$site_type" = "with404" ] && [ -f "$docroot/.htaccess" ] && grep -q "$ERROR404_LINE" "$docroot/.htaccess"; then
-		echo "  Removing local 404 ErrorDocument from $docroot/.htaccess"
+	# If anything remains in .htaccess matching the pattern, remove it (already migrated above if with404)
+	if [ -f "$docroot/.htaccess" ] && grep -qiE "$ERROR404_REGEX" "$docroot/.htaccess"; then
+		echo "  Cleaning up 404 ErrorDocument from $docroot/.htaccess"
 		backup_file "$docroot/.htaccess"
-		sed -i '/[[:space:]]*ErrorDocument[[:space:]]\+404[[:space:]]\+\/404\.cfm.*%{REQUEST_URI}&%{QUERY_STRING}/d' "$docroot/.htaccess"
+		remove_404_block "$docroot/.htaccess"
 	fi
 }
 
@@ -443,24 +550,35 @@ configure_site_cpanel() {
 	mkdir -p ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}
 	mkdir -p ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}
 	
-	# For sites previously using a local 404 directive, remove it from any existing userdata files and .htaccess
+	# Prepare a 404 block from existing userdata or .htaccess if site had one previously
+	local cp_404_block=""
 	if [ "$site_type" = "with404" ]; then
-		for d in "${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}" "${CPANEL_USERDATA_STD_PATH}/${user}/${domain}"; do
-			if [ -d "$d" ]; then
-				# Remove from any existing userdata include files that contain the directive
+		# Prefer .htaccess for comment preservation
+		if [ -f "$docroot/.htaccess" ] && grep -qiE "$ERROR404_REGEX" "$docroot/.htaccess"; then
+			cp_404_block=$(extract_404_block "$docroot/.htaccess" || true)
+			if [ -n "$cp_404_block" ]; then
+				echo "  Migrating 404 from .htaccess into userdata"
+				backup_file "$docroot/.htaccess"
+				remove_404_block "$docroot/.htaccess"
+			fi
+		fi
+		# If still empty, try to find in existing userdata files
+		if [ -z "$cp_404_block" ]; then
+			for d in "${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}" "${CPANEL_USERDATA_STD_PATH}/${user}/${domain}"; do
+				[ -d "$d" ] || continue
 				while IFS= read -r f; do
 					[ -f "$f" ] || continue
-					echo "  Removing local 404 ErrorDocument from $f"
-					backup_file "$f"
-					sed -i '/[[:space:]]*ErrorDocument[[:space:]]\+404[[:space:]]\+\/404\.cfm.*%{REQUEST_URI}&%{QUERY_STRING}/d' "$f"
-				done < <(grep -Rls "$ERROR404_LINE" "$d" 2>/dev/null || true)
-			fi
-		done
-		# Remove from .htaccess if present
-		if [ -f "$docroot/.htaccess" ] && grep -q "$ERROR404_LINE" "$docroot/.htaccess"; then
-			echo "  Removing local 404 ErrorDocument from $docroot/.htaccess"
-			backup_file "$docroot/.htaccess"
-			sed -i '/[[:space:]]*ErrorDocument[[:space:]]\+404[[:space:]]\+\/404\.cfm.*%{REQUEST_URI}&%{QUERY_STRING}/d' "$docroot/.htaccess"
+					if grep -qiE "$ERROR404_REGEX" "$f"; then
+						cp_404_block=$(extract_404_block "$f" || true)
+						backup_file "$f"
+						remove_404_block "$f"
+						break
+					fi
+				done < <(find "$d" -type f -maxdepth 1 2>/dev/null)
+				if [ -n "$cp_404_block" ]; then
+					break
+				fi
+			done
 		fi
 	fi
 	# Create lucee.conf with appropriate includes
@@ -472,8 +590,10 @@ configure_site_cpanel() {
 # This file is automatically generated and managed by
 # ${UPG_DIR}/configure-sites.sh
 # Any manual changes will be overwritten when the script runs
-Include /etc/apache2/conf.d/lucee-detect-upgrade.conf
-Include ${UPG_DIR}/lucee-404-routing.conf
+Include /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf
+<IfDefine !LUCEE_UPGRADE_IN_PROGRESS>
+${cp_404_block}
+</IfDefine>
 EOF
 		# Also create non-SSL userdata include
 		# Backup existing userdata file before overwriting (mirrored under BACKUP_ROOT)
@@ -482,8 +602,10 @@ EOF
 # This file is automatically generated and managed by
 # ${UPG_DIR}/configure-sites.sh
 # Any manual changes will be overwritten when the script runs
-Include /etc/apache2/conf.d/lucee-detect-upgrade.conf
-Include ${UPG_DIR}/lucee-404-routing.conf
+Include /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf
+<IfDefine !LUCEE_UPGRADE_IN_PROGRESS>
+${cp_404_block}
+</IfDefine>
 EOF
 	else
 		# Non-root sites get only upgrade detection
@@ -493,7 +615,7 @@ EOF
 # This file is automatically generated and managed by
 # ${UPG_DIR}/configure-sites.sh
 # Any manual changes will be overwritten when the script runs
-Include /etc/apache2/conf.d/lucee-detect-upgrade.conf
+Include /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf
 EOF
 		# Also create non-SSL userdata include
 		# Backup existing userdata file before overwriting (mirrored under BACKUP_ROOT)
@@ -502,7 +624,7 @@ EOF
 # This file is automatically generated and managed by
 # ${UPG_DIR}/configure-sites.sh
 # Any manual changes will be overwritten when the script runs
-Include /etc/apache2/conf.d/lucee-detect-upgrade.conf
+Include /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf
 EOF
 	fi
 }

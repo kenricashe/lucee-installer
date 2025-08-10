@@ -18,11 +18,25 @@ FILES=(
 	"begin.sh"
 	"end.sh"
 	"upgrade-in-progress.html"
-	"lucee-404-routing.conf"
 	"lucee-detect-upgrade.conf"
 	"lucee-ajp-and-mod_cfml.conf"
 	"lucee-upgrade-in-progress.conf"
 )
+
+# preflight: ensure all source files exist in the script directory
+missing=()
+for f in "${FILES[@]}"; do
+	if [ ! -f "${THISPATH}/$f" ]; then
+		missing+=("$f")
+	fi
+done
+if [ ${#missing[@]} -gt 0 ]; then
+	echo "Error: Missing source files in ${THISPATH}:"
+	for m in "${missing[@]}"; do
+		echo "  - $m"
+	done
+	exit 1
+fi
 
 # Prompt for Lucee root path and deploy there
 DEFAULT_LUCEE_ROOT="/opt/lucee"

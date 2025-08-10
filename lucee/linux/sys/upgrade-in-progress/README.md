@@ -50,24 +50,21 @@ If needed, consult Apache documentation for full details on how to enable the `.
 
 ### Auto-install/ensure of global Apache configs
 
-`configure-sites.sh` will ensure the global toggle files exist and default to a safe normal state (AJP/mod_cfml enabled; upgrade flag disabled). It will also install `lucee-detect-upgrade.conf` into the appropriate global directory so it can be enabled/disabled using standard tooling:
+`configure-sites.sh` will ensure the global toggle files exist and default to a safe normal state (AJP/mod_cfml enabled; upgrade flag disabled). Per-site Includes reference `/opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf`.
 
 - __Debian/Ubuntu__
   - If missing, installs `/opt/lucee/sys/upgrade-in-progress/lucee-upgrade-in-progress.conf` into `/etc/apache2/conf-available/`.
-  - Installs `/opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf` into `/etc/apache2/conf-available/`.
   - Ensures `lucee-upgrade-in-progress` is disabled by default (`a2disconf lucee-upgrade-in-progress`).
   - If `lucee-ajp-and-mod_cfml.conf` is missing in `conf-available`, auto-generates it from the template by parsing Tomcat's `server.xml` (AJP port/secret and `ModCFML_SharedKey`), then ensures it is enabled (`a2enconf`).
 
 -- __RHEL/CentOS/AlmaLinux (non‑cPanel)__
   - Ensures `/etc/httpd/conf.d/lucee-upgrade-in-progress.disabled` exists (installs from `/opt/...` if needed).
-  - Installs `/opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf` into `/etc/httpd/conf.d/` if missing.
   - If an active `.conf` exists, renames it to `.disabled` to enforce normal state.
   - If `lucee-ajp-and-mod_cfml.conf.disabled` exists, renames it to `.conf` to ensure normal state.
   - If neither `lucee-ajp-and-mod_cfml.conf` nor `.disabled` exists in `conf.d`, auto-generates `lucee-ajp-and-mod_cfml.conf` from the template by parsing `server.xml` (enabled for normal state).
 
 - __cPanel__
   - Same pattern under `/etc/apache2/conf.d/`.
-  - Installs `/opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf` into `/etc/apache2/conf.d/` if missing.
   - If neither `lucee-ajp-and-mod_cfml.conf` nor `.disabled` exists in `conf.d`, auto-generates `lucee-ajp-and-mod_cfml.conf` from the template by parsing `server.xml` (enabled for normal state).
   - Global changes are followed by `/scripts/rebuildhttpdconf` and a graceful restart when the script completes its site configuration phase.
 
@@ -110,13 +107,14 @@ Note: The examples herein include .cfc as that is the Lucee installer's default 
   - RHEL/Alma/CentOS (non‑cPanel): `/etc/httpd/conf.d/lucee-ajp-and-mod_cfml.conf`
   - cPanel: `/etc/apache2/conf.d/lucee-ajp-and-mod_cfml.conf`
 
-## Example `lucee-404-routing.conf`:
+## Inline handling of ErrorDocument 404
 
-```apache
-<IfDefine !LUCEE_UPGRADE_IN_PROGRESS>
-    ErrorDocument 404 /404.cfm?%{REQUEST_URI}&%{QUERY_STRING}
-</IfDefine>
-```
+For sites that use a local ErrorDocument 404 pointing to a CFML handler (e.g., `/404.cfm`), the script manages that directive inline within each site's VirtualHost (Debian/RHEL) or cPanel userdata include files:
+
+- The existing `ErrorDocument 404` line targeting any `.cf*` file is wrapped in:
+  - `<IfDefine !LUCEE_UPGRADE_IN_PROGRESS> ... </IfDefine>`
+- If the directive is located in `.htaccess`, it is migrated into the vhost/userdata file and removed from `.htaccess`, because `<IfDefine>` is not supported in `.htaccess`. Any contiguous preceding comments are preserved during migration.
+- When upgrade mode is active, the wrapper prevents the local 404 from intercepting requests; Apache instead serves `upgrade-in-progress.html` via the per-site Include to `/opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf`.
 
 ## Example `lucee-upgrade-in-progress.conf`:
 
@@ -158,12 +156,8 @@ Note: This relies on Apache mod_headers to set the `X-Lucee-Upgrade` header used
 	ServerName example.com
 	[other config here ...]
 
-    # these Include lines are inserted by configure-sites.sh
-    # Debian/Ubuntu:
-    Include /etc/apache2/conf-available/lucee-detect-upgrade.conf
-    # RHEL/cPanel:
-    # Include /etc/httpd/conf.d/lucee-detect-upgrade.conf (RHEL)
-		# or /etc/apache2/conf.d/lucee-detect-upgrade.conf (cPanel)
+    # inserted by configure-sites.sh (same path for all environments)
+    Include /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf
 	
 </VirtualHost>
 ```
@@ -218,11 +212,13 @@ For QA testing after the upgrade, you can exclude one of your sites from the lis
 - `configure-sites.sh` warns if AJP proxying is not detected in the global Apache configuration.
 - `configure-sites.sh` also scans global Apache config for existing AJP/mod_cfml directives (ProxyPass/Match/Reverse ajp://, LoadModule mod_cfml, ModCFML_SharedKey) and warns if duplicates are found outside the managed `lucee-ajp-and-mod_cfml.conf`. Remove any duplicates to avoid conflicts. Commented lines are ignored.
 - `configure-sites.sh` auto-generates `lucee-ajp-and-mod_cfml.conf` in the global Apache directory from the template in `/opt/lucee/sys/upgrade-in-progress/` by parsing Tomcat's `server.xml`. Override with `TOMCAT_SERVER_XML` env var if needed.
-- `configure-sites.sh` injects per-VirtualHost includes pointing to:
-  - Debian/Ubuntu: `/etc/apache2/conf-available/lucee-detect-upgrade.conf`
-  - RHEL (non‑cPanel): `/etc/httpd/conf.d/lucee-detect-upgrade.conf`
-  - cPanel: `/etc/apache2/conf.d/lucee-detect-upgrade.conf`
-  - And `/opt/lucee/sys/upgrade-in-progress/lucee-404-routing.conf` (root sites only)
+- `configure-sites.sh` injects per-VirtualHost (or cPanel userdata) Includes pointing to:
+  - All environments: `/opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf`
+  
+  Additional per-site handling:
+  - For sites WITH a local `ErrorDocument 404` pointing to a `.cf*` target (with404): the directive is wrapped inline within the vhost/userdata under `<IfDefine !LUCEE_UPGRADE_IN_PROGRESS>`.
+  - For sites where the directive exists in `.htaccess`: it is migrated to the vhost/userdata (contiguous preceding comments preserved) and removed from `.htaccess`.
+  - For sites WITHOUT such a directive (no404): only the per-site Include to `/opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf` is added; no local 404 is injected.
 - Debian/Ubuntu: updates both HTTPS vhosts (e.g., `domain-ssl.conf`) and HTTP vhosts (`domain.conf`) where present.
 - cPanel: writes userdata to BOTH trees, then rebuilds httpd config and gracefully restarts:
   - SSL: `/etc/apache2/conf.d/userdata/ssl/2_4/<user>/<domain>/lucee.conf`

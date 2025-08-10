@@ -13,7 +13,11 @@ SOURCE="${BASH_SOURCE[0]:-$0}"
 while [ -L "$SOURCE" ]; do
 	DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 	LINK="$(readlink "$SOURCE")"
-	[[ "$LINK" != /* ]] && SOURCE="$DIR/$LINK" || SOURCE="$LINK"
+	if [[ "$LINK" != /* ]]; then
+		SOURCE="$DIR/$LINK"
+	else
+		SOURCE="$LINK"
+	fi
 done
 SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 LUCEE_ROOT="$("$SCRIPT_DIR/get-lucee-root.sh")"
@@ -64,7 +68,9 @@ get_docroot_redhat() {
 	grep -A 10 -B 5 "ServerName $domain" "$RHEL_HTTPD_CONF" | grep -i "DocumentRoot" | awk '{print $2}' | head -1
 }
 
-ERROR404_LINE='ErrorDocument 404 /404.cfm?%{REQUEST_URI}&%{QUERY_STRING}'
+# Match any local ErrorDocument 404 pointing to a .cf* target (cfm/cfml/cfc/cfs), case-insensitive
+# Used to classify sites as with404/no404
+ERROR404_REGEX='^[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+/[^[:space:]]*\.(cfm|cfml|cfc|cfs)([^[:alnum:]_]|$)'
 
 # Function to analyze sites and detect presence of local 404 ErrorDocument directive
 analyze_sites() {
@@ -101,32 +107,38 @@ analyze_sites() {
 			if [ ! -f "$ssl_conf_file" ]; then
 				ssl_conf_file=$(grep -l "ServerName $domain" /etc/apache2/sites-available/*-ssl.conf 2>/dev/null | head -1)
 			fi
-			[ -f "$ssl_conf_file" ] && grep -q "$ERROR404_LINE" "$ssl_conf_file" && has404=true
+			if [ -f "$ssl_conf_file" ] && grep -qiE "$ERROR404_REGEX" "$ssl_conf_file"; then
+				has404=true
+			fi
 			if [ "$has404" = false ]; then
 				http_conf_file="/etc/apache2/sites-available/${domain}.conf"
 				if [ ! -f "$http_conf_file" ]; then
 					http_conf_file=$(grep -l "ServerName $domain" /etc/apache2/sites-available/*.conf 2>/dev/null | grep -v -- '-ssl\.conf' | head -1)
 				fi
-				[ -f "$http_conf_file" ] && grep -q "$ERROR404_LINE" "$http_conf_file" && has404=true
+				if [ -f "$http_conf_file" ] && grep -qiE "$ERROR404_REGEX" "$http_conf_file"; then
+					has404=true
+				fi
 			fi
 			if [ "$has404" = false ] && [ -f "$docroot/.htaccess" ]; then
-				grep -q "$ERROR404_LINE" "$docroot/.htaccess" && has404=true
+				if grep -qiE "$ERROR404_REGEX" "$docroot/.htaccess"; then
+					has404=true
+				fi
 			fi
 		elif [ "$IS_CPANEL" = true ]; then
 			# cPanel: check userdata includes and docroot .htaccess
 			user=$(echo "$docroot" | awk -F '/' '{print $3}')
 			ssl_dir="/etc/apache2/conf.d/userdata/ssl/2_4/${user}/${domain}"
 			std_dir="/etc/apache2/conf.d/userdata/std/2_4/${user}/${domain}"
-			if [ -d "$ssl_dir" ] && grep -Rqs "$ERROR404_LINE" "$ssl_dir"; then
+			if [ -d "$ssl_dir" ] && grep -Rqs -i -E "$ERROR404_REGEX" "$ssl_dir"; then
 				has404=true
-			elif [ -d "$std_dir" ] && grep -Rqs "$ERROR404_LINE" "$std_dir"; then
+			elif [ -d "$std_dir" ] && grep -Rqs -i -E "$ERROR404_REGEX" "$std_dir"; then
 				has404=true
-			elif [ -f "$docroot/.htaccess" ] && grep -q "$ERROR404_LINE" "$docroot/.htaccess"; then
+			elif [ -f "$docroot/.htaccess" ] && grep -qiE "$ERROR404_REGEX" "$docroot/.htaccess"; then
 				has404=true
 			fi
 		else
 			# Non-cPanel RHEL not fully implemented; best-effort: docroot .htaccess
-			if [ -f "$docroot/.htaccess" ] && grep -q "$ERROR404_LINE" "$docroot/.htaccess"; then
+			if [ -f "$docroot/.htaccess" ] && grep -qiE "$ERROR404_REGEX" "$docroot/.htaccess"; then
 				has404=true
 			fi
 		fi
