@@ -86,7 +86,7 @@ save_results() {
 	echo ""
 	echo "sudo ${UPG_DIR}/configure-apache.sh"
 	echo ""
-	echo "A domains-only file was also saved as:"
+	echo "A domains-only file (just in case you need it) was also saved as:"
 	echo ""
 	echo "$TXTPATH_ONLY_DOMAINS"
 	echo ""
