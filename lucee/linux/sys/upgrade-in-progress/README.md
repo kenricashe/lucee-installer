@@ -43,7 +43,7 @@ Two separate `.conf` files are used to cleanly manage normal Lucee operation vs 
 ### Typical Apache configuration file locations:
 
 - Debian/Ubuntu/Pop!_OS/etc: `/etc/apache2/conf-available/`
-- Redhat/CentOS/AlmaLinux/etc: `/etc/httpd/conf.d/`
+- RHEL/CentOS/AlmaLinux/etc: `/etc/httpd/conf.d/`
 - cPanel: `/etc/apache2/conf.d`
 
 If needed, consult Apache documentation for full details on how to enable the `.conf` files.
@@ -57,7 +57,7 @@ If needed, consult Apache documentation for full details on how to enable the `.
   - Ensures `lucee-upgrade-in-progress` is disabled by default (`a2disconf lucee-upgrade-in-progress`).
   - If `lucee-ajp-and-mod_cfml.conf` is missing in `conf-available`, auto-generates it from the template by parsing Tomcat's `server.xml` (AJP port/secret and `ModCFML_SharedKey`), then ensures it is enabled (`a2enconf`).
 
--- __RHEL/CentOS/AlmaLinux (non‑cPanel)__
+- __RHEL/CentOS/AlmaLinux__
   - Ensures `/etc/httpd/conf.d/lucee-upgrade-in-progress.disabled` exists (installs from `/opt/...` if needed).
   - If an active `.conf` exists, renames it to `.disabled` to enforce normal state.
   - If `lucee-ajp-and-mod_cfml.conf.disabled` exists, renames it to `.conf` to ensure normal state.
@@ -104,7 +104,7 @@ Note: The examples herein include .cfc as that is the Lucee installer's default 
 - Override via environment variable before running: `export TOMCAT_SERVER_XML=/custom/path/server.xml`
 - The generated active file is written into the appropriate global Apache directory alongside `lucee-upgrade-in-progress`:
   - Debian/Ubuntu: `/etc/apache2/conf-available/lucee-ajp-and-mod_cfml.conf`
-  - RHEL/Alma/CentOS (non‑cPanel): `/etc/httpd/conf.d/lucee-ajp-and-mod_cfml.conf`
+  - RHEL/CentOS/AlmaLinux: `/etc/httpd/conf.d/lucee-ajp-and-mod_cfml.conf`
   - cPanel: `/etc/apache2/conf.d/lucee-ajp-and-mod_cfml.conf`
 
 ## Inline handling of ErrorDocument 404
@@ -152,8 +152,8 @@ Yes it is just a simple flag! It will be referenced later in each site's Virtual
 ```
 
 Note: This relies on Apache mod_headers to set the `X-Lucee-Upgrade` header used by the status page for efficient HEAD polling.
-- Debian/Ubuntu: `a2enmod headers && systemctl reload apache2`
-- RHEL/cPanel: `headers_module` is typically enabled by default.
+ - Debian/Ubuntu: `a2enmod headers && systemctl reload apache2`
+ - RHEL/CentOS/AlmaLinux and cPanel: `headers_module` is typically enabled by default, but may require manual enablement on some systems.
 
 ## Example VirtualHost:
 
@@ -217,7 +217,7 @@ For QA testing after the upgrade, you can exclude one of your sites from the lis
 - Files deploy to `/opt/lucee/sys/upgrade-in-progress/` via `deploy-to-opt-lucee-sys.sh`.
 - `configure-apache.sh` auto-installs/ensures global Apache configs to safe defaults:
   - Debian/Ubuntu: installs to `conf-available` if missing, leaves upgrade flag disabled, ensures AJP/mod_cfml enabled if present.
-  - RHEL non‑cPanel and cPanel: ensures `.disabled` exists in `conf.d`, disables active upgrade flag if present, ensures AJP/mod_cfml enabled.
+  - RHEL/CentOS/AlmaLinux and cPanel: ensures `.disabled` exists in `conf.d`, disables active upgrade flag if present, ensures AJP/mod_cfml enabled.
 - `configure-apache.sh` warns if AJP proxying is not detected in the global Apache configuration.
 - `configure-apache.sh` also scans global Apache config for existing AJP/mod_cfml directives (ProxyPass/Match/Reverse ajp://, LoadModule mod_cfml, ModCFML_SharedKey) and warns if duplicates are found outside the managed `lucee-ajp-and-mod_cfml.conf`. Remove any duplicates to avoid conflicts. Commented lines are ignored.
 - `configure-apache.sh` auto-generates `lucee-ajp-and-mod_cfml.conf` in the global Apache directory from the template in `/opt/lucee/sys/upgrade-in-progress/` by parsing Tomcat's `server.xml`. Override with `TOMCAT_SERVER_XML` env var if needed.
@@ -233,7 +233,7 @@ For QA testing after the upgrade, you can exclude one of your sites from the lis
   - SSL: `/etc/apache2/conf.d/userdata/ssl/2_4/<user>/<domain>/lucee.conf`
   - STD: `/etc/apache2/conf.d/userdata/std/2_4/<user>/<domain>/lucee.conf`
   - Commands: `/scripts/rebuildhttpdconf` and `/scripts/restartsrv_httpd --graceful`
-- Non‑cPanel RHEL path remains a placeholder.
+- RHEL/CentOS/AlmaLinux: updates HTTPS and HTTP VirtualHosts under `/etc/httpd/conf.d/*.conf` and `/etc/httpd/conf/httpd.conf`, inserting per-site Include and migrating/wrapping local 404s where applicable.
 
 - `configure-apache.sh` will warn if Apache `mod_headers` is not enabled, since the status page relies on the `X-Lucee-Upgrade` response header for HEAD polling.
 

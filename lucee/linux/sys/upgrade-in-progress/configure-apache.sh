@@ -252,23 +252,24 @@ remove_404_block() {
 }
 
 # Insert a wrapped block before the closing </VirtualHost> of the block whose ServerName/ServerAlias matches domain (3rd arg).
-# If no matching block is found, fall back to the last </VirtualHost> in the file.
+# Optional 4th arg: port filter (e.g., 80 or 443) to target a specific vhost in files containing multiple blocks.
+# If no matching block is found, fall back to the last matching port block, then to the last </VirtualHost> in the file.
 insert_wrapped_block_before_vhost_close() {
 	local vhost_file="$1"
 	local block_text="$2"
 	local domain_match="$3"
+	local port_filter="$4"
 	[ -f "$vhost_file" ] || return 1
 	local tmp
 	tmp=$(mktemp)
-	awk -v blk="$block_text" -v dom="$domain_match" '
-		BEGIN { inblk=0; match_this=0; done=0; n=0; last=0; target_close=0 }
+	awk -v blk="$block_text" -v dom="$domain_match" -v port="$port_filter" '
+		BEGIN { inblk=0; match_this=0; n=0; last=0; last_port_close=0; target_close=0; blk_port="" }
 		{ lines[++n]=$0 }
-		/<VirtualHost[> \t]/ { inblk=1; match_this=0 }
+		/<VirtualHost[> \t]/ { inblk=1; match_this=0; blk_port=""; if (match($0, /<VirtualHost[^>]*:([0-9]+)/, m)) { blk_port=m[1] } }
 		inblk && tolower($0) ~ /^[\t ]*server(name|alias)[\t ]+/ {
 			if (dom == "") { match_this=1 }
 			else {
-				low=$0; for (i=1;i<=length(low);i++) {}
-				# token-based match: exact domain appears as a separate token
+				low=$0
 				if (tolower(low) ~ /(^|[\t ])[\t ]*server(name|alias)[\t ]+([^#]*)/) {
 					names=tolower(substr(low, RSTART+RLENGTH- length(substr(low, RSTART+RLENGTH))+1))
 					split(names, a, /[\t ]+/)
@@ -278,11 +279,15 @@ insert_wrapped_block_before_vhost_close() {
 		}
 		/<\/VirtualHost>/ {
 			last=n
-			if (inblk && target_close==0 && (dom=="" || match_this)) { target_close=n }
+			if (inblk && (port=="" || blk_port==port)) { last_port_close=n }
+			if (inblk && target_close==0 && (dom=="" || match_this) && (port=="" || blk_port==port)) { target_close=n }
 			inblk=0; match_this=0
 		}
 		END {
-			if (target_close==0) target_close=last
+			if (target_close==0) {
+				if (port!="" && last_port_close>0) target_close=last_port_close
+				else target_close=last
+			}
 			if (target_close==0) exit 1
 			# Normalize and indent block: remove leading blank lines and strip leading whitespace
 			nbl=split(blk, _b, /\n/)
@@ -292,10 +297,8 @@ insert_wrapped_block_before_vhost_close() {
 				line=_b[k]
 				if (!seen_content && line ~ /^[ \t]*$/) continue
 				seen_content=1
-				# Remove any carriage returns to avoid losing indentation due to \r
 				gsub(/\r/, "", line)
 				sub(/^[ \t]*/, "", line)
-				# Indent content two tabs inside the <IfDefine> block
 				blk_norm = blk_norm "\t\t" line "\n"
 			}
 			for (i=1;i<=n;i++) {
@@ -327,6 +330,84 @@ has_wrapped_404_block() {
 		}
 		END { exit found ? 0 : 1 }
 	' "$file"
+}
+
+# Return 0 if a wrapped 404 exists inside our IfDefine wrapper within the vhost for the given domain and port.
+has_wrapped_404_block_in_vhost() {
+	local file="$1"
+	local domain_match="$2"
+	local port_filter="$3"
+	[ -f "$file" ] || return 1
+	awk -v IGNORECASE=1 -v dom="$domain_match" -v port="$port_filter" '
+		BEGIN { inblk=0; match_this=0; blk_port=""; inwrap=0; found=0 }
+		/<VirtualHost[> \t]/ { inblk=1; match_this=0; blk_port=""; if (match($0, /<VirtualHost[^>]*:([0-9]+)/, m)) { blk_port=m[1] } }
+		inblk && tolower($0) ~ /^[\t ]*server(name|alias)[\t ]+/ {
+			if (dom == "") { match_this=1 }
+			else {
+				low=$0
+				if (tolower(low) ~ /(^|[\t ])[\t ]*server(name|alias)[\t ]+([^#]*)/) {
+					names=tolower(substr(low, RSTART+RLENGTH- length(substr(low, RSTART+RLENGTH))+1))
+					split(names, a, /[\t ]+/)
+					for (j in a) { if (a[j]==tolower(dom)) { match_this=1; break } }
+				}
+			}
+		}
+		inblk && $0 ~ /<IfDefine[ \t]+!LUCEE_UPGRADE_IN_PROGRESS>/ { inwrap=1 }
+		inblk && inwrap && $0 ~ /<\/IfDefine>/ { inwrap=0 }
+		inblk && inwrap && $0 ~ /^[\t ]*ErrorDocument[\t ]+404[\t ]+/ {
+			if ((port=="" || blk_port==port) && (dom=="" || match_this)) { found=1 }
+		}
+		/<\/VirtualHost>/ {
+			if (found) exit 0
+			inblk=0; match_this=0; inwrap=0
+		}
+		END { exit found ? 0 : 1 }
+	' "$file"
+}
+
+# Ensure the per-site Include line exists inside the targeted vhost (by domain and optional port).
+ensure_include_in_vhost() {
+	local vhost_file="$1"
+	local domain_match="$2"
+	local port_filter="$3"
+	local tmp
+	local include_line="Include /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf"
+	[ -f "$vhost_file" ] || return 1
+	tmp=$(mktemp)
+	awk -v dom="$domain_match" -v port="$port_filter" -v inc="$include_line" '
+		BEGIN { inblk=0; match_this=0; blk_port=""; inserted=0; had_inc=0 }
+		{ line=$0; lines[++n]=$0 }
+		/<VirtualHost[> \t]/ { inblk=1; match_this=0; blk_port=""; had_inc=0; if (match($0, /<VirtualHost[^>]*:([0-9]+)/, m)) { blk_port=m[1] } }
+		inblk && tolower($0) ~ /^[\t ]*server(name|alias)[\t ]+/ {
+			if (dom == "") { match_this=1 }
+			else {
+				low=$0
+				if (tolower(low) ~ /(^|[\t ])[\t ]*server(name|alias)[\t ]+([^#]*)/) {
+					names=tolower(substr(low, RSTART+RLENGTH- length(substr(low, RSTART+RLENGTH))+1))
+					split(names, a, /[\t ]+/)
+					for (j in a) { if (a[j]==tolower(dom)) { match_this=1; break } }
+				}
+			}
+		}
+		inblk && $0 ~ /^[\t ]*Include(Optional)?[\t ]+\/opt\/lucee\/sys\/upgrade-in-progress\/lucee-detect-upgrade\.conf([\t ]|$)/ { had_inc=1 }
+		{
+			if ($0 ~ /<\/VirtualHost>/) {
+				if (inblk && inserted==0 && (dom=="" || match_this) && (port=="" || blk_port==port) && had_inc==0) {
+					print "\t" inc
+					print ""
+					inserted=1
+				}
+				inblk=0; match_this=0; had_inc=0
+			}
+			print $0
+		}
+	' "$vhost_file" > "$tmp"
+	if [ $? -eq 0 ]; then
+		mv -f "$tmp" "$vhost_file"
+	else
+		rm -f "$tmp"
+		return 1
+	fi
 }
 
 # Check if mod_headers is enabled (needed for X-Lucee-Upgrade header polling)
@@ -741,12 +822,6 @@ configure_site_debian() {
 				if [ -n "$http_404_block" ]; then
 					echo "  Recovered 404 from commented .htaccess for HTTP vhost"
 					http_from_htaccess="true"
-					# Comment out any pre-existing 404s in HTTP vhost as they are superseded by .htaccess
-					if grep -qiE "$ANY404_REGEX" "$http_conf_file"; then
-						echo "  Commenting out pre-existing 404s in HTTP vhost (superseded by .htaccess)"
-						backup_file "$http_conf_file"
-						comment_all_404_lines "$http_conf_file"
-					fi
 				fi
 			fi
 			# If still empty, reuse the SSL 404 block
@@ -915,18 +990,213 @@ EOF
 	fi
 }
 
-# Function to configure non-cPanel RedHat sites (placeholder)
+# Function to configure RHEL sites
 configure_site_redhat() {
 	local domain=$1
 	local docroot=$2
 	local site_type=$3
-	
+
 	if [ -n "$site_type" ]; then
-		echo "Non-cPanel RedHat configuration not implemented yet for $domain ($site_type)"
+		echo "Processing RHEL site: $domain ($site_type site) with DocumentRoot: $docroot"
 	else
-		echo "Non-cPanel RedHat configuration not implemented yet for $domain"
+		echo "Processing RHEL site: $domain with DocumentRoot: $docroot"
 	fi
-	echo "Pull requests are welcome!"
+
+	# Copy upgrade-in-progress.html to DocumentRoot
+	copy_upgrade_html "$docroot"
+
+	# Locate SSL VirtualHost file containing ServerName and :443
+	local ssl_conf_file=""
+	for f in /etc/httpd/conf.d/*.conf /etc/httpd/conf/httpd.conf; do
+		[ -f "$f" ] || continue
+		if grep -q "ServerName $domain" "$f" 2>/dev/null; then
+			if grep -Eq '<VirtualHost[^>]*:443' "$f" 2>/dev/null; then
+				ssl_conf_file="$f"
+				break
+			fi
+		fi
+	done
+
+	if [ -n "$ssl_conf_file" ]; then
+		echo "  Updating $ssl_conf_file (SSL vhost)"
+		local ssl_404_block=""
+		local ssl_from_htaccess="false"
+		local ssl_has_wrapped="false"
+		local ssl_needs_wrapper="false"
+		if has_wrapped_404_block_in_vhost "$ssl_conf_file" "$domain" "443"; then
+			ssl_has_wrapped="true"
+		fi
+		if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
+			ssl_needs_wrapper="true"
+		fi
+		if [ "$ssl_needs_wrapper" != "true" ] && last_404_is_cf "$ssl_conf_file"; then
+			ssl_needs_wrapper="true"
+		fi
+		if [ "$ssl_needs_wrapper" != "true" ] && [ -f "$docroot/.htaccess" ] && grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
+			ssl_needs_wrapper="true"
+		fi
+		if [ "$ssl_has_wrapped" = "true" ] && [ "$ssl_needs_wrapper" != "true" ]; then
+			echo "  Existing wrapped 404 block detected in SSL vhost; leaving as-is"
+			ssl_404_block=$(extract_404_block "$ssl_conf_file" || true)
+		else
+			backup_file "$ssl_conf_file"
+			# Prefer .htaccess (more specific)
+			if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
+				ssl_404_block=$(extract_404_block "$docroot/.htaccess" || true)
+				if [ -n "$ssl_404_block" ]; then
+					echo "  Migrating 404 from .htaccess into SSL vhost (authoritative)"
+					ssl_from_htaccess="true"
+					# Comment out any pre-existing 404s in vhost as they are superseded
+					if grep -qiE "$ANY404_REGEX" "$ssl_conf_file"; then
+						echo "  Commenting out pre-existing 404s in SSL vhost (superseded by .htaccess)"
+						backup_file "$ssl_conf_file"
+						comment_all_404_lines "$ssl_conf_file"
+					fi
+				fi
+			fi
+			# If .htaccess was already commented by a prior run, recover the 404 from it
+			if [ -z "$ssl_404_block" ] && [ -f "$docroot/.htaccess" ] && grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
+				ssl_404_block=$(extract_404_block_allow_commented "$docroot/.htaccess" || true)
+				if [ -n "$ssl_404_block" ]; then
+					echo "  Recovered 404 from commented .htaccess for SSL vhost"
+					ssl_from_htaccess="true"
+				fi
+			fi
+			# If no .htaccess 404, fallback to local vhost 404
+			if [ -z "$ssl_404_block" ]; then
+				if last_404_is_cf "$ssl_conf_file"; then
+					ssl_404_block=$(extract_404_block "$ssl_conf_file" || true)
+				fi
+				if [ -n "$ssl_404_block" ]; then
+					echo "  Found local 404 in SSL vhost; wrapping inline"
+					backup_file "$ssl_conf_file"
+					comment_all_404_lines "$ssl_conf_file"
+				fi
+			fi
+			# Insert wrapped block into the SSL vhost
+			if [ -n "$ssl_404_block" ] && [ "$ssl_has_wrapped" != "true" ]; then
+				if insert_wrapped_block_before_vhost_close "$ssl_conf_file" "$ssl_404_block" "$domain" "443"; then
+					if [ "$ssl_from_htaccess" = "true" ] && ! grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
+						backup_file "$docroot/.htaccess"
+						comment_all_404_lines "$docroot/.htaccess"
+					fi
+				fi
+			fi
+		fi
+		# Ensure Include is present specifically in the SSL vhost
+		ensure_include_in_vhost "$ssl_conf_file" "$domain" "443"
+	else
+		echo "  Warning: Could not find SSL VirtualHost for $domain"
+	fi
+
+	# Locate HTTP VirtualHost file containing ServerName and :80 (or lacking :443 when matching domain)
+	local http_conf_file=""
+	for f in /etc/httpd/conf.d/*.conf /etc/httpd/conf/httpd.conf; do
+		[ -f "$f" ] || continue
+		if grep -q "ServerName $domain" "$f" 2>/dev/null; then
+			if grep -Eq '<VirtualHost[^>]*:80' "$f" 2>/dev/null || ! grep -Eq '<VirtualHost[^>]*:443' "$f" 2>/dev/null; then
+				http_conf_file="$f"
+				break
+			fi
+		fi
+	done
+
+	if [ -n "$http_conf_file" ]; then
+		echo "  Updating $http_conf_file (HTTP vhost)"
+		local http_404_block=""
+		local http_from_htaccess="false"
+		local http_has_wrapped="false"
+		local http_needs_wrapper="false"
+		if has_wrapped_404_block_in_vhost "$http_conf_file" "$domain" "80"; then
+			http_has_wrapped="true"
+		fi
+		if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
+			http_needs_wrapper="true"
+		fi
+		if [ "$http_needs_wrapper" != "true" ] && last_404_is_cf "$http_conf_file"; then
+			http_needs_wrapper="true"
+		fi
+		if [ "$http_needs_wrapper" != "true" ] && [ -f "$docroot/.htaccess" ] && grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
+			http_needs_wrapper="true"
+		fi
+		if [ "$http_has_wrapped" = "true" ] && [ "$http_needs_wrapper" != "true" ]; then
+			echo "  Existing wrapped 404 block detected in HTTP vhost; leaving as-is"
+		else
+			backup_file "$http_conf_file"
+			# Prefer .htaccess (more specific)
+			if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
+				http_404_block=$(extract_404_block "$docroot/.htaccess" || true)
+				if [ -n "$http_404_block" ]; then
+					echo "  Migrating 404 from .htaccess into HTTP vhost (authoritative)"
+					http_from_htaccess="true"
+					# Comment out any pre-existing 404s in HTTP vhost as they are superseded by .htaccess
+					if grep -qiE "$ANY404_REGEX" "$http_conf_file"; then
+						echo "  Commenting out pre-existing 404s in HTTP vhost (superseded by .htaccess)"
+						backup_file "$http_conf_file"
+						comment_all_404_lines "$http_conf_file"
+					fi
+				fi
+			fi
+			# If .htaccess was already commented by a prior run, recover the 404 from it
+			if [ -z "$http_404_block" ] && [ -f "$docroot/.htaccess" ] && grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
+				http_404_block=$(extract_404_block_allow_commented "$docroot/.htaccess" || true)
+				if [ -n "$http_404_block" ]; then
+					echo "  Recovered 404 from commented .htaccess for HTTP vhost"
+					http_from_htaccess="true"
+					# Comment out any pre-existing 404s in HTTP vhost as they are superseded by .htaccess
+					if grep -qiE "$ANY404_REGEX" "$http_conf_file"; then
+						echo "  Commenting out pre-existing 404s in HTTP vhost (superseded by .htaccess)"
+						backup_file "$http_conf_file"
+						comment_all_404_lines "$http_conf_file"
+					fi
+				fi
+			fi
+			# If still empty, reuse the SSL 404 block
+			if [ -z "$http_404_block" ] && [ -n "$ssl_404_block" ]; then
+				echo "  Reusing 404 from SSL vhost for HTTP vhost"
+				http_404_block="$ssl_404_block"
+				# If SSL's 404 came from .htaccess, treat it as authoritative for HTTP too
+				if [ "$ssl_from_htaccess" = "true" ] && grep -qiE "$ANY404_REGEX" "$http_conf_file"; then
+					echo "  Commenting out pre-existing 404s in HTTP vhost (superseded by .htaccess)"
+					backup_file "$http_conf_file"
+					comment_all_404_lines "$http_conf_file"
+				fi
+			fi
+			# If no .htaccess 404, fallback to local vhost 404
+			if [ -z "$http_404_block" ]; then
+				if last_404_is_cf "$http_conf_file"; then
+					http_404_block=$(extract_404_block "$http_conf_file" || true)
+				fi
+				if [ -n "$http_404_block" ]; then
+					echo "  Found local 404 in HTTP vhost; wrapping inline"
+					backup_file "$http_conf_file"
+					comment_all_404_lines "$http_conf_file"
+				fi
+			fi
+			# Insert wrapped block into the HTTP vhost
+			if [ -n "$http_404_block" ] && [ "$http_has_wrapped" != "true" ]; then
+				if insert_wrapped_block_before_vhost_close "$http_conf_file" "$http_404_block" "$domain" "80"; then
+					if [ "$http_from_htaccess" = "true" ] && ! grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
+						backup_file "$docroot/.htaccess"
+						comment_all_404_lines "$docroot/.htaccess"
+					fi
+				fi
+			fi
+		fi
+		# Ensure Include is present specifically in the HTTP vhost
+		ensure_include_in_vhost "$http_conf_file" "$domain" "80"
+	else
+		echo "  Info: No HTTP VirtualHost found for $domain"
+	fi
+
+	# Final normalization: if a wrapped 404 exists in either vhost and .htaccess still has any 404s, comment them out
+	if [ -f "$docroot/.htaccess" ] && grep -qiE "$ANY404_REGEX" "$docroot/.htaccess"; then
+		if { [ -n "$ssl_conf_file" ] && has_wrapped_404_block_in_vhost "$ssl_conf_file" "$domain" "443"; } || { [ -n "$http_conf_file" ] && has_wrapped_404_block_in_vhost "$http_conf_file" "$domain" "80"; }; then
+			echo "  Commenting out 404 ErrorDocument in $docroot/.htaccess and adding note"
+			backup_file "$docroot/.htaccess"
+			comment_all_404_lines "$docroot/.htaccess"
+		fi
+	fi
 }
 
 # Function to process all sites from the configuration file
@@ -966,7 +1236,7 @@ if command -v a2enconf >/dev/null 2>&1; then
 	fi
 	reload_apache apache2
 	
-# Redhat/CentOS/AlmaLinux/etc
+# RHEL/CentOS/AlmaLinux/etc
 elif [ -d /etc/httpd/conf.d ]; then
 	if [ "$IS_CPANEL" = true ]; then
 		# cPanel path
@@ -983,7 +1253,7 @@ elif [ -d /etc/httpd/conf.d ]; then
 		echo "Gracefully restarting httpd..."
 		/scripts/restartsrv_httpd --graceful
 	else
-		# Non-cPanel RedHat path
+		# RHEL path
 		ensure_global_confs
 		process_sites configure_site_redhat
 		# Validate Apache configuration before reload
