@@ -12,7 +12,7 @@ There are even optional scripts to automatically generate the editable list of s
 
 And finally, from the end user's perspective, their original requested URL does not change. That way the upgrade status can be shown without redirecting to a different page. The user will see the notice of how the page will automatically refresh when the upgrade is complete! That is implemented via JavaScript fetch with the HEAD method, which is more efficient than repeatedly refreshing the page.
 
-## Typical upgrade command sequence:
+## Typical upgrade begin/end command sequence:
 
 ```bash
 $ sudo /opt/lucee/sys/upgrade-in-progress/begin.sh
@@ -35,7 +35,7 @@ DONE!
 Two separate `.conf` files are used to cleanly manage normal Lucee operation vs Upgrade in Progress:
 
 - **`lucee-ajp-and-mod_cfml.conf`**  
-  Handles AJP proxying and mod_cfml. Must be disabled during upgrades because apparently mod_proxy and/or mod_cfml execute *before* mod_rewrite, which would bypass the upgrade rewrite rules.
+  Handles AJP proxying and mod_cfml. It is necessary to disable this during upgrades because apparently mod_proxy and/or mod_cfml execute *before* mod_rewrite, which would bypass the upgrade rewrite rules.
 
 - **`lucee-upgrade-in-progress.conf`**  
   Defines LUCEE_UPGRADE_IN_PROGRESS, enabling Apache rewrite rules (in each <VirtualHost>) to route CFML requests to a static `upgrade-in-progress.html`. Initially you will need to save it as `lucee-upgrade-in-progress.disabled`.
