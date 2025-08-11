@@ -1,3 +1,48 @@
+## Quick Usage Overview
+
+ - __How to Deploy into /opt/lucee/...__
+
+    - Online one-liner (after you publish the repo):
+
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/main/lucee/linux/sys/upgrade-in-progress/install.sh | sudo bash
+    # Prompts for Lucee root; press Enter for default: /opt/lucee
+    ```
+
+    - From a local clone:
+
+    ```bash
+    cd /path/to/your/clone/lucee-installer/lucee/linux/sys/upgrade-in-progress
+    sudo ./install.sh
+    # Prompts for Lucee root; press Enter for default: /opt/lucee
+    ```
+
+ - __How to Get Site Data (domains and docroots)__
+
+```bash
+sudo /opt/lucee/sys/upgrade-in-progress/get-lucee-sites.sh
+# Review/edit: /opt/lucee/sys/upgrade-in-progress/sites-configured.txt
+```
+
+ - __How to Configure Apache (per-site and global toggles)__
+
+```bash
+sudo /opt/lucee/sys/upgrade-in-progress/configure-apache.sh
+# Ensures global confs, injects per‑site Include, checks AJP/mod_cfml, warns if mod_headers missing
+```
+
+ - __Begin and End "Upgrade in Progress" Notifications__
+
+```bash
+# Begin (serve upgrade-in-progress.html for CF requests)
+sudo /opt/lucee/sys/upgrade-in-progress/begin.sh
+
+# ...perform upgrade and QA...
+
+# End (restore normal AJP/mod_cfml handling)
+sudo /opt/lucee/sys/upgrade-in-progress/end.sh
+```
+
 # "Upgrade in Progress" for Lucee + Apache
 
 Web-based status notifications during Lucee upgrades are a Catch-22 because Lucee itself is not running during the upgrade, which results in an ugly "503 Service Unavailable" error. `ErrorDocument 503` can be defined to make that error page more user-friendly, but that page is only displayed when Lucee is not running.
