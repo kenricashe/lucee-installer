@@ -178,40 +178,6 @@ backup_file() {
 	cp -f "$src" "$dest"
 }
 
-# Inline legacy Include lines that reference lucee-404-routing.conf by replacing
-# the Include line with the contents of the referenced file. If the referenced
-# file is missing, the Include line is removed and a comment is left.
-inline_legacy_include() {
-	local target_file="$1"
-	[ -f "$target_file" ] || return 0
-	local tmp
-	tmp=$(mktemp)
-	local changed=false
-	while IFS= read -r line; do
-		if echo "$line" | grep -qE '^[[:space:]]*Include(Optional)?[[:space:]]+.*lucee-404-routing\.conf([[:space:]]|$)'; then
-			# Extract the included path (handles quoted and unquoted, strips trailing comments)
-			local inc_path
-			inc_path=$(echo "$line" | awk '{ for (i=2;i<=NF;i++){ gsub(/^"|"$/,"",$i); if ($i ~ /lucee-404-routing\.conf$/){ print $i; exit } } }')
-			if [ -n "$inc_path" ] && [ -f "$inc_path" ]; then
-				echo "# Begin inlined legacy: $inc_path" >> "$tmp"
-				cat "$inc_path" >> "$tmp"
-				echo "# End inlined legacy" >> "$tmp"
-				changed=true
-			else
-				echo "# Removed legacy Include (missing $inc_path)" >> "$tmp"
-				changed=true
-			fi
-		else
-			echo "$line" >> "$tmp"
-		fi
-	done < "$target_file"
-	if [ "$changed" = true ]; then
-		mv -f "$tmp" "$target_file"
-	else
-		rm -f "$tmp"
-	fi
-}
-
 # Extract the first matching ErrorDocument 404 *.cf* line and its contiguous preceding comments
 # Prints the block to stdout; returns non-zero if not found
 extract_404_block() {
@@ -664,8 +630,6 @@ configure_site_debian() {
 		else
 			# We will modify the file; make a backup (mirrored under BACKUP_ROOT)
 			backup_file "$ssl_conf_file"
-			# Inline legacy 404 Include, if present
-			inline_legacy_include "$ssl_conf_file"
 			# Prefer .htaccess (more specific) over vhost for effective 404
 			if echo "" | grep -q ""; then :; fi # keep shellcheck quiet about local before use
 			if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
@@ -756,8 +720,6 @@ configure_site_debian() {
 		else
 			# We will modify the file; make a backup (mirrored under BACKUP_ROOT)
 			backup_file "$http_conf_file"
-			# Inline legacy 404 Include, if present
-			inline_legacy_include "$http_conf_file"
 			# Prefer .htaccess (more specific) over vhost for effective 404
 			if echo "" | grep -q ""; then :; fi # keep shellcheck quiet about local before use
 			if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
