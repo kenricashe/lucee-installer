@@ -925,22 +925,22 @@ configure_site_cpanel() {
 	fi
 	# If still empty, try to find in existing userdata files
 	if [ -z "$cp_404_block" ]; then
-			for d in "${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}" "${CPANEL_USERDATA_STD_PATH}/${user}/${domain}"; do
-				[ -d "$d" ] || continue
-				while IFS= read -r f; do
-					[ -f "$f" ] || continue
-					# Only proceed if the last 404 in this file is CF
-					if last_404_is_cf "$f"; then
-						cp_404_block=$(extract_404_block "$f" || true)
-						backup_file "$f"
-						comment_all_404_lines "$f"
-						break
-					fi
-				done < <(find "$d" -type f -maxdepth 1 2>/dev/null)
-				if [ -n "$cp_404_block" ]; then
+		for d in "${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}" "${CPANEL_USERDATA_STD_PATH}/${user}/${domain}"; do
+			[ -d "$d" ] || continue
+			while IFS= read -r f; do
+				[ -f "$f" ] || continue
+				# Only proceed if the last 404 in this file is CF
+				if last_404_is_cf "$f"; then
+					cp_404_block=$(extract_404_block "$f" || true)
+					backup_file "$f"
+					comment_all_404_lines "$f"
 					break
 				fi
-			done
+			done < <(find "$d" -type f -maxdepth 1 2>/dev/null)
+			if [ -n "$cp_404_block" ]; then
+				break
+			fi
+		done
 	fi
 	# Create lucee.conf with appropriate includes
 	if [ -n "$cp_404_block" ]; then
