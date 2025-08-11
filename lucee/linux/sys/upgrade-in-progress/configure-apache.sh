@@ -765,6 +765,12 @@ configure_site_debian() {
 				if [ -n "$http_404_block" ]; then
 					echo "  Migrating 404 from .htaccess into HTTP vhost (authoritative)"
 					http_from_htaccess="true"
+					# Comment out any pre-existing 404s in HTTP vhost as they are superseded by .htaccess
+					if grep -qiE "$ANY404_REGEX" "$http_conf_file"; then
+						echo "  Commenting out pre-existing 404s in HTTP vhost (superseded by .htaccess)"
+						backup_file "$http_conf_file"
+						comment_all_404_lines "$http_conf_file"
+					fi
 				fi
 			fi
 			# If .htaccess has already been commented by a prior run, recover the 404 from it
@@ -773,12 +779,24 @@ configure_site_debian() {
 				if [ -n "$http_404_block" ]; then
 					echo "  Recovered 404 from commented .htaccess for HTTP vhost"
 					http_from_htaccess="true"
+					# Comment out any pre-existing 404s in HTTP vhost as they are superseded by .htaccess
+					if grep -qiE "$ANY404_REGEX" "$http_conf_file"; then
+						echo "  Commenting out pre-existing 404s in HTTP vhost (superseded by .htaccess)"
+						backup_file "$http_conf_file"
+						comment_all_404_lines "$http_conf_file"
+					fi
 				fi
 			fi
 			# If still empty, reuse the SSL 404 block
 			if [ -z "$http_404_block" ] && [ -n "$ssl_404_block" ]; then
 				echo "  Reusing 404 from SSL vhost for HTTP vhost"
 				http_404_block="$ssl_404_block"
+				# If SSL's 404 came from .htaccess, treat it as authoritative for HTTP too
+				if [ "$ssl_from_htaccess" = "true" ] && grep -qiE "$ANY404_REGEX" "$http_conf_file"; then
+					echo "  Commenting out pre-existing 404s in HTTP vhost (superseded by .htaccess)"
+					backup_file "$http_conf_file"
+					comment_all_404_lines "$http_conf_file"
+				fi
 			fi
 			# If no .htaccess 404, fallback to local vhost 404
 			if [ -z "$http_404_block" ]; then
