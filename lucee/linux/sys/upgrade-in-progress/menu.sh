@@ -55,9 +55,15 @@ run_end() {
 
 while true; do
 	clear
-	echo "----------------------------------------"
-	echo "'Upgrade in Progress' for Lucee + Apache"
-	echo "----------------------------------------"
+	echo "------------------------------------------"
+	echo " 'Upgrade in Progress' for Lucee + Apache"
+	if [ -e "/var/lucee-upgrade-in-progress" ]; then
+		echo "Current Server Status: UPGRADE IN PROGRESS"
+	else
+		echo " Current Server Status: NORMAL OPERATIONS"
+	fi
+	echo " (based on /var/lucee-upgrade-in-progress)"
+	echo "------------------------------------------"
 	echo ""
 	echo "1. Get Apache Site Data"
 	echo ""
