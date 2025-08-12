@@ -15,6 +15,7 @@ FILES=(
 	"get-lucee-sites.sh"
 	"configure-apache.sh"
 	"get-env.sh"
+	"menu.sh"
 	"begin.sh"
 	"end.sh"
 	"upgrade-in-progress.html"

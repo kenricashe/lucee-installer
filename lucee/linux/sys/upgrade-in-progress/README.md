@@ -1,81 +1,66 @@
-## Quick Usage Overview
-
- - __How to Deploy into /opt/lucee/...__
-
-    - Online one-liner (after you publish the repo):
-
-    ```bash
-    curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/main/lucee/linux/sys/upgrade-in-progress/install.sh | sudo bash
-    # Prompts for Lucee root; press Enter for default: /opt/lucee
-    ```
-
-    - From a local clone:
-
-    ```bash
-    cd /path/to/your/clone/lucee-installer/lucee/linux/sys/upgrade-in-progress
-    sudo ./install.sh
-    # Prompts for Lucee root; press Enter for default: /opt/lucee
-    ```
-
- - __How to Get Site Data (domains and docroots)__
-
-```bash
-sudo /opt/lucee/sys/upgrade-in-progress/get-lucee-sites.sh
-# Review/edit: /opt/lucee/sys/upgrade-in-progress/sites-configured.txt
-```
-
- - __How to Configure Apache (per-site and global toggles)__
-
-```bash
-sudo /opt/lucee/sys/upgrade-in-progress/configure-apache.sh
-# Ensures global confs, injects per‑site Include, checks AJP/mod_cfml, warns if mod_headers missing
-```
-
- - __Begin and End "Upgrade in Progress" Notifications__
-
-```bash
-# Begin (serve upgrade-in-progress.html for CF requests)
-sudo /opt/lucee/sys/upgrade-in-progress/begin.sh
-
-# ...perform upgrade and QA...
-
-# End (restore normal AJP/mod_cfml handling)
-sudo /opt/lucee/sys/upgrade-in-progress/end.sh
-```
-
 # "Upgrade in Progress" for Lucee + Apache
 
-Web-based status notifications during Lucee upgrades are a Catch-22 because Lucee itself is not running during the upgrade, which results in an ugly "503 Service Unavailable" error. `ErrorDocument 503` can be defined to make that error page more user-friendly, but that page is only displayed when Lucee is not running.
+### Features
 
-In actual practice it's safest to keep displaying the "Upgrade in Progress" notification not just until after the upgrade is complete, but more importantly until *thorough QA testing* has been completed. (For instructions see below.)
+- Displays "Upgrade in Progress" notification in response to Lucee requests for *every website on your server* that has been configured for this flip-a-switch style automation.
 
-If your Lucee scripts are proxied from Apache through AJP/Tomcat (a very common configuration), this package is for you!
+- Enables QA testing after Lucee upgrade before resuming normal operations (not possible with `ErrorDocument 503` and more efficient than app‑level maintenance mode).
 
-The bash shell scripts, Apache configuration files, and a status page template are deployed into `/opt/lucee/sys/upgrade-in-progress/` to begin and end the display of an "Upgrade in Progress" notification in response to Lucee requests for *every website on your server* that has been configured for this flip-a-switch style automation (see VirtualHost config below).
+- Enables `.conf` based toggling of `ErrorDocument 404` (if already pointing to Lucee script) during upgrade, e.g. `/upgrade-in-progress.html` then back to `/example404.cfm`.
 
-There are even optional scripts to automatically generate the editable list of sites to be configured, and to apply those configurations.
+- Migrates `ErrorDocument 404 /example404.cfm` from each site's webroot `.htaccess` to `<VirtualHost>` to enable that toggling (also best location for performance, consistency, security, and manageability).
 
-And finally, from the end user's perspective, their original requested URL does not change. That way the upgrade status can be shown without redirecting to a different page. The user will see the notice of how the page will automatically refresh when the upgrade is complete! That is implemented via JavaScript fetch with the HEAD method, which is more efficient than repeatedly refreshing the page.
+- Toggles `/var/lucee-upgrade-in-progress` flag (pause cron jobs, etc).
 
-## Typical upgrade begin/end command sequence:
+- Enables optional custom branding of the "Upgrade in Progress" page per site.
+
+- Efficiently loads end user's requested page after upgrade complete.
+
+- Doesn't require CDN, load balancing, etc.
+
+- Backs up existing files before modifying them.
+
+- Open source!
+
+### Install
 
 ```bash
-$ sudo /opt/lucee/sys/upgrade-in-progress/begin.sh
-Enabling lucee-upgrade-in-progress configuration...
-Disabling lucee-ajp-and-mod_cfml configuration...
-Reloading Apache...
-DONE!
-
-[... UPGRADE AND QA TEST ...]
-
-$ sudo /opt/lucee/sys/upgrade-in-progress/end.sh
-Enabling lucee-ajp-and-mod_cfml configuration...
-Disabling lucee-upgrade-in-progress configuration...
-Reloading Apache...
-DONE!
+curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/main/lucee/linux/sys/upgrade-in-progress/install.sh | sudo bash
 ```
 
-## Apache Configuration
+### Interactive Menu
+
+```bash
+sudo /opt/lucee/sys/upgrade-in-progress/menu.sh
+```
+
+1. Get Site Data
+2. View/Edit Site Data
+3. Configure Apache
+4. Begin 'Upgrade in Progress'
+5. End 'Upgrade in Progress'
+
+### Caveats
+
+- Requires root access to server (not applicable to shared hosting).
+
+- Other than the initial option to enter your Lucee install path, the config assumes default Apache paths, proxying via http or AJP to Tomcat, and mod_cfml settings (if enabled). However, because it's open source, you can customize, and pull requests are always welcome!
+
+# Implementation Details
+
+Web-based status notifications during Lucee upgrades are a Catch-22 because Lucee itself is not running during the upgrade, which results in an ugly "503 Service Unavailable" error. While it's true that `ErrorDocument 503` can be customized, that page is only displayed when Lucee is not running.
+
+In actual practice it's safest to keep displaying the "Upgrade in Progress" notification not just until after the upgrade is done, but more importantly until *thorough QA testing* has been completed. (For instructions see below.)
+
+If your Lucee apps are proxied through Apache via AJP/Tomcat (a very common configuration), and you have root access to the server, this package is for you!
+
+When you select the Begin option from the menu, `/var/lucee-upgrade-in-progress` is created, then you can use that flag however you need to, usually for pausing all cron jobs.
+
+Next, an "Upgrade in Progress" notification is displayed in response to Lucee requests for *every website on your server* that has been configured for this flip-a-switch style automation (see VirtualHost config below).
+
+That is accomplished without redirecting to a different page, so the URL does not change. The user will see the notice of how the page will automatically refresh when the upgrade is complete! That is implemented via JavaScript fetch with the HEAD method detecting a unique http header set by the Apache config (only in Upgrade in Progress mode), which is more efficient than repeatedly refreshing the page.
+
+# Apache Configuration
 
 Two separate `.conf` files are used to cleanly manage normal Lucee operation vs Upgrade in Progress:
 
@@ -118,15 +103,15 @@ If needed, consult Apache documentation for full details on how to enable the `.
 ```apache
 <IfModule mod_proxy.c>
 	ProxyPreserveHost On
-	ProxyPassMatch ^/(.+\.cf[msc])(/.*)?$ ajp://127.0.0.1:8009/$1$2 flushpackets=on secret=REDACTED
-	ProxyPassMatch ^/(.+\.cfml)(/.*)?$ ajp://127.0.0.1:8009/$1$2 flushpackets=on secret=REDACTED
-	ProxyPassReverse / ajp://127.0.0.1:8009/ secret=REDACTED
+	ProxyPassMatch ^/(.+\.cf[msc])(/.*)?$ ajp://127.0.0.1:8009/$1$2 flushpackets=on secret=$AJP_SECRET
+	ProxyPassMatch ^/(.+\.cfml)(/.*)?$ ajp://127.0.0.1:8009/$1$2 flushpackets=on secret=$AJP_SECRET
+	ProxyPassReverse / ajp://127.0.0.1:8009/ secret=$AJP_SECRET
 	LoadModule modcfml_module modules/mod_cfml.so
 </IfModule>
 
 <IfModule mod_cfml.c>
 	CFMLHandlers ".cfm .cfs .cfc .cfml"
-	ModCFML_SharedKey "REDACTED"
+	ModCFML_SharedKey "$MOD_CFML_SHARED_KEY"
 	LogHeaders false
 	LogHandlers false
 	LogAliases false
@@ -208,8 +193,10 @@ Note: This relies on Apache mod_headers to set the `X-Lucee-Upgrade` header used
 	ServerName example.com
 	[other config here ...]
 
-    # inserted by configure-apache.sh (same path for all environments)
+    # inserted by configure-apache.sh
     Include /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf
+
+
 	
 </VirtualHost>
 ```
