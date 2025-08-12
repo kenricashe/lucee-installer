@@ -647,13 +647,8 @@ copy_upgrade_html() {
 configure_site_debian() {
 	local domain=$1
 	local docroot=$2
-	local site_type=$3
 	
-	if [ -n "$site_type" ]; then
-		echo "Processing $domain ($site_type site) with DocumentRoot: $docroot"
-	else
-		echo "Processing $domain with DocumentRoot: $docroot"
-	fi
+	echo "Processing $domain with DocumentRoot: $docroot"
 	
 	# Copy upgrade-in-progress.html to DocumentRoot
 	copy_upgrade_html "$docroot"
@@ -689,8 +684,8 @@ configure_site_debian() {
 		# Determine current state before deciding to edit
 		local ssl_404_block=""
 		local ssl_from_htaccess="false"
-		local ssl_has_wrapped="false"
 		local ssl_include_present="false"
+		local ssl_has_wrapped="false"
 		local ssl_needs_wrapper="false"
 		if grep -q 'Include /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf' "$ssl_conf_file"; then
 			ssl_include_present="true"
@@ -887,13 +882,8 @@ configure_site_debian() {
 configure_site_cpanel() {
 	local domain=$1
 	local docroot=$2
-	local site_type=$3
 	
-	if [ -n "$site_type" ]; then
-		echo "Processing cPanel site: $domain ($site_type site) with DocumentRoot: $docroot"
-	else
-		echo "Processing cPanel site: $domain with DocumentRoot: $docroot"
-	fi
+	echo "Processing cPanel site: $domain with DocumentRoot: $docroot"
 	
 	# expected cPanel docroot: /home/user/public_html
 	user=$(echo "$docroot" | awk -F '/' '{print $3}')
@@ -999,13 +989,8 @@ EOF
 configure_site_redhat() {
 	local domain=$1
 	local docroot=$2
-	local site_type=$3
 
-	if [ -n "$site_type" ]; then
-		echo "Processing RHEL site: $domain ($site_type site) with DocumentRoot: $docroot"
-	else
-		echo "Processing RHEL site: $domain with DocumentRoot: $docroot"
-	fi
+	echo "Processing RHEL site: $domain with DocumentRoot: $docroot"
 
 	# Copy upgrade-in-progress.html to DocumentRoot
 	copy_upgrade_html "$docroot"
@@ -1212,9 +1197,7 @@ process_sites() {
 	while IFS= read -r line; do
 		domain=$(echo "$line" | awk '{print $1}')
 		docroot=$(echo "$line" | awk '{print $2}')
-		site_type=$(echo "$line" | awk '{print $3}')
-		
-		$configure_func "$domain" "$docroot" "$site_type"
+		$configure_func "$domain" "$docroot"
 		
 	done < $SITES_FILE
 }
