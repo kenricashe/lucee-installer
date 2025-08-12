@@ -93,6 +93,41 @@ save_results() {
 }
 
 # Main script execution
+# If previous results exist, back them up and prompt to continue
+if [ -f "$TXTPATH_ALL_DATA" ]; then
+	# Centralized backup root and timestamp (mirrors original path under backup root)
+	BACKUP_ROOT="${UPG_DIR}/backups"
+	BACKUP_TS="$(date +%Y-%m-%d-%H%M%S)"
+	BACKUP_DEST="${BACKUP_ROOT}/${BACKUP_TS}${TXTPATH_ALL_DATA}"
+	# Ensure destination directory exists, then copy
+	BACKUP_DIR="$(dirname "$BACKUP_DEST")"
+	mkdir -p "$BACKUP_DIR"
+	if cp -f "$TXTPATH_ALL_DATA" "$BACKUP_DEST"; then
+		echo ""
+		echo "Existing file backed up to: $BACKUP_DEST"
+	else
+		echo ""
+		echo "ERROR: Failed to back up existing file. Aborting."
+		exit 1
+	fi
+	# Prompt until a valid answer (default Yes)
+	while :; do
+		echo ""
+		echo -n "Continue and overwrite $TXTPATH_ALL_DATA? [Y/n] "
+		read -r _ans
+		if [ -z "$_ans" ] || [ "$_ans" = "Y" ] || [ "$_ans" = "y" ]; then
+			break
+		fi
+		if [ "$_ans" = "N" ] || [ "$_ans" = "n" ]; then
+			echo ""
+			echo "Aborted by user."
+			exit 0
+		fi
+		echo ""
+		echo "Please enter Y or n."
+	done
+fi
+
 echo "Analyzing Lucee sites..."
 
 # Detect distribution and run appropriate code path

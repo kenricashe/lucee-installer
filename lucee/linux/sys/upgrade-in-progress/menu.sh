@@ -21,14 +21,13 @@ press_enter_to_continue() {
 }
 
 run_get_sites() {
-	echo "\nAnalyzing Apache to build sites list..."
+	clear
 	${SUDO} "${UPG_DIR}/get-lucee-sites.sh"
 }
 
 run_edit_sites() {
 	if [ ! -f "${SITES_FILE}" ]; then
-		echo "\nSites file not found: ${SITES_FILE}"
-		echo "Run option 1 first to generate it."
+		print "\nSites file not found: ${SITES_FILE}\n\nRun option 1 first to generate it."
 		return
 	fi
 	EDITOR_CMD="${EDITOR:-nano}"
@@ -40,25 +39,25 @@ run_edit_sites() {
 }
 
 run_configure_apache() {
-	echo "\nConfiguring Apache (globals + per-site includes)..."
+	clear
 	${SUDO} "${UPG_DIR}/configure-apache.sh"
 }
 
 run_begin() {
-	echo "\nBeginning 'Upgrade in Progress'..."
+	clear
 	${SUDO} "${UPG_DIR}/begin.sh"
 }
 
 run_end() {
-	echo "\nEnding 'Upgrade in Progress'..."
+	clear
 	${SUDO} "${UPG_DIR}/end.sh"
 }
 
 while true; do
 	clear
-	echo "--------------------------------"
+	echo "----------------------------------------"
 	echo "'Upgrade in Progress' for Lucee + Apache"
-	echo "--------------------------------"
+	echo "----------------------------------------"
 	echo ""
 	echo "1. Get Apache Site Data"
 	echo ""
