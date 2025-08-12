@@ -69,6 +69,9 @@ BACKUP_TS="$(date +%Y-%m-%d-%H%M%S)"
 
 # Apache config test helper: prefer apache2ctl, then apachectl, then httpd
 apache_config_test() {
+	echo ""
+	echo "Testing Apache configuration..."
+	echo ""
 	if command -v apache2ctl >/dev/null 2>&1; then
 		apache2ctl -t
 	elif command -v apachectl >/dev/null 2>&1; then
@@ -648,6 +651,7 @@ configure_site_debian() {
 	local domain=$1
 	local docroot=$2
 	
+	echo ""
 	echo "Processing $domain with DocumentRoot: $docroot"
 	
 	# Copy upgrade-in-progress.html to DocumentRoot
@@ -1205,6 +1209,7 @@ process_sites() {
 # Function to reload Apache
 reload_apache() {
 	local apache_service=$1
+	echo ""
 	echo "Reloading Apache..."
 	systemctl reload $apache_service
 }
@@ -1258,4 +1263,5 @@ fi
 	
 # /etc/apache2/conf.d/userdata/std/2_4/${user}/${domain}/upgrade-in-progress.conf
 
+echo ""
 echo "DONE!"
