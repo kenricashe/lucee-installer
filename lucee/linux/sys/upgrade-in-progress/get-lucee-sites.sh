@@ -59,6 +59,7 @@ get_docroot_redhat() {
 save_results() {
 	local get_docroot_func=$1
 
+	echo ""
 	echo "Saving results ..."
 
 	> $TXTPATH_ALL_DATA
@@ -78,18 +79,19 @@ save_results() {
 	done <<< "$domains"
 
 	echo ""
-	echo "Review and if necessary edit the results file:"
-	echo ""
-	echo "sudo nano $TXTPATH_ALL_DATA"
-	echo ""
-	echo "Then run:"
-	echo ""
-	echo "sudo ${UPG_DIR}/configure-apache.sh"
+	echo "$TXTPATH_ALL_DATA"
 	echo ""
 	echo "A domains-only file (just in case you need it) was also saved as:"
 	echo ""
 	echo "$TXTPATH_ONLY_DOMAINS"
 	echo ""
+	echo "In the next step you will view the results file using the nano editor."
+	echo ""
+	echo "If there are any sites that you want to exempt from being Lucee-disabled"
+	echo "during 'Upgrade in Progress' sessions, simply remove them from the file."
+	echo ""
+	echo "Press Enter to continue..."
+	read -r _
 }
 
 # Main script execution
@@ -143,4 +145,5 @@ elif [ -d /etc/httpd/conf.d ]; then
 	save_results get_docroot_redhat
 fi
 
-echo "DONE!"
+# View/Edit sites file
+${SUDO} ${EDITOR:-nano} "${SITES_FILE}"

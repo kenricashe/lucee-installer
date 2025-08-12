@@ -40,13 +40,18 @@ LUCEE404_REGEX='^[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+/[^[:space:
 # Any ErrorDocument 404 (any target), for precedence checks and comment-all behavior
 ANY404_REGEX='^[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+'
 
-SITES_FILE="${UPG_DIR}/sites-configured.txt"
 if [ ! -f "$SITES_FILE" ]; then
-	echo "Lucee sites data file not found. You first need to run:"
-	echo "sudo ${UPG_DIR}/get-lucee-sites.sh"
-	echo "Then review and if necessary edit the .txt file"
-	echo "from that before returning to this script."
-	exit 1
+	echo "Lucee sites data file not found."
+	echo ""
+	echo "Press Enter to get data..."
+	read -r _
+	${SUDO} "${UPG_DIR}/get-lucee-sites.sh"
+	# Re-check for generated file
+	if [ ! -f "$SITES_FILE" ]; then
+		echo "Error: Failed to generate sites data file. Aborting now."
+		exit 1
+	fi
+	clear
 fi
 
 # cPanel userdata paths (IS_CPANEL provided by get-env.sh)

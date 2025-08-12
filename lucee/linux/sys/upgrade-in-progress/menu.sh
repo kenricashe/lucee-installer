@@ -7,14 +7,6 @@
 SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "${SCRIPT_DIR}/get-env.sh"
 
-# Determine sudo prefix for privileged actions
-SUDO=""
-if [ "$(id -u)" != "0" ]; then
-	SUDO="sudo"
-fi
-
-SITES_FILE="${UPG_DIR}/sites-configured.txt"
-
 press_enter_to_continue() {
 	printf "\nPress Enter to continue..."
 	read -r _
@@ -30,12 +22,7 @@ run_edit_sites() {
 		print "\nSites file not found: ${SITES_FILE}\n\nRun option 1 first to generate it."
 		return
 	fi
-	EDITOR_CMD="${EDITOR:-nano}"
-	if [ "$(id -u)" = "0" ]; then
-		${EDITOR_CMD} "${SITES_FILE}"
-	else
-		${SUDO} ${EDITOR_CMD} "${SITES_FILE}"
-	fi
+	${SUDO} ${EDITOR:-nano} "${SITES_FILE}"
 }
 
 run_configure_apache() {
@@ -65,9 +52,9 @@ while true; do
 	echo " (based on /var/lucee-upgrade-in-progress)"
 	echo "------------------------------------------"
 	echo ""
-	echo "1. Get Apache Site Data"
+	echo "1. Get/Edit Apache Site Data"
 	echo ""
-	echo "2. View/Edit Apache Site Data"
+	echo "2. View/Edit Apache Site Data File"
 	echo ""
 	echo "3. Configure Apache"
 	echo ""
@@ -81,7 +68,6 @@ while true; do
 	case "${choice}" in
 		1)
 			run_get_sites
-			press_enter_to_continue
 			;;
 		2)
 			run_edit_sites
