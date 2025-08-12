@@ -55,15 +55,22 @@ run_end() {
 }
 
 while true; do
-	echo ""
-	echo "Lucee Upgrade Menu (${UPG_DIR})"
+	clear
 	echo "--------------------------------"
-	echo "1) Get Apache Site Data"
-	echo "2) View/Edit Apache Site Data"
-	echo "3) Configure Apache"
-	echo "4) Begin 'Upgrade in Progress'"
-	echo "5) End 'Upgrade in Progress'"
-	echo "q) Quit"
+	echo "'Upgrade in Progress' for Lucee + Apache"
+	echo "--------------------------------"
+	echo ""
+	echo "1. Get Apache Site Data"
+	echo ""
+	echo "2. View/Edit Apache Site Data"
+	echo ""
+	echo "3. Configure Apache"
+	echo ""
+	echo "4. Begin 'Upgrade in Progress'"
+	echo ""
+	echo "5. End 'Upgrade in Progress'"
+	echo ""
+	echo "q. Quit"
 	echo ""
 	read -r -p "Select an option [1-5 or q]: " choice
 	case "${choice}" in
@@ -73,7 +80,6 @@ while true; do
 			;;
 		2)
 			run_edit_sites
-			press_enter_to_continue
 			;;
 		3)
 			run_configure_apache
