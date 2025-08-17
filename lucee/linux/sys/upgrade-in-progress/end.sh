@@ -10,24 +10,24 @@ if [ "$(id -u)" != "0" ]; then
 	exit 1
 fi
 
-# Debian/Ubuntu/etc
+# Debian, Ubuntu, Pop!_OS, etc
 if command -v a2enconf >/dev/null 2>&1; then
-	echo "Enabling lucee-ajp-and-mod_cfml configuration..."
-	a2enconf lucee-ajp-and-mod_cfml >/dev/null
+	echo "Enabling lucee-proxy configuration..."
+	a2enconf lucee-proxy >/dev/null
 	echo "Disabling lucee-upgrade-in-progress configuration..."
 	a2disconf lucee-upgrade-in-progress >/dev/null
 	echo "Reloading Apache..."
 	systemctl reload apache2
 
-# Redhat/CentOS/AlmaLinux/etc
+# Fedora, Red Hat, AlmaLinux, Rocky Linux, etc
 elif [ -d /etc/httpd/conf.d ]; then
 	if [ "$IS_CPANEL" = true ]; then
 		cd /etc/apache2/conf.d || exit 1
 	else
 		cd /etc/httpd/conf.d || exit 1
 	fi
-	echo "Enabling lucee-ajp-and-mod_cfml configuration..."
-	mv -f lucee-ajp-and-mod_cfml.conf.disabled lucee-ajp-and-mod_cfml.conf
+	echo "Enabling lucee-proxy configuration..."
+	mv -f lucee-proxy.conf.disabled lucee-proxy.conf
 	echo "Disabling lucee-upgrade-in-progress configuration..."
 	mv -f lucee-upgrade-in-progress.conf lucee-upgrade-in-progress.disabled
 	if [ "$IS_CPANEL" = true ]; then

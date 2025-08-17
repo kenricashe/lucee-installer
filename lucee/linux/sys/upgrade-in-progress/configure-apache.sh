@@ -434,112 +434,231 @@ headers_module_enabled() {
 	return 0
 }
 
-# Warn if conflicting AJP/mod_cfml directives already exist in global config
-warn_existing_ajp_modcfml() {
-	# Args: list of directories to scan
-	local found=""
-	local dir
-	for dir in "$@"; do
-		[ -d "$dir" ] || continue
-		local hits
-		# Only match active (non-commented) lines with AJP/mod_cfml directives, excluding our managed file
-		hits=$(grep -RniE '^[[:space:]]*[^#].*(ProxyPass(Match|Reverse).*ajp://|ModCFML_SharedKey|LoadModule[[:space:]]+modcfml_module)' "$dir" 2>/dev/null | grep -v 'lucee-ajp-and-mod_cfml.conf' || true)
-		if [ -n "$hits" ]; then
-			found+="\n${hits}"
-		fi
-	done
-	if [ -n "$found" ]; then
-		echo "Warning: Existing AJP/mod_cfml directives detected in global Apache config."
-		echo "They may conflict with the generated lucee-ajp-and-mod_cfml.conf. Please remove duplicates:"
-		echo "$found"
-	fi
+# Detect manually delineated Lucee proxy block in Apache config
+# Returns 0 if found, 1 if not found
+find_manual_proxy_block() {
+	local config_file="$1"
+	[ -f "$config_file" ] || return 1
+	awk '
+		/^[[:space:]]*#[[:space:]]*begin[[:space:]]+[Ll]ucee[[:space:]]+proxy/ { start=NR; next }
+		/^[[:space:]]*#[[:space:]]*end[[:space:]]+[Ll]ucee[[:space:]]+proxy/ { 
+			if (start) { 
+				for (i=start+1; i<NR; i++) print lines[i]
+				exit 0 
+			}
+		}
+		{ lines[NR]=$0 }
+		END { exit 1 }
+	' "$config_file"
 }
 
-# Resolve Tomcat server.xml path
-resolve_server_xml() {
-	if [ -n "$TOMCAT_SERVER_XML" ] && [ -f "$TOMCAT_SERVER_XML" ]; then
-		echo "$TOMCAT_SERVER_XML"
+# Extract Lucee proxy block using regex patterns (fallback method)
+# Based on install_mod_proxy.sh patterns
+find_regex_proxy_block() {
+	local config_file="$1"
+	[ -f "$config_file" ] || return 1
+	
+	# Extract IfModule mod_proxy.c blocks and check for ProxyPassMatch with cf
+	local in_block=0
+	local block_content=""
+	
+	while IFS= read -r line; do
+		case "$line" in
+			*"<IfModule"*"mod_proxy.c>"*)
+				in_block=1
+				block_content="$line"
+				;;
+			*"</IfModule>"*)
+				if [ "$in_block" = "1" ]; then
+					block_content="$block_content"$'\n'"$line"
+					# Check if this block contains ProxyPassMatch with cf
+					if echo "$block_content" | grep -q "ProxyPassMatch.*cf"; then
+						# Output the block as-is with header comment
+						echo "# Lucee proxy configuration (migrated from global Apache config)"
+						echo "$block_content"
+						return 0
+					fi
+					in_block=0
+					block_content=""
+				fi
+				;;
+			*)
+				if [ "$in_block" = "1" ]; then
+					block_content="$block_content"$'\n'"$line"
+				fi
+				;;
+		esac
+	done < "$config_file"
+	
+	return 1
+}
+
+# Find and extract Lucee proxy configuration from global Apache config
+# Returns the proxy block content or empty if not found
+find_lucee_proxy_block() {
+	local config_file="$1"
+	[ -f "$config_file" ] || return 1
+	
+	# Try manual delineation first
+	local proxy_block
+	proxy_block=$(find_manual_proxy_block "$config_file" 2>/dev/null)
+	if [ $? -eq 0 ] && [ -n "$proxy_block" ]; then
+		echo "$proxy_block"
 		return 0
 	fi
-
-	for candidate in \
-		"${LUCEE_ROOT}/tomcat/conf/server.xml" \
-		"${LUCEE_ROOT}/tomcat*/conf/server.xml" \
-		"/etc/tomcat*/server.xml"; do
-		if ls $candidate >/dev/null 2>&1; then
-			# Return the first match from glob expansion
-			for f in $candidate; do
-				[ -f "$f" ] && { echo "$f"; return 0; }
-			done
-		fi
-	done
-	echo "" # not found
+	
+	# Fallback to regex detection
+	proxy_block=$(find_regex_proxy_block "$config_file" 2>/dev/null)
+	if [ $? -eq 0 ] && [ -n "$proxy_block" ]; then
+		echo "$proxy_block"
+		return 0
+	fi
+	
+	return 1
 }
 
-# Parse AJP port/secret and mod_cfml shared key from server.xml
-parse_server_xml() {
-	local sx="$1"
-	AJP_PORT="8009" # default fallback
-	AJP_SECRET=""
-	MODCFML_SHARED_KEY=""
-	if [ -f "$sx" ]; then
-		# AJP Connector line
-		local ajp_line
-		ajp_line=$(grep -i "<Connector" "$sx" | grep -i "ajp" | head -n1 || true)
-		if [ -n "$ajp_line" ]; then
-			AJP_PORT=$(echo "$ajp_line" | sed -n 's/.*port="\([0-9]\{2,5\}\)".*/\1/p')
-			AJP_SECRET=$(echo "$ajp_line" | sed -n 's/.*secret="\([^"]\+\)".*/\1/p')
-		fi
-		# mod_cfml Valve line
-		local vline
-		vline=$(grep -i "<Valve" "$sx" | grep -i "mod_cfml" | head -n1 || true)
-		if [ -n "$vline" ]; then
-			MODCFML_SHARED_KEY=$(echo "$vline" | sed -n 's/.*sharedKey="\([^"]\+\)".*/\1/p')
-			if [ -z "$MODCFML_SHARED_KEY" ]; then
-				MODCFML_SHARED_KEY=$(echo "$vline" | sed -n 's/.*secret="\([^"]\+\)".*/\1/p')
-			fi
+# Replace Lucee proxy block with comment indicating migration
+# Returns 0 on success, 1 on failure
+replace_proxy_with_comment() {
+	local config_file="$1"
+	local proxy_conf_path="$2"
+	[ -f "$config_file" ] || return 1
+	
+	local tmp
+	tmp=$(mktemp)
+	
+	# Try manual delineation replacement first
+	if awk -v conf="$proxy_conf_path" '
+		/^[[:space:]]*#[[:space:]]*begin[[:space:]]+[Ll]ucee[[:space:]]+proxy/ { 
+			print "# Lucee proxy configuration moved to " conf
+			comment_mode=1; next 
+		}
+		/^[[:space:]]*#[[:space:]]*end[[:space:]]+[Ll]ucee[[:space:]]+proxy/ { 
+			if (comment_mode) { comment_mode=0; next }
+		}
+		comment_mode { print "# " $0; next }
+		{ print }
+	' "$config_file" > "$tmp"; then
+		# Check if replacement actually happened
+		if ! cmp -s "$config_file" "$tmp"; then
+			mv "$tmp" "$config_file"
+			return 0
 		fi
 	fi
-}
-
-# Render the AJP+mod_cfml template into a destination file
-render_ajp_template() {
-	local dest="$1"
-	local tmpl="${UPG_DIR}/lucee-ajp-and-mod_cfml.conf"
-	if [ ! -f "$tmpl" ]; then
-		echo "Warning: Template not found: $tmpl"
+	
+	# Fallback to regex-based replacement
+	awk -v conf="$proxy_conf_path" '
+		BEGIN { in_proxy=0; replaced=0 }
+		/<IfModule[[:space:]]+mod_proxy\.c>/ {
+			if (!replaced) {
+				# Start collecting proxy block
+				in_proxy=1; proxy_start=NR; proxy_content=$0 "\n"
+				next
+			}
+		}
+		in_proxy && /<\/IfModule>/ {
+			proxy_content=proxy_content $0 "\n"
+			# Check if this is a Lucee proxy block
+			if (proxy_content ~ /ProxyPassMatch.*cf/) {
+				print "# Lucee proxy configuration moved to " conf
+				# Comment out each line of the proxy block, preserving empty lines
+				split(proxy_content, lines, "\n")
+				for (i = 1; i <= length(lines); i++) {
+					if (lines[i] == "") {
+						print ""
+					} else {
+						print "# " lines[i]
+					}
+				}
+				replaced=1
+			} else {
+				# Not a Lucee block, print it as-is
+				printf "%s", proxy_content
+			}
+			in_proxy=0; proxy_content=""
+			next
+		}
+		in_proxy { proxy_content=proxy_content $0 "\n"; next }
+		!in_proxy { print }
+	' "$config_file" > "$tmp"
+	
+	if [ $? -eq 0 ]; then
+		mv "$tmp" "$config_file"
+		return 0
+	else
+		rm -f "$tmp"
 		return 1
 	fi
-	local sx
-	sx=$(resolve_server_xml)
-	parse_server_xml "$sx"
-	# build replacement values
-	local port="$AJP_PORT"
-	local ajpsec="$AJP_SECRET"
-	local shared="$MODCFML_SHARED_KEY"
-	# escape for sed
-	local esc_ajpsec esc_shared
-	esc_ajpsec=$(printf '%s' "$ajpsec" | sed -e 's/[\&/]/\\&/g')
-	esc_shared=$(printf '%s' "$shared" | sed -e 's/[\&/]/\\&/g')
-	# substitute: port 8009 -> actual port; secrets replace REDACTED
-	sed \
-		-e "s#ajp://127.0.0.1:8009/#ajp://127.0.0.1:${port}/#g" \
-		-e "s#secret=REDACTED#secret=${esc_ajpsec}#g" \
-		-e "s#ModCFML_SharedKey \"REDACTED\"#ModCFML_SharedKey \"${esc_shared}\"#g" \
-		"$tmpl" > "$dest"
-	chmod 644 "$dest"
-	# Post-render warnings
-	if [ -z "$ajpsec" ]; then
-		echo "Warning: AJP secret not found in server.xml (${sx:-unknown}). You should set an AJP secret and update Apache accordingly."
+}
+
+# Migrate existing Lucee proxy config from global Apache to lucee-proxy.conf
+# Returns 0 on success, 1 on failure, 2 if no migration needed
+migrate_lucee_proxy_config() {
+	local global_config_dir="$1"
+	local proxy_conf_path="$2"
+	
+	# Skip if lucee-proxy.conf already exists
+	if [ -f "$proxy_conf_path" ]; then
+		echo "lucee-proxy.conf already exists; skipping migration"
+		return 2
 	fi
-	if [ -z "$shared" ]; then
-		echo "Warning: mod_cfml shared key not found in server.xml (${sx:-unknown}). You should set ModCFML_SharedKey consistently."
+	
+	# Search for Lucee proxy config in global Apache files
+	local proxy_block=""
+	local source_file=""
+	
+	# Check common global config files
+	for config_file in \
+		"$global_config_dir"/*.conf \
+		"$(dirname "$global_config_dir")"/apache2.conf \
+		"$(dirname "$global_config_dir")"/httpd.conf; do
+		
+		[ -f "$config_file" ] || continue
+		
+		proxy_block=$(find_lucee_proxy_block "$config_file" 2>/dev/null)
+		if [ $? -eq 0 ] && [ -n "$proxy_block" ]; then
+			source_file="$config_file"
+			break
+		fi
+	done
+	
+	if [ -z "$proxy_block" ] || [ -z "$source_file" ]; then
+		echo "Error: Unable to automatically identify Lucee proxy configuration."
+		echo ""
+		echo "Please manually delineate your Apache global configuration like this:"
+		echo ""
+		echo "# begin Lucee proxy"
+		echo "[your existing proxy configuration here]"
+		echo "# end Lucee proxy"
+		echo ""
+		echo "Then run this script again."
+		exit 1
+	fi
+	
+	echo "Found Lucee proxy configuration in: $source_file"
+	echo "Migrating to: $proxy_conf_path"
+	
+	# Backup source file
+	backup_file "$source_file"
+	
+	# Write proxy block to lucee-proxy.conf
+	echo "$proxy_block" > "$proxy_conf_path"
+	
+	# Replace original block with comment indicating migration
+	if replace_proxy_with_comment "$source_file" "$proxy_conf_path"; then
+		echo "Successfully migrated Lucee proxy configuration"
+		return 0
+	else
+		echo "Error: Failed to replace proxy block with migration comment"
+		return 1
 	fi
 }
 
 # Ensure global Apache confs exist and are set to normal-state defaults
-# Normal state: AJP/mod_cfml enabled; upgrade flag disabled
+# Normal state: lucee-proxy enabled; upgrade flag disabled
 ensure_global_confs() {
+	# No longer creating embedded proxy config - using simpler environment variable approach
+	
 	# Debian/Ubuntu
 	if command -v a2enconf >/dev/null 2>&1; then
 		conf_avail="/etc/apache2/conf-available"
@@ -548,30 +667,22 @@ ensure_global_confs() {
 			echo "Installing global lucee-upgrade-in-progress.conf into ${conf_avail}/"
 			cp -f "$opt_file" "${conf_avail}/lucee-upgrade-in-progress.conf"
 		fi
-		# Warn if conflicting AJP/mod_cfml config is present elsewhere in global dirs
-		warn_existing_ajp_modcfml \
-			"/etc/apache2/conf-available" \
-			"/etc/apache2/conf-enabled"
-		# Ensure AJP+mod_cfml global conf exists (generate from template if missing)
-		if [ ! -f "${conf_avail}/lucee-ajp-and-mod_cfml.conf" ]; then
-			echo "Generating global lucee-ajp-and-mod_cfml.conf in ${conf_avail}/ from template via server.xml"
-			render_ajp_template "${conf_avail}/lucee-ajp-and-mod_cfml.conf" || true
-		fi
+		# Proxy migration already handled in early check
 		# Ensure upgrade flag is disabled by default
 		a2disconf lucee-upgrade-in-progress >/dev/null 2>&1 || true
-		# Ensure AJP+mod_cfml is enabled if present in conf-available
-		if [ -f "${conf_avail}/lucee-ajp-and-mod_cfml.conf" ]; then
-			a2enconf lucee-ajp-and-mod_cfml >/dev/null 2>&1 || true
+		# Ensure lucee-proxy.conf is enabled if present in conf-available
+		if [ -f "${conf_avail}/lucee-proxy.conf" ]; then
+			a2enconf lucee-proxy >/dev/null 2>&1 || true
 		fi
-		# Warn if no AJP proxying detected in global config
-		ajp_detected=false
-		if [ -f "${conf_avail}/lucee-ajp-and-mod_cfml.conf" ] || [ -f "/etc/apache2/conf-enabled/lucee-ajp-and-mod_cfml.conf" ]; then
-			ajp_detected=true
-		elif grep -Rqi 'ajp://' /etc/apache2/ 2>/dev/null; then
-			ajp_detected=true
+		# Warn if no Lucee proxying detected in global config
+		proxy_detected=false
+		if [ -f "${conf_avail}/lucee-proxy.conf" ] || [ -f "/etc/apache2/conf-enabled/lucee-proxy.conf" ]; then
+			proxy_detected=true
+		elif grep -Rqi 'ProxyPassMatch.*cf' /etc/apache2/ 2>/dev/null; then
+			proxy_detected=true
 		fi
-		if [ "$ajp_detected" != true ]; then
-			echo "Warning: AJP proxying not detected in global Apache config (Debian/Ubuntu). Normal operation expects AJP/mod_cfml enabled."
+		if [ "$proxy_detected" != true ]; then
+			echo "Warning: Lucee proxy configuration not detected in global Apache config (Debian/Ubuntu). Normal operation expects mod_proxy enabled."
 		fi
 		# Warn if mod_headers isn't enabled (needed for HEAD-based polling via X-Lucee-Upgrade)
 		if ! headers_module_enabled; then
@@ -595,13 +706,7 @@ ensure_global_confs() {
 			echo "Installing global lucee-upgrade-in-progress.disabled into ${confd}/"
 			cp -f "$opt_file" "${confd}/lucee-upgrade-in-progress.disabled"
 		fi
-		# Warn if conflicting AJP/mod_cfml config is present elsewhere in global dir
-		warn_existing_ajp_modcfml "$confd"
-		# Ensure AJP+mod_cfml global conf exists (generate from template if missing)
-		if [ ! -f "${confd}/lucee-ajp-and-mod_cfml.conf" ] && [ ! -f "${confd}/lucee-ajp-and-mod_cfml.conf.disabled" ]; then
-			echo "Generating global ${confd}/lucee-ajp-and-mod_cfml.conf from template via server.xml (enabled in normal state)"
-			render_ajp_template "${confd}/lucee-ajp-and-mod_cfml.conf" || true
-		fi
+		# Proxy migration already handled in early check
 		# Ensure normal state: upgrade flag disabled
 		if [ -f "${confd}/lucee-upgrade-in-progress.conf" ]; then
 			# Backup existing .disabled if present to avoid clobbering (mirrored under BACKUP_ROOT)
@@ -612,20 +717,23 @@ ensure_global_confs() {
 			echo "Disabling lucee-upgrade-in-progress.conf (normal state)"
 			mv -f "${confd}/lucee-upgrade-in-progress.conf" "${confd}/lucee-upgrade-in-progress.disabled"
 		fi
-		# Ensure AJP+mod_cfml is enabled (rename from .disabled if needed)
-		if [ -f "${confd}/lucee-ajp-and-mod_cfml.conf.disabled" ] && [ ! -f "${confd}/lucee-ajp-and-mod_cfml.conf" ]; then
-			echo "Enabling lucee-ajp-and-mod_cfml.conf (normal state)"
-			mv -f "${confd}/lucee-ajp-and-mod_cfml.conf.disabled" "${confd}/lucee-ajp-and-mod_cfml.conf"
+		# Create lucee-proxy.conf in conf-available
+		echo "Creating lucee-proxy.conf..."
+		find_regex_proxy_block > "$CONF_AVAILABLE_DIR/lucee-proxy.conf"
+		# Ensure lucee-proxy.conf is enabled (rename from .disabled if needed)
+		if [ -f "${confd}/lucee-proxy.conf.disabled" ] && [ ! -f "${confd}/lucee-proxy.conf" ]; then
+			echo "Enabling lucee-proxy.conf (normal state)"
+			mv -f "${confd}/lucee-proxy.conf.disabled" "${confd}/lucee-proxy.conf"
 		fi
-		# Warn if no AJP proxying detected in global config
-		ajp_detected=false
-		if [ -f "${confd}/lucee-ajp-and-mod_cfml.conf" ] || [ -f "${confd}/lucee-ajp-and-mod_cfml.conf.disabled" ]; then
-			ajp_detected=true
-		elif grep -Rqi 'ajp://' "$confd" 2>/dev/null; then
-			ajp_detected=true
+		# Warn if no Lucee proxying detected in global config
+		proxy_detected=false
+		if [ -f "${confd}/lucee-proxy.conf" ] || [ -f "${confd}/lucee-proxy.conf.disabled" ]; then
+			proxy_detected=true
+		elif grep -Rqi 'ProxyPassMatch.*cf' "$confd" 2>/dev/null; then
+			proxy_detected=true
 		fi
-		if [ "$ajp_detected" != true ]; then
-			echo "Warning: AJP proxying not detected in global Apache config (${confd}). Normal operation expects AJP/mod_cfml enabled."
+		if [ "$proxy_detected" != true ]; then
+			echo "Warning: Lucee proxy configuration not detected in global Apache config (${confd}). Normal operation expects mod_proxy enabled."
 		fi
 		# Warn if mod_headers isn't enabled (needed for HEAD-based polling via X-Lucee-Upgrade)
 		if ! headers_module_enabled; then
@@ -1215,24 +1323,42 @@ reload_apache() {
 }
 
 # Main script execution
+
+# Early proxy migration check - must happen before any other configuration
+echo "Checking for existing Lucee proxy configuration..."
+if command -v a2enconf >/dev/null 2>&1; then
+	# Debian/Ubuntu - check if proxy migration is needed
+	conf_avail="/etc/apache2/conf-available"
+	if [ ! -f "${conf_avail}/lucee-proxy.conf" ]; then
+		# Try to migrate existing proxy config
+		migrate_lucee_proxy_config "$conf_avail" "${conf_avail}/lucee-proxy.conf"
+	fi
+elif [ -d /etc/httpd/conf.d ]; then
+	# RedHat/CentOS - check if proxy migration is needed
+	confd="/etc/httpd/conf.d"
+	if [ ! -f "${confd}/lucee-proxy.conf" ]; then
+		# Try to migrate existing proxy config
+		migrate_lucee_proxy_config "$confd" "${confd}/lucee-proxy.conf"
+	fi
+fi
+
 echo "Configuring Lucee sites for scripted 'Upgrade in Progress' notifications ..."
 
-# Detect distribution and run appropriate code path
+# Debian, Ubuntu, Pop!_OS, etc
 if command -v a2enconf >/dev/null 2>&1; then
-	# Debian/Ubuntu path
 	ensure_global_confs
 	process_sites configure_site_debian
 	# Validate Apache configuration before reload
 	if ! apache_config_test; then
-		echo "Apache configuration test FAILED. Aborting reload."
+		echo "Apache test FAILED. Aborting reload. Please check configuration files."
 		exit 1
 	fi
 	reload_apache apache2
 	
-# RHEL/CentOS/AlmaLinux/etc
+# Fedora, Red Hat, AlmaLinux, Rocky Linux, etc
 elif [ -d /etc/httpd/conf.d ]; then
+	# cPanel
 	if [ "$IS_CPANEL" = true ]; then
-		# cPanel path
 		ensure_global_confs
 		process_sites configure_site_cpanel
 		
@@ -1240,22 +1366,24 @@ elif [ -d /etc/httpd/conf.d ]; then
 		echo "Rebuilding Apache configuration..."
 		/scripts/rebuildhttpdconf
 		if ! apache_config_test; then
-			echo "Apache configuration test FAILED. Aborting restart."
+			echo "Apache test FAILED. Aborting restart. Please check configuration files."
 			exit 1
 		fi
 		echo "Gracefully restarting httpd..."
 		/scripts/restartsrv_httpd --graceful
+	
+	# NOT cPanel
 	else
-		# RHEL path
 		ensure_global_confs
 		process_sites configure_site_redhat
 		# Validate Apache configuration before reload
 		if ! apache_config_test; then
-			echo "Apache configuration test FAILED. Aborting reload."
+			echo "Apache test FAILED. Aborting reload. Please check configuration files."
 			exit 1
 		fi
 		reload_apache httpd
 	fi
+
 else
 	echo "Unsupported environment (neither a2enconf nor /etc/httpd/conf.d detected)"
 	exit 1

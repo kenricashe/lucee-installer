@@ -134,13 +134,12 @@ echo "Analyzing Lucee sites..."
 
 # Detect distribution and run appropriate code path
 if command -v a2enconf >/dev/null 2>&1; then
-	# Debian/Ubuntu path
+	# Debian, Ubuntu, Pop!_OS, etc
 	domains=$(get_domains_debian)
 	save_results get_docroot_debian
 	
-# Redhat/CentOS/AlmaLinux/etc
 elif [ -d /etc/httpd/conf.d ]; then
-	# RedHat/CentOS path
+	# Fedora, Red Hat, AlmaLinux, Rocky Linux, etc
 	domains=$(get_domains_redhat)
 	save_results get_docroot_redhat
 fi

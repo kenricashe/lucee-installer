@@ -27,16 +27,24 @@ fi
 # is more efficient than checking for the file's existence on every request.
 touch /var/lucee-upgrade-in-progress
 
-# Debian/Ubuntu/etc
+# Debian, Ubuntu, Pop!_OS, etc
 if command -v a2enconf >/dev/null 2>&1; then
 	echo "Enabling lucee-upgrade-in-progress configuration..."
 	a2enconf lucee-upgrade-in-progress >/dev/null
-	echo "Disabling lucee-ajp-and-mod_cfml configuration..."
-	a2disconf lucee-ajp-and-mod_cfml >/dev/null
+	echo "Disabling lucee-proxy configuration..."
+	a2disconf lucee-proxy >/dev/null
 	echo "Reloading Apache..."
-	systemctl reload apache2
+	if ! systemctl reload apache2; then
+		echo "ERROR: Apache reload failed!"
+		echo "Status output:"
+		systemctl status apache2.service --no-pager -l
+		echo ""
+		echo "Recent journal entries:"
+		journalctl -xeu apache2.service --no-pager -l --since="1 minute ago"
+		exit 1
+	fi
 
-# Redhat/CentOS/AlmaLinux/etc
+# Fedora, Red Hat, AlmaLinux, Rocky Linux, etc
 elif [ -d /etc/httpd/conf.d ]; then
 	if [ "$IS_CPANEL" = true ]; then
 		cd /etc/apache2/conf.d || exit 1
@@ -45,8 +53,8 @@ elif [ -d /etc/httpd/conf.d ]; then
 	fi
 	echo "Enabling lucee-upgrade-in-progress configuration..."
 	mv -f lucee-upgrade-in-progress.disabled lucee-upgrade-in-progress.conf
-	echo "Disabling lucee-ajp-and-mod_cfml configuration..."
-	mv -f lucee-ajp-and-mod_cfml.conf lucee-ajp-and-mod_cfml.conf.disabled
+	echo "Disabling lucee-proxy configuration..."
+	mv -f lucee-proxy.conf lucee-proxy.conf.disabled
 	if [ "$IS_CPANEL" = true ]; then
 		echo "Rebuilding httpd configuration..."
 		/scripts/rebuildhttpdconf
@@ -54,7 +62,15 @@ elif [ -d /etc/httpd/conf.d ]; then
 		/scripts/restartsrv_httpd --graceful
 	else
 		echo "Reloading httpd..."
-		systemctl reload httpd
+		if ! systemctl reload httpd; then
+			echo "ERROR: httpd reload failed!"
+			echo "Status output:"
+			systemctl status httpd.service --no-pager -l
+			echo ""
+			echo "Recent journal entries:"
+			journalctl -xeu httpd.service --no-pager -l --since="1 minute ago"
+			exit 1
+		fi
 	fi
 
 else

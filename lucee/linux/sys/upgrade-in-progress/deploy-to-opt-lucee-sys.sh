@@ -20,8 +20,9 @@ FILES=(
 	"end.sh"
 	"upgrade-in-progress.html"
 	"lucee-detect-upgrade.conf"
-	"lucee-ajp-and-mod_cfml.conf"
 	"lucee-upgrade-in-progress.conf"
+	"allow-ips.conf"
+	"dev-reset.sh"
 )
 
 # preflight: ensure all source files exist in the script directory
