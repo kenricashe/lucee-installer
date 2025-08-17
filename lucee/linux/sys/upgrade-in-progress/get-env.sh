@@ -26,11 +26,25 @@ if [ "$(id -u)" != "0" ]; then
 	SUDO="sudo"
 fi
 
-# Detect cPanel (available to callers)
+if command -v a2enconf >/dev/null 2>&1; then
+	IS_DEBIAN=true
+else
+	IS_DEBIAN=false
+fi
+
 if [ -f "/usr/local/cpanel/cpanel" ]; then
 	IS_CPANEL=true
 else
 	IS_CPANEL=false
+fi
+
+# Detect conf.d if any
+if [ -d /etc/httpd/conf.d ]; then
+	CONF_DIR="/etc/httpd/conf.d"
+elif [ -d /etc/apache2/conf.d ]; then
+	CONF_DIR="/etc/apache2/conf.d"
+else
+	CONF_DIR=""
 fi
 
 # Detect which web server type is available (available to callers)
@@ -61,8 +75,27 @@ detect_web_server() {
 # Detect and set global SERVER_TYPE
 SERVER_TYPE=$(detect_web_server)
 
+# Check if Apache has been configured for upgrade-in-progress
+check_apache_configured() {
+	# Debian, Ubuntu, Pop!_OS, etc
+	if [ "$IS_DEBIAN" = true ]; then
+		if [ ! -f "/etc/apache2/conf-available/lucee-upgrade-in-progress.conf" ]; then
+			return 1
+		fi
+		return 0
+	# Fedora, Red Hat, AlmaLinux, Rocky Linux, etc
+	elif [ -n "$CONF_DIR" ]; then
+		if [ ! -f "${CONF_DIR}/lucee-upgrade-in-progress.conf" ]; then
+			return 1
+		fi
+		return 0
+	fi
+	
+	# Unsupported environment
+	return 1
+}
+
 # Reload Apache/httpd in a cross-distro way (uses graceful semantics where applicable)
-# Returns 0 on success, non-zero on failure.
 apache_graceful_reload() {
 	# Emit service-specific messaging based on global SERVER_TYPE
 	case "$SERVER_TYPE" in

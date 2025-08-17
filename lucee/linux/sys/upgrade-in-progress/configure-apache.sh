@@ -56,8 +56,8 @@ fi
 
 # cPanel userdata paths (IS_CPANEL provided by get-env.sh)
 if [ "$IS_CPANEL" = true ]; then
-	CPANEL_USERDATA_SSL_PATH="/etc/apache2/conf.d/userdata/ssl/2_4"
-	CPANEL_USERDATA_STD_PATH="/etc/apache2/conf.d/userdata/std/2_4"
+	CPANEL_USERDATA_SSL_PATH="${CONF_DIR}/userdata/ssl/2_4"
+	CPANEL_USERDATA_STD_PATH="${CONF_DIR}/userdata/std/2_4"
 fi
 
 # Centralized backup root; backs up mirror paths beneath this directory
@@ -675,10 +675,9 @@ migrate_lucee_proxy_config() {
 # Ensure global Apache confs exist and are set to normal-state defaults
 # Normal state: lucee-proxy enabled; upgrade flag disabled
 ensure_global_confs() {
-	# No longer creating embedded proxy config - using simpler environment variable approach
 	
 	# Debian/Ubuntu
-	if command -v a2enconf >/dev/null 2>&1; then
+	if [ "$IS_DEBIAN" = true ]; then
 		conf_avail="/etc/apache2/conf-available"
 		opt_file="${UPG_DIR}/lucee-upgrade-in-progress.conf"
 		if [ -f "$opt_file" ] && [ ! -f "${conf_avail}/lucee-upgrade-in-progress.conf" ]; then
@@ -712,46 +711,41 @@ ensure_global_confs() {
 	fi
 
 	# RHEL family and cPanel
-	if [ -d /etc/httpd/conf.d ] || [ -d /etc/apache2/conf.d ]; then
-		if [ "$IS_CPANEL" = true ]; then
-			confd="/etc/apache2/conf.d"
-		else
-			confd="/etc/httpd/conf.d"
-		fi
+	if [ -n "$CONF_DIR" ]; then
 		opt_file="${UPG_DIR}/lucee-upgrade-in-progress.conf"
 		# Ensure a disabled copy exists if neither form exists
-		if [ -f "$opt_file" ] && [ ! -f "${confd}/lucee-upgrade-in-progress.disabled" ] && [ ! -f "${confd}/lucee-upgrade-in-progress.conf" ]; then
-			echo "Installing global lucee-upgrade-in-progress.disabled into ${confd}/"
-			cp -f "$opt_file" "${confd}/lucee-upgrade-in-progress.disabled"
+		if [ -f "$opt_file" ] && [ ! -f "${CONF_DIR}/lucee-upgrade-in-progress.disabled" ] && [ ! -f "${CONF_DIR}/lucee-upgrade-in-progress.conf" ]; then
+			echo "Installing global lucee-upgrade-in-progress.disabled into ${CONF_DIR}/"
+			cp -f "$opt_file" "${CONF_DIR}/lucee-upgrade-in-progress.disabled"
 		fi
 		# Proxy migration already handled in early check
 		# Ensure normal state: upgrade flag disabled
-		if [ -f "${confd}/lucee-upgrade-in-progress.conf" ]; then
+		if [ -f "${CONF_DIR}/lucee-upgrade-in-progress.conf" ]; then
 			# Backup existing .disabled if present to avoid clobbering (mirrored under BACKUP_ROOT)
-			if [ -f "${confd}/lucee-upgrade-in-progress.disabled" ]; then
-				echo "Backing up existing ${confd}/lucee-upgrade-in-progress.disabled"
-				backup_file "${confd}/lucee-upgrade-in-progress.disabled"
+			if [ -f "${CONF_DIR}/lucee-upgrade-in-progress.disabled" ]; then
+				echo "Backing up existing ${CONF_DIR}/lucee-upgrade-in-progress.disabled"
+				backup_file "${CONF_DIR}/lucee-upgrade-in-progress.disabled"
 			fi
 			echo "Disabling lucee-upgrade-in-progress.conf (normal state)"
-			mv -f "${confd}/lucee-upgrade-in-progress.conf" "${confd}/lucee-upgrade-in-progress.disabled"
+			mv -f "${CONF_DIR}/lucee-upgrade-in-progress.conf" "${CONF_DIR}/lucee-upgrade-in-progress.disabled"
 		fi
 		# Create lucee-proxy.conf in conf-available
 		echo "Creating lucee-proxy.conf..."
 		find_regex_proxy_block > "$CONF_AVAILABLE_DIR/lucee-proxy.conf"
 		# Ensure lucee-proxy.conf is enabled (rename from .disabled if needed)
-		if [ -f "${confd}/lucee-proxy.conf.disabled" ] && [ ! -f "${confd}/lucee-proxy.conf" ]; then
+		if [ -f "${CONF_DIR}/lucee-proxy.conf.disabled" ] && [ ! -f "${CONF_DIR}/lucee-proxy.conf" ]; then
 			echo "Enabling lucee-proxy.conf (normal state)"
-			mv -f "${confd}/lucee-proxy.conf.disabled" "${confd}/lucee-proxy.conf"
+			mv -f "${CONF_DIR}/lucee-proxy.conf.disabled" "${CONF_DIR}/lucee-proxy.conf"
 		fi
 		# Warn if no Lucee proxying detected in global config
 		proxy_detected=false
-		if [ -f "${confd}/lucee-proxy.conf" ] || [ -f "${confd}/lucee-proxy.conf.disabled" ]; then
+		if [ -f "${CONF_DIR}/lucee-proxy.conf" ] || [ -f "${CONF_DIR}/lucee-proxy.conf.disabled" ]; then
 			proxy_detected=true
-		elif grep -Rqi 'ProxyPassMatch.*cf' "$confd" 2>/dev/null; then
+		elif grep -Rqi 'ProxyPassMatch.*cf' "${CONF_DIR}" 2>/dev/null; then
 			proxy_detected=true
 		fi
 		if [ "$proxy_detected" != true ]; then
-			echo "Warning: Lucee proxy configuration not detected in global Apache config (${confd}). Normal operation expects mod_proxy enabled."
+			echo "Warning: Lucee proxy configuration not detected in global Apache config (${CONF_DIR}). Normal operation expects mod_proxy enabled."
 		fi
 		# Warn if mod_headers isn't enabled (needed for HEAD-based polling via X-Lucee-Upgrade)
 		if ! headers_module_enabled; then
@@ -763,7 +757,6 @@ ensure_global_confs() {
 	fi
 }
 
-# Function to copy upgrade-in-progress.html to DocumentRoot
 copy_upgrade_html() {
 	local docroot=$1
 	# Backup existing docroot file (mirrored under BACKUP_ROOT)
@@ -772,7 +765,6 @@ copy_upgrade_html() {
 	chown --reference=${docroot} ${docroot}/upgrade-in-progress.html 2>/dev/null || true
 }
 
-# Function to configure Debian sites
 configure_site_debian() {
 	local domain=$1
 	local docroot=$2
@@ -1127,7 +1119,7 @@ configure_site_redhat() {
 
 	# Locate SSL VirtualHost file containing ServerName and :443
 	local ssl_conf_file=""
-	for f in /etc/httpd/conf.d/*.conf /etc/httpd/conf/httpd.conf; do
+	for f in "${CONF_DIR}/*.conf" "${CONF_DIR}/httpd.conf"; do
 		[ -f "$f" ] || continue
 		if grep -q "ServerName $domain" "$f" 2>/dev/null; then
 			if grep -Eq '<VirtualHost[^>]*:443' "$f" 2>/dev/null; then
@@ -1211,7 +1203,7 @@ configure_site_redhat() {
 
 	# Locate HTTP VirtualHost file containing ServerName and :80 (or lacking :443 when matching domain)
 	local http_conf_file=""
-	for f in /etc/httpd/conf.d/*.conf /etc/httpd/conf/httpd.conf; do
+	for f in "${CONF_DIR}/*.conf" "${CONF_DIR}/httpd.conf"; do
 		[ -f "$f" ] || continue
 		if grep -q "ServerName $domain" "$f" 2>/dev/null; then
 			if grep -Eq '<VirtualHost[^>]*:80' "$f" 2>/dev/null || ! grep -Eq '<VirtualHost[^>]*:443' "$f" 2>/dev/null; then
@@ -1344,26 +1336,25 @@ reload_apache() {
 
 # Early proxy migration check - must happen before any other configuration
 echo "Checking for existing Lucee proxy configuration..."
-if command -v a2enconf >/dev/null 2>&1; then
+if [ "$IS_DEBIAN" = true ]; then
 	# Debian/Ubuntu - check if proxy migration is needed
 	conf_avail="/etc/apache2/conf-available"
 	if [ ! -f "${conf_avail}/lucee-proxy.conf" ]; then
 		# Try to migrate existing proxy config
 		migrate_lucee_proxy_config "$conf_avail" "${conf_avail}/lucee-proxy.conf"
 	fi
-elif [ -d /etc/httpd/conf.d ]; then
+elif [ -n "$CONF_DIR" ]; then
 	# RedHat/CentOS - check if proxy migration is needed
-	confd="/etc/httpd/conf.d"
-	if [ ! -f "${confd}/lucee-proxy.conf" ]; then
+	if [ ! -f "${CONF_DIR}/lucee-proxy.conf" ]; then
 		# Try to migrate existing proxy config
-		migrate_lucee_proxy_config "$confd" "${confd}/lucee-proxy.conf"
+		migrate_lucee_proxy_config "$CONF_DIR" "${CONF_DIR}/lucee-proxy.conf"
 	fi
 fi
 
 echo "Configuring Lucee sites for scripted 'Upgrade in Progress' notifications ..."
 
 # Debian, Ubuntu, Pop!_OS, etc
-if command -v a2enconf >/dev/null 2>&1; then
+if [ "$IS_DEBIAN" = true ]; then
 	ensure_global_confs
 	process_sites configure_site_debian
 	# Validate Apache configuration before reload
@@ -1374,7 +1365,7 @@ if command -v a2enconf >/dev/null 2>&1; then
 	reload_apache apache2
 	
 # Fedora, Red Hat, AlmaLinux, Rocky Linux, etc
-elif [ -d /etc/httpd/conf.d ]; then
+elif [ -n "$CONF_DIR" ]; then
 	# cPanel
 	if [ "$IS_CPANEL" = true ]; then
 		ensure_global_confs
@@ -1403,11 +1394,9 @@ elif [ -d /etc/httpd/conf.d ]; then
 	fi
 
 else
-	echo "Unsupported environment (neither a2enconf nor /etc/httpd/conf.d detected)"
+	echo "Unsupported environment (Debian or RedHat family required)"
 	exit 1
 fi			
 	
-# /etc/apache2/conf.d/userdata/std/2_4/${user}/${domain}/upgrade-in-progress.conf
-
 echo ""
 echo "DONE!"

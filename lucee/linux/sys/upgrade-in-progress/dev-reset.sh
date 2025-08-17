@@ -11,7 +11,7 @@ SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd
 . "${SCRIPT_DIR}/get-env.sh"
 
 # exit if not Debian
-if ! command -v a2enconf >/dev/null 2>&1; then
+if [ "$IS_DEBIAN" = false ]; then
 	echo "This script is only for Debian, Ubuntu, Pop!_OS, etc."
 	exit 1
 fi
