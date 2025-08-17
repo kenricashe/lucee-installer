@@ -19,6 +19,12 @@ if [ ! -f "$DETECT_CONF" ]; then
 	exit 1
 fi
 
+if ! check_apache_configured; then
+	echo "Error: Apache has not been configured for upgrade-in-progress."
+	echo "Please run the 'Configure Apache' option from the menu first."
+	exit 1
+fi
+
 # IS_CPANEL is provided by get-env.sh
 
 # The flag file is referenced by cron jobs, etc, to abort during 
@@ -28,7 +34,7 @@ fi
 touch /var/lucee-upgrade-in-progress
 
 # Debian, Ubuntu, Pop!_OS, etc
-if command -v a2enconf >/dev/null 2>&1; then
+if [ "$IS_DEBIAN" = true ]; then
 	echo "Enabling lucee-upgrade-in-progress configuration..."
 	a2enconf lucee-upgrade-in-progress >/dev/null
 	echo "Disabling lucee-proxy configuration..."
@@ -39,12 +45,8 @@ if command -v a2enconf >/dev/null 2>&1; then
 	fi
 
 # Fedora, Red Hat, AlmaLinux, Rocky Linux, etc
-elif [ -d /etc/httpd/conf.d ]; then
-	if [ "$IS_CPANEL" = true ]; then
-		cd /etc/apache2/conf.d || exit 1
-	else
-		cd /etc/httpd/conf.d || exit 1
-	fi
+elif [ -n "$CONF_DIR" ]; then
+	cd "${CONF_DIR}" || exit 1
 	echo "Enabling lucee-upgrade-in-progress configuration..."
 	mv -f lucee-upgrade-in-progress.disabled lucee-upgrade-in-progress.conf
 	echo "Disabling lucee-proxy configuration..."
@@ -54,7 +56,7 @@ elif [ -d /etc/httpd/conf.d ]; then
 	fi
 
 else
-	echo "Unsupported environment (neither a2enconf nor /etc/httpd/conf.d detected)"
+	echo "Unsupported environment (Debian or RedHat family required)"
 	exit 1
 fi
 

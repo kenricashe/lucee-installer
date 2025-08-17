@@ -10,8 +10,17 @@ if [ "$(id -u)" != "0" ]; then
 	exit 1
 fi
 
+# check_apache_configured function is now in get-env.sh
+
+# preflight: check if Apache has been configured for upgrade-in-progress
+if ! check_apache_configured; then
+	echo "Error: Apache has not been configured for upgrade-in-progress."
+	echo "Please run the 'Configure Apache' option from the menu first."
+	exit 1
+fi
+
 # Debian, Ubuntu, Pop!_OS, etc
-if command -v a2enconf >/dev/null 2>&1; then
+if [ "$IS_DEBIAN" = true ]; then
 	echo "Enabling lucee-proxy configuration..."
 	a2enconf lucee-proxy >/dev/null
 	echo "Disabling lucee-upgrade-in-progress configuration..."
@@ -23,12 +32,8 @@ if command -v a2enconf >/dev/null 2>&1; then
 	fi
 
 # Fedora, Red Hat, AlmaLinux, Rocky Linux, etc
-elif [ -d /etc/httpd/conf.d ]; then
-	if [ "$IS_CPANEL" = true ]; then
-		cd /etc/apache2/conf.d || exit 1
-	else
-		cd /etc/httpd/conf.d || exit 1
-	fi
+elif [ -n "$CONF_DIR" ]; then
+	cd "${CONF_DIR}" || exit 1
 	echo "Enabling lucee-proxy configuration..."
 	mv -f lucee-proxy.conf.disabled lucee-proxy.conf
 	echo "Disabling lucee-upgrade-in-progress configuration..."
@@ -37,7 +42,7 @@ elif [ -d /etc/httpd/conf.d ]; then
 		exit 1
 	fi
 else
-	echo "Unsupported environment (neither a2enconf nor /etc/httpd/conf.d detected)"
+	echo "Unsupported environment (Debian or RedHat family required)"
 	exit 1
 fi
 
