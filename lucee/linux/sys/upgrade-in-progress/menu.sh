@@ -69,6 +69,7 @@ run_edit_ip_allow() {
 			printf "\tSetEnvIf Remote_Addr \"%s\" LUCEE_UPGRADE_BYPASS=1\n" "$esc_ip"
 		done < "$TXT_FILE"
 		echo "</IfModule>"
+		echo ""
 	} > "$TMP_CONF"
 
 	# Determine if there were any allow rules generated (lines with SetEnvIf)
