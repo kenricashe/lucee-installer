@@ -17,7 +17,10 @@ if command -v a2enconf >/dev/null 2>&1; then
 	echo "Disabling lucee-upgrade-in-progress configuration..."
 	a2disconf lucee-upgrade-in-progress >/dev/null
 	echo "Reloading Apache..."
-	systemctl reload apache2
+	if ! apache_reload; then
+		echo "ERROR: Apache reload failed."
+		exit 1
+	fi
 
 # Fedora, Red Hat, AlmaLinux, Rocky Linux, etc
 elif [ -d /etc/httpd/conf.d ]; then
@@ -30,14 +33,8 @@ elif [ -d /etc/httpd/conf.d ]; then
 	mv -f lucee-proxy.conf.disabled lucee-proxy.conf
 	echo "Disabling lucee-upgrade-in-progress configuration..."
 	mv -f lucee-upgrade-in-progress.conf lucee-upgrade-in-progress.disabled
-	if [ "$IS_CPANEL" = true ]; then
-		echo "Rebuilding httpd.conf..."
-		/scripts/rebuildhttpdconf
-		echo "Gracefully restarting httpd..."
-		/scripts/restartsrv_httpd --graceful
-	else
-		echo "Reloading httpd..."
-		systemctl reload httpd
+	if ! apache_reload; then
+		exit 1
 	fi
 else
 	echo "Unsupported environment (neither a2enconf nor /etc/httpd/conf.d detected)"

@@ -34,13 +34,7 @@ if command -v a2enconf >/dev/null 2>&1; then
 	echo "Disabling lucee-proxy configuration..."
 	a2disconf lucee-proxy >/dev/null
 	echo "Reloading Apache..."
-	if ! systemctl reload apache2; then
-		echo "ERROR: Apache reload failed!"
-		echo "Status output:"
-		systemctl status apache2.service --no-pager -l
-		echo ""
-		echo "Recent journal entries:"
-		journalctl -xeu apache2.service --no-pager -l --since="1 minute ago"
+	if ! apache_reload; then
 		exit 1
 	fi
 
@@ -55,22 +49,8 @@ elif [ -d /etc/httpd/conf.d ]; then
 	mv -f lucee-upgrade-in-progress.disabled lucee-upgrade-in-progress.conf
 	echo "Disabling lucee-proxy configuration..."
 	mv -f lucee-proxy.conf lucee-proxy.conf.disabled
-	if [ "$IS_CPANEL" = true ]; then
-		echo "Rebuilding httpd configuration..."
-		/scripts/rebuildhttpdconf
-		echo "Gracefully restarting httpd..."
-		/scripts/restartsrv_httpd --graceful
-	else
-		echo "Reloading httpd..."
-		if ! systemctl reload httpd; then
-			echo "ERROR: httpd reload failed!"
-			echo "Status output:"
-			systemctl status httpd.service --no-pager -l
-			echo ""
-			echo "Recent journal entries:"
-			journalctl -xeu httpd.service --no-pager -l --since="1 minute ago"
-			exit 1
-		fi
+	if ! apache_reload; then
+		exit 1
 	fi
 
 else

@@ -67,21 +67,28 @@ BACKUP_TS="$(date +%Y-%m-%d-%H%M%S)"
 
 # LUCEE_ROOT is available via helper; UPG_DIR already computed above
 
-# Apache config test helper: prefer apache2ctl, then apachectl, then httpd
+# Apache config test helper: uses SERVER_TYPE from get-env.sh
 apache_config_test() {
 	echo ""
 	echo "Testing Apache configuration..."
 	echo ""
-	if command -v apache2ctl >/dev/null 2>&1; then
-		apache2ctl -t
-	elif command -v apachectl >/dev/null 2>&1; then
-		apachectl -t
-	elif command -v httpd >/dev/null 2>&1; then
-		httpd -t
-	else
-		echo "Warning: No apache control binary found for config test; skipping syntax check."
-		return 0
-	fi
+	case "$SERVER_TYPE" in
+		apache2)
+			apache2ctl -t
+			;;
+		httpd)
+			httpd -t
+			;;
+		apachectl)
+			apachectl -t
+			;;
+		apache2ctl)
+			apache2ctl -t
+			;;
+		*)
+			echo "Warning: No apache control binary found for config test; skipping syntax check."
+			;;
+	esac
 }
 
 # Extract the last matching ErrorDocument 404 *.cf* even if it is commented (e.g., from prior runs)
@@ -419,19 +426,30 @@ ensure_include_in_vhost() {
 }
 
 # Check if mod_headers is enabled (needed for X-Lucee-Upgrade header polling)
+# Uses SERVER_TYPE from get-env.sh
 headers_module_enabled() {
-	if command -v apache2ctl >/dev/null 2>&1; then
-		apache2ctl -M 2>/dev/null | grep -qiE '(^|[^[:alnum:]_])headers_module([^[:alnum:]_]|$)'
-		return $?
-	elif command -v apachectl >/dev/null 2>&1; then
-		apachectl -M 2>/dev/null | grep -qiE '(^|[^[:alnum:]_])headers_module([^[:alnum:]_]|$)'
-		return $?
-	elif command -v httpd >/dev/null 2>&1; then
-		httpd -M 2>/dev/null | grep -qiE '(^|[^[:alnum:]_])headers_module([^[:alnum:]_]|$)'
-		return $?
-	fi
-	# If we can't detect, do not block; treat as enabled to avoid false alarms
-	return 0
+	case "$SERVER_TYPE" in
+		apache2)
+			apache2ctl -M 2>/dev/null | grep -qiE '(^|[^[:alnum:]_])headers_module([^[:alnum:]_]|$)'
+			return $?
+			;;
+		httpd)
+			httpd -M 2>/dev/null | grep -qiE '(^|[^[:alnum:]_])headers_module([^[:alnum:]_]|$)'
+			return $?
+			;;
+		apachectl)
+			apachectl -M 2>/dev/null | grep -qiE '(^|[^[:alnum:]_])headers_module([^[:alnum:]_]|$)'
+			return $?
+			;;
+		apache2ctl)
+			apache2ctl -M 2>/dev/null | grep -qiE '(^|[^[:alnum:]_])headers_module([^[:alnum:]_]|$)'
+			return $?
+			;;
+		*)
+			# If we can't detect, do not block; treat as enabled to avoid false alarms
+			return 0
+			;;
+	esac
 }
 
 # Detect manually delineated Lucee proxy block in Apache config

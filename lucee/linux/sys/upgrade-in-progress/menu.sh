@@ -91,6 +91,11 @@ run_edit_ip_allow() {
 	# Move into place with sudo
 	${SUDO} mv "$TMP_CONF" "$CONF_FILE"
 	${SUDO} chmod 0644 "$CONF_FILE"
+
+	# Reload Apache (handles cPanel vs non-cPanel)
+	if ! apache_reload; then
+		echo "Warning: Apache reload may have failed; see messages above."
+	fi
 }
 
 run_configure_apache() {
