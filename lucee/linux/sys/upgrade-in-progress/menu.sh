@@ -19,7 +19,7 @@ run_get_sites() {
 
 run_edit_sites() {
 	if [ ! -f "${SITES_FILE}" ]; then
-		print "\nSites file not found: ${SITES_FILE}\n\nRun option 1 first to generate it."
+		print "\nSites file not found: ${SITES_FILE}\n\nRun 'Get Apache Site Data' first to generate it."
 		return
 	fi
 	${SUDO} ${EDITOR:-nano} "${SITES_FILE}"
@@ -52,35 +52,35 @@ while true; do
 	echo " (based on /var/lucee-upgrade-in-progress)"
 	echo "------------------------------------------"
 	echo ""
-	echo "1. Get/Edit Apache Site Data"
+	echo "g) Get Apache Site Data"
 	echo ""
-	echo "2. View/Edit Apache Site Data File"
+	echo "v) View/Edit Apache Site Data File"
 	echo ""
-	echo "3. Configure Apache"
+	echo "c) Configure Apache"
 	echo ""
-	echo "4. Begin 'Upgrade in Progress'"
+	echo "b) Begin 'Upgrade in Progress'"
 	echo ""
-	echo "5. End 'Upgrade in Progress'"
+	echo "e) End 'Upgrade in Progress'"
 	echo ""
-	echo "q. Quit"
+	echo "q) Quit"
 	echo ""
-	read -r -p "Select an option [1-5 or q]: " choice
+	read -r -p "Select an option: " choice
 	case "${choice}" in
-		1)
+		g|G)
 			run_get_sites
 			;;
-		2)
+		v|V)
 			run_edit_sites
 			;;
-		3)
+		c|C)
 			run_configure_apache
 			press_enter_to_continue
 			;;
-		4)
+		b|B)
 			run_begin
 			press_enter_to_continue
 			;;
-		5)
+		e|E)
 			run_end
 			press_enter_to_continue
 			;;
