@@ -21,6 +21,83 @@ fi
 SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd)"
 . "${SCRIPT_DIR}/get-env.sh"
 
+# preflight: check that required Apache modules are enabled
+# mod_proxy, mod_setenvif, mod_headers
+# Group by module; detect per environment; emit a single error per missing module
+
+report_missing_module() {
+	echo "Error: Required Apache module '$1' is not enabled. Please enable it and try again."
+}
+
+# Module check helper (return 0 if enabled, 1 if missing)
+check_module() {
+	DISPLAY_NAME="$1"   # e.g., mod_proxy
+	DEBIAN_NAME="$2"    # e.g., proxy
+
+	if [ "$IS_DEBIAN" = true ]; then
+		# Prefer a2query when available
+		if command -v a2query >/dev/null 2>&1; then
+			if a2query -m "$DEBIAN_NAME" 2>/dev/null | grep -qi "enabled"; then
+				return 0
+			else
+				return 1
+			fi
+		else
+			# Fallback to control command module list
+			if command -v apache2ctl >/dev/null 2>&1; then
+				CTL=apache2ctl
+			elif command -v apachectl >/dev/null 2>&1; then
+				CTL=apachectl
+			else
+				return 1
+			fi
+			if "$CTL" -M 2>/dev/null | grep -q "${DEBIAN_NAME}_module"; then
+				return 0
+			else
+				return 1
+			fi
+		fi
+	elif [ "$IS_CPANEL" = true ]; then
+		if /usr/local/cpanel/bin/check_cpanel_module_status --module="$DISPLAY_NAME" | grep -q "^${DISPLAY_NAME}: enabled"; then
+			return 0
+		else
+			return 1
+		fi
+	elif [ -n "$CONF_DIR" ]; then
+		# Fedora, Red Hat, AlmaLinux, Rocky Linux, etc
+		if apachectl -M | grep -q "${DEBIAN_NAME}_module"; then
+			return 0
+		else
+			return 1
+		fi
+	fi
+
+	# Unsupported / not detected
+	return 1
+}
+
+# Run checks, collect and report
+HAS_ERRORS=false
+
+if ! check_module "mod_proxy" "proxy"; then
+	report_missing_module "mod_proxy"
+	HAS_ERRORS=true
+fi
+
+if ! check_module "mod_setenvif" "setenvif"; then
+	report_missing_module "mod_setenvif"
+	HAS_ERRORS=true
+fi
+
+if ! check_module "mod_headers" "headers"; then
+	report_missing_module "mod_headers"
+	HAS_ERRORS=true
+fi
+
+if [ "$HAS_ERRORS" = true ]; then
+	exit 1
+fi
+
 # preflight: required files must exist at /opt path used by per-site Includes and docroot copy
 DETECT_CONF="${UPG_DIR}/lucee-detect-upgrade.conf"
 UPG_HTML="${UPG_DIR}/upgrade-in-progress.html"

@@ -3,6 +3,36 @@
 # Shared environment for upgrade-in-progress scripts
 # Sets LUCEE_ROOT, UPG_DIR (relative to this file), and IS_CPANEL.
 
+if command -v a2enconf >/dev/null 2>&1; then
+	IS_DEBIAN=true
+else
+	IS_DEBIAN=false
+fi
+
+# Detect conf.d if any
+if [ -d /etc/httpd/conf.d ]; then
+	CONF_DIR="/etc/httpd/conf.d"
+elif [ -d /etc/apache2/conf.d ]; then
+	CONF_DIR="/etc/apache2/conf.d"
+else
+	CONF_DIR=""
+fi
+
+# Abort if unsupported environment
+if [ "$IS_DEBIAN" = false ] && [ -z "$CONF_DIR" ]; then
+	echo "ERROR: Unsupported environment"
+	echo "The two main Linux families are supported:"
+	echo "Debian, Ubuntu, Pop!_OS, etc (with a2enconf)"
+	echo "Fedora, Red Hat, AlmaLinux, Rocky Linux, etc (with conf.d)"
+	exit 1
+fi
+
+if [ -f "/usr/local/cpanel/cpanel" ]; then
+	IS_CPANEL=true
+else
+	IS_CPANEL=false
+fi
+
 # Determine library directory, resolving symlinks where available
 LIB_PATH="${BASH_SOURCE[0]:-$0}"
 if command -v readlink >/dev/null 2>&1; then
@@ -24,27 +54,6 @@ SITES_FILE="${UPG_DIR}/sites-configured.txt"
 SUDO=""
 if [ "$(id -u)" != "0" ]; then
 	SUDO="sudo"
-fi
-
-if command -v a2enconf >/dev/null 2>&1; then
-	IS_DEBIAN=true
-else
-	IS_DEBIAN=false
-fi
-
-if [ -f "/usr/local/cpanel/cpanel" ]; then
-	IS_CPANEL=true
-else
-	IS_CPANEL=false
-fi
-
-# Detect conf.d if any
-if [ -d /etc/httpd/conf.d ]; then
-	CONF_DIR="/etc/httpd/conf.d"
-elif [ -d /etc/apache2/conf.d ]; then
-	CONF_DIR="/etc/apache2/conf.d"
-else
-	CONF_DIR=""
 fi
 
 # Detect which web server type is available (available to callers)
