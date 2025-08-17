@@ -60,10 +60,10 @@ fi
 # Will be one of: "apache2", "httpd", "apachectl", "apache2ctl", or "unknown"
 detect_web_server() {
 	if command -v systemctl >/dev/null 2>&1; then
-		if systemctl list-units --type=service | grep -q '^apache2\.service'; then
+		if systemctl list-units --type=service | grep -q '^[[:space:]]*apache2\.service'; then
 			echo "apache2"
 			return 0
-		elif systemctl list-units --type=service | grep -q '^httpd\.service'; then
+		elif systemctl list-units --type=service | grep -q '^[[:space:]]*httpd\.service'; then
 			echo "httpd"
 			return 0
 		fi
@@ -111,7 +111,7 @@ apache_graceful_reload() {
 		apache2)
 			echo "Reloading apache2..."
 			# Try systemd first if available
-			if command -v systemctl >/dev/null 2>&1 && systemctl list-units --type=service | grep -q '^apache2\.service'; then
+			if command -v systemctl >/dev/null 2>&1 && systemctl list-units --type=service | grep -q '^[[:space:]]*apache2\.service'; then
 				if ! ${SUDO} systemctl reload apache2; then
 					echo "ERROR: apache2 reload failed."
 					echo "Status output:"
@@ -134,7 +134,7 @@ apache_graceful_reload() {
 		httpd)
 			echo "Reloading httpd..."
 			# Try systemd first if available
-			if command -v systemctl >/dev/null 2>&1 && systemctl list-units --type=service | grep -q '^httpd\.service'; then
+			if command -v systemctl >/dev/null 2>&1 && systemctl list-units --type=service | grep -q '^[[:space:]]*httpd\.service'; then
 				if ! ${SUDO} systemctl reload httpd; then
 					echo "ERROR: httpd reload failed."
 					echo "Status output:"
