@@ -65,7 +65,7 @@ To exclude a site, *before configuring Apache*, remove it from the sites data fi
 
 `127.0.0.1` (localhost) is always allowed access by default for admin testing.
 
-Allow other IPs: `/opt/lucee/sys/upgrade-in-progress/allow-ips.conf`
+Allow other IPs: `/opt/lucee/sys/upgrade-in-progress/ip-allow.conf`
 
 
 ## Install

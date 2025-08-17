@@ -21,7 +21,6 @@ FILES=(
 	"upgrade-in-progress.html"
 	"lucee-detect-upgrade.conf"
 	"lucee-upgrade-in-progress.conf"
-	"allow-ips.conf"
 	"dev-reset.sh"
 )
 
