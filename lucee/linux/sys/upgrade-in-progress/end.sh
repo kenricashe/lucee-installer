@@ -25,7 +25,6 @@ if [ "$IS_DEBIAN" = true ]; then
 	a2enconf lucee-proxy >/dev/null
 	echo "Disabling lucee-upgrade-in-progress configuration..."
 	a2disconf lucee-upgrade-in-progress >/dev/null
-	echo "Reloading Apache..."
 	if ! apache_reload; then
 		echo "ERROR: Apache reload failed."
 		exit 1

@@ -59,6 +59,7 @@ fi
 # Detect which web server type is available (available to callers)
 # Will be one of: "apache2", "httpd", "apachectl", "apache2ctl", or "unknown"
 detect_web_server() {
+
 	if command -v systemctl >/dev/null 2>&1; then
 		if systemctl list-units --type=service | grep -q '^[[:space:]]*apache2\.service'; then
 			echo "apache2"
@@ -106,23 +107,27 @@ check_apache_configured() {
 
 # Reload Apache/httpd in a cross-distro way (uses graceful semantics where applicable)
 apache_graceful_reload() {
+	echo ""
 	# Emit service-specific messaging based on global SERVER_TYPE
 	case "$SERVER_TYPE" in
 		apache2)
-			echo "Reloading apache2..."
 			# Try systemd first if available
 			if command -v systemctl >/dev/null 2>&1 && systemctl list-units --type=service | grep -q '^[[:space:]]*apache2\.service'; then
+				echo "Reloading Apache via systemctl reload apache2..."
 				if ! ${SUDO} systemctl reload apache2; then
-					echo "ERROR: apache2 reload failed."
-					echo "Status output:"
+					echo ""
+					echo "ERROR: reload failed. Status output:"
+					echo ""
 					systemctl status apache2.service --no-pager -l || true
 					return 1
 				fi
 				return 0
 			# Fallback to apache2ctl if systemd not available
 			elif command -v apache2ctl >/dev/null 2>&1; then
+				echo "Reloading Apache via apache2ctl -k graceful..."
 				if ! ${SUDO} apache2ctl -k graceful; then
-					echo "ERROR: apache2ctl graceful reload failed."
+					echo ""
+					echo "ERROR: reload failed."
 					return 1
 				fi
 				return 0
@@ -131,10 +136,26 @@ apache_graceful_reload() {
 				return 1
 			fi
 			;;
+		apachectl)
+			echo "Reloading Apache via apachectl -k graceful..."
+			if ! ${SUDO} apachectl -k graceful; then
+				echo "ERROR: apachectl graceful reload failed."
+				return 1
+			fi
+			return 0
+			;;
+		apache2ctl)
+			echo "Reloading Apache via apache2ctl -k graceful..."
+			if ! ${SUDO} apache2ctl -k graceful; then
+				echo "ERROR: apache2ctl graceful reload failed."
+				return 1
+			fi
+			return 0
+			;;
 		httpd)
-			echo "Reloading httpd..."
 			# Try systemd first if available
 			if command -v systemctl >/dev/null 2>&1 && systemctl list-units --type=service | grep -q '^[[:space:]]*httpd\.service'; then
+				echo "Reloading Apache via systemctl reload httpd..."
 				if ! ${SUDO} systemctl reload httpd; then
 					echo "ERROR: httpd reload failed."
 					echo "Status output:"
@@ -144,6 +165,7 @@ apache_graceful_reload() {
 				return 0
 			# Fallback to direct httpd command if systemd not available
 			elif command -v httpd >/dev/null 2>&1; then
+				echo "Reloading Apache via httpd -k graceful..."
 				if ! ${SUDO} httpd -k graceful; then
 					echo "ERROR: httpd graceful reload failed."
 					return 1
@@ -151,6 +173,7 @@ apache_graceful_reload() {
 				return 0
 			# Try apachectl as last resort
 			elif command -v apachectl >/dev/null 2>&1; then
+				echo "Reloading Apache via apachectl -k graceful..."
 				if ! ${SUDO} apachectl -k graceful; then
 					echo "ERROR: apachectl graceful reload failed."
 					return 1
@@ -161,24 +184,7 @@ apache_graceful_reload() {
 				return 1
 			fi
 			;;
-		apachectl)
-			echo "Reloading via apachectl -k graceful..."
-			if ! ${SUDO} apachectl -k graceful; then
-				echo "ERROR: apachectl graceful reload failed."
-				return 1
-			fi
-			return 0
-			;;
-		apache2ctl)
-			echo "Reloading via apache2ctl -k graceful..."
-			if ! ${SUDO} apache2ctl -k graceful; then
-				echo "ERROR: apache2ctl graceful reload failed."
-				return 1
-			fi
-			return 0
-			;;
 		*)
-			echo "Reloading web server..."
 			echo "ERROR: No known Apache control command found to reload."
 			return 1
 			;;
@@ -190,23 +196,26 @@ apache_graceful_reload() {
 # Rebuilds httpd configuration and performs a graceful restart.
 # Returns 0 on success, non-zero on failure.
 apache_cpanel_graceful_restart() {
+	
+	echo ""
+
 	# Basic presence checks
 	if [ "$IS_CPANEL" != true ]; then
-		echo "Warning: apache_cpanel_graceful_restart called but IS_CPANEL != true."
-		return 1
+		echo "ERROR: cPanel required for apache_cpanel_graceful_restart()"
+		exit 1
 	fi
 	if [ ! -x "/scripts/rebuildhttpdconf" ] || [ ! -x "/scripts/restartsrv_httpd" ]; then
 		echo "ERROR: Required cPanel scripts not found: /scripts/rebuildhttpdconf or /scripts/restartsrv_httpd"
-		return 1
+		exit 1
 	fi
 
-	echo "Rebuilding httpd configuration..."
+	echo "Running /scripts/rebuildhttpdconf..."
 	if ! ${SUDO} /scripts/rebuildhttpdconf; then
 		echo "ERROR: Failed to rebuild httpd configuration via /scripts/rebuildhttpdconf"
 		return 1
 	fi
 
-	echo "Gracefully restarting httpd..."
+	echo "Running /scripts/restartsrv_httpd --graceful..."
 	if ! ${SUDO} /scripts/restartsrv_httpd --graceful; then
 		echo "ERROR: Failed to gracefully restart httpd via /scripts/restartsrv_httpd --graceful"
 		return 1

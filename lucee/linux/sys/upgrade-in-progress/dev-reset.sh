@@ -337,7 +337,6 @@ for conf_file in /etc/apache2/sites-available/*.conf; do
 done
 
 echo ""
-echo "Reloading Apache..."
 # apache_reload() is globally sourced from get-env.sh
 apache_reload
 echo ""

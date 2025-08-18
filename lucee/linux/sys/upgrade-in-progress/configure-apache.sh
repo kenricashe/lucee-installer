@@ -753,6 +753,8 @@ migrate_lucee_proxy_config() {
 # Normal state: lucee-proxy enabled; upgrade flag disabled
 ensure_global_confs() {
 	
+	echo ""
+	
 	# Debian/Ubuntu
 	if [ "$IS_DEBIAN" = true ]; then
 		conf_avail="/etc/apache2/conf-available"
@@ -1401,14 +1403,6 @@ process_sites() {
 	done < $SITES_FILE
 }
 
-# Function to reload Apache
-reload_apache() {
-	local apache_service=$1
-	echo ""
-	echo "Reloading Apache..."
-	systemctl reload $apache_service
-}
-
 # Main script execution
 
 # Early proxy migration check - must happen before any other configuration
@@ -1432,21 +1426,21 @@ echo "Configuring Lucee sites for scripted 'Upgrade in Progress' notifications .
 
 # Debian, Ubuntu, Pop!_OS, etc
 if [ "$IS_DEBIAN" = true ]; then
-	ensure_global_confs
 	process_sites configure_site_debian
+	ensure_global_confs
 	# Validate Apache configuration before reload
 	if ! apache_config_test; then
 		echo "Apache test FAILED. Aborting reload. Please check configuration files."
 		exit 1
 	fi
-	reload_apache apache2
+	apache_reload
 	
 # Fedora, Red Hat, AlmaLinux, Rocky Linux, etc
 elif [ -n "$CONF_DIR" ]; then
 	# cPanel
 	if [ "$IS_CPANEL" = true ]; then
-		ensure_global_confs
 		process_sites configure_site_cpanel
+		ensure_global_confs
 		
 		# Rebuild Apache configuration and validate
 		echo "Rebuilding Apache configuration..."
@@ -1460,14 +1454,14 @@ elif [ -n "$CONF_DIR" ]; then
 	
 	# NOT cPanel
 	else
-		ensure_global_confs
 		process_sites configure_site_redhat
+		ensure_global_confs
 		# Validate Apache configuration before reload
 		if ! apache_config_test; then
 			echo "Apache test FAILED. Aborting reload. Please check configuration files."
 			exit 1
 		fi
-		reload_apache httpd
+		apache_reload
 	fi
 
 else
