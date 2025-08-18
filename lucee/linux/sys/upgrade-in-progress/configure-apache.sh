@@ -704,12 +704,13 @@ migrate_lucee_proxy_config() {
 	
 	# Check common global config files
 	for config_file in \
+		"$global_config_dir"/includes/*.conf \
 		"$global_config_dir"/*.conf \
-		"$(dirname "$global_config_dir")"/apache2.conf \
-		"$(dirname "$global_config_dir")"/httpd.conf; do
-		
+		"$(dirname "$global_config_dir")"/httpd.conf \
+		"$(dirname "$global_config_dir")"/conf/httpd.conf \
+		"$(dirname "$global_config_dir")"/apache2.conf
+	do
 		[ -f "$config_file" ] || continue
-		
 		proxy_block=$(find_lucee_proxy_block "$config_file" 2>/dev/null)
 		if [ $? -eq 0 ] && [ -n "$proxy_block" ]; then
 			source_file="$config_file"
@@ -777,7 +778,9 @@ ensure_global_confs() {
 		elif grep -Rqi 'ProxyPassMatch.*cf' /etc/apache2/ 2>/dev/null; then
 			proxy_detected=true
 		fi
-		if [ "$proxy_detected" != true ]; then
+		if [ "$proxy_detected" == true ]; then
+			echo "Lucee proxy configuration detected in global Apache config (Debian/Ubuntu)."
+		else
 			echo "Warning: Lucee proxy configuration not detected in global Apache config (Debian/Ubuntu). Normal operation expects mod_proxy enabled."
 		fi
 		# Warn if mod_headers isn't enabled (needed for HEAD-based polling via X-Lucee-Upgrade)
@@ -823,7 +826,9 @@ ensure_global_confs() {
 		elif grep -Rqi 'ProxyPassMatch.*cf' "${CONF_DIR}" 2>/dev/null; then
 			proxy_detected=true
 		fi
-		if [ "$proxy_detected" != true ]; then
+		if [ "$proxy_detected" == true ]; then
+			echo "Lucee proxy configuration detected in global Apache config (${CONF_DIR})."
+		else
 			echo "Warning: Lucee proxy configuration not detected in global Apache config (${CONF_DIR}). Normal operation expects mod_proxy enabled."
 		fi
 		# Warn if mod_headers isn't enabled (needed for HEAD-based polling via X-Lucee-Upgrade)
@@ -1403,7 +1408,7 @@ process_sites() {
 	done < $SITES_FILE
 }
 
-# Main script execution
+# MAIN SCRIPT EXECUTION
 
 # Early proxy migration check - must happen before any other configuration
 echo "Checking for existing Lucee proxy configuration..."
@@ -1422,6 +1427,7 @@ elif [ -n "$CONF_DIR" ]; then
 	fi
 fi
 
+echo ""
 echo "Configuring Lucee sites for scripted 'Upgrade in Progress' notifications ..."
 
 # Debian, Ubuntu, Pop!_OS, etc
