@@ -7,11 +7,6 @@
 SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "${SCRIPT_DIR}/get-env.sh"
 
-press_enter_to_continue() {
-	printf "\nPress Enter to continue..."
-	read -r _
-}
-
 run_get_sites() {
 	clear
 	${SUDO} "${UPG_DIR}/get-lucee-sites.sh"

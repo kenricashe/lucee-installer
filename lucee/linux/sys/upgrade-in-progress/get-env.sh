@@ -56,6 +56,11 @@ if [ "$(id -u)" != "0" ]; then
 	SUDO="sudo"
 fi
 
+press_enter_to_continue() {
+	printf "\nPress Enter to continue..."
+	read -r _
+}
+
 # Detect which Apache controller is available to callers
 # Will be one of: "apache2", "httpd", "apachectl", "apache2ctl"
 # Abort if none are found
