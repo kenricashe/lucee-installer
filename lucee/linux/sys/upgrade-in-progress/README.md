@@ -45,11 +45,13 @@ Users are not redirected to a different page, so the URL does not change. They w
 
 ## Requirements
 
+- Apache installed in one of the two main Linux familes (Debian, Ubuntu, Pop!_OS, etc or Fedora, Red Hat, AlmaLinux, Rocky Linux, etc).
+
 - Root or sudo permissions.
 
 - Lucee-related directives found in global Apache config as well as site-specific `.htaccess` will be migrated into `.conf` files and `<VirtualHost>` blocks to enable toggling (also best practice for performance, consistency, security, and manageability).
 
-- Other than the initial option to enter your Lucee install path, the config assumes default Apache paths, proxying via http or AJP to Tomcat, and mod_cfml settings (if enabled). However, because it's open source, you can customize if you need to, and pull requests are always welcome!
+- Other than the initial option to enter your Lucee install path, the config assumes default Apache paths and proxying of .cf* files to Lucee via http or AJP through Tomcat. However, because it's open source, you can customize if you need to, and pull requests are always welcome!
 
 
 ## Backup Folders
