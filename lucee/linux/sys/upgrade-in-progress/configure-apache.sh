@@ -120,7 +120,7 @@ ANY404_REGEX='^[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+'
 if [ ! -f "$SITES_FILE" ]; then
 	echo "Lucee sites data file not found."
 	echo ""
-	echo "Press Enter to get data..."
+	echo "Press Enter to get data ..."
 	read -r _
 	${SUDO} "${UPG_DIR}/get-lucee-sites.sh"
 	# Re-check for generated file
@@ -147,7 +147,7 @@ BACKUP_TS="$(date +%Y-%m-%d-%H%M%S)"
 # Apache config test helper: uses APACHE_CONTROLLER from get-env.sh
 apache_config_test() {
 	echo ""
-	echo "Testing Apache configuration..."
+	echo "Testing Apache configuration ..."
 	echo ""
 	case "$APACHE_CONTROLLER" in
 		apache2)
@@ -755,13 +755,22 @@ migrate_lucee_proxy_config() {
 ensure_global_confs() {
 	
 	echo ""
-	
+	echo "Checking for existing Lucee proxy configuration ..."
+
 	# Debian/Ubuntu
 	if [ "$IS_DEBIAN" = true ]; then
+
+		# Debian/Ubuntu - check if proxy migration is needed
+		conf_avail="/etc/apache2/conf-available"
+		if [ ! -f "${conf_avail}/lucee-proxy.conf" ]; then
+			# Try to migrate existing proxy config
+			migrate_lucee_proxy_config "$conf_avail" "${conf_avail}/lucee-proxy.conf"
+		fi
+
 		conf_avail="/etc/apache2/conf-available"
 		opt_file="${UPG_DIR}/lucee-upgrade-in-progress.conf"
 		if [ -f "$opt_file" ] && [ ! -f "${conf_avail}/lucee-upgrade-in-progress.conf" ]; then
-			echo "Installing global lucee-upgrade-in-progress.conf into ${conf_avail}/"
+			echo "Installing ${conf_avail}/lucee-upgrade-in-progress.conf ..."
 			cp -f "$opt_file" "${conf_avail}/lucee-upgrade-in-progress.conf"
 		fi
 		# Proxy migration already handled in early check
@@ -779,7 +788,7 @@ ensure_global_confs() {
 			proxy_detected=true
 		fi
 		if [ "$proxy_detected" == true ]; then
-			echo "Lucee proxy configuration detected in global Apache config (Debian/Ubuntu)."
+			echo "Lucee proxy configuration confirmed"
 		else
 			echo "Warning: Lucee proxy configuration not detected in global Apache config (Debian/Ubuntu). Normal operation expects mod_proxy enabled."
 		fi
@@ -794,6 +803,13 @@ ensure_global_confs() {
 
 	# RHEL family and cPanel
 	if [ -n "$CONF_DIR" ]; then
+
+		# RedHat/CentOS - check if proxy migration is needed
+		if [ ! -f "${CONF_DIR}/lucee-proxy.conf" ]; then
+			# Try to migrate existing proxy config
+			migrate_lucee_proxy_config "$CONF_DIR" "${CONF_DIR}/lucee-proxy.conf"
+		fi
+
 		opt_file="${UPG_DIR}/lucee-upgrade-in-progress.conf"
 		# Ensure a disabled copy exists if neither form exists
 		if [ -f "$opt_file" ] && [ ! -f "${CONF_DIR}/lucee-upgrade-in-progress.disabled" ] && [ ! -f "${CONF_DIR}/lucee-upgrade-in-progress.conf" ]; then
@@ -812,7 +828,7 @@ ensure_global_confs() {
 			mv -f "${CONF_DIR}/lucee-upgrade-in-progress.conf" "${CONF_DIR}/lucee-upgrade-in-progress.disabled"
 		fi
 		# Create lucee-proxy.conf in conf-available
-		echo "Creating lucee-proxy.conf..."
+		echo "Creating lucee-proxy.conf ..."
 		find_regex_proxy_block > "$CONF_AVAILABLE_DIR/lucee-proxy.conf"
 		# Ensure lucee-proxy.conf is enabled (rename from .disabled if needed)
 		if [ -f "${CONF_DIR}/lucee-proxy.conf.disabled" ] && [ ! -f "${CONF_DIR}/lucee-proxy.conf" ]; then
@@ -827,7 +843,7 @@ ensure_global_confs() {
 			proxy_detected=true
 		fi
 		if [ "$proxy_detected" == true ]; then
-			echo "Lucee proxy configuration detected in global Apache config (${CONF_DIR})."
+			echo "Lucee proxy configuration confirmed"
 		else
 			echo "Warning: Lucee proxy configuration not detected in global Apache config (${CONF_DIR}). Normal operation expects mod_proxy enabled."
 		fi
@@ -864,7 +880,7 @@ configure_site_debian() {
 	enabled_ssl_conf="/etc/apache2/sites-enabled/${domain}-ssl.conf"
 	if [ -f "$enabled_ssl_conf" ] && [ ! -L "$enabled_ssl_conf" ]; then
 		echo "  Found regular file instead of symlink at $enabled_ssl_conf"
-		echo "  Restoring symlink structure..."
+		echo "  Restoring symlink structure ..."
 		# Backup the unexpected regular file before removal (mirrored under BACKUP_ROOT)
 		echo "  Backing up $enabled_ssl_conf"
 		backup_file "$enabled_ssl_conf"
@@ -1397,6 +1413,10 @@ configure_site_redhat() {
 
 # Function to process all sites from the configuration file
 process_sites() {
+	
+	echo ""
+	echo "Configuring Lucee sites for scripted 'Upgrade in Progress' notifications ..."
+
 	local configure_func=$1
 	
 	# Get data from txt file
@@ -1410,30 +1430,11 @@ process_sites() {
 
 # MAIN SCRIPT EXECUTION
 
-# Early proxy migration check - must happen before any other configuration
-echo "Checking for existing Lucee proxy configuration..."
-if [ "$IS_DEBIAN" = true ]; then
-	# Debian/Ubuntu - check if proxy migration is needed
-	conf_avail="/etc/apache2/conf-available"
-	if [ ! -f "${conf_avail}/lucee-proxy.conf" ]; then
-		# Try to migrate existing proxy config
-		migrate_lucee_proxy_config "$conf_avail" "${conf_avail}/lucee-proxy.conf"
-	fi
-elif [ -n "$CONF_DIR" ]; then
-	# RedHat/CentOS - check if proxy migration is needed
-	if [ ! -f "${CONF_DIR}/lucee-proxy.conf" ]; then
-		# Try to migrate existing proxy config
-		migrate_lucee_proxy_config "$CONF_DIR" "${CONF_DIR}/lucee-proxy.conf"
-	fi
-fi
-
-echo ""
-echo "Configuring Lucee sites for scripted 'Upgrade in Progress' notifications ..."
-
 # Debian, Ubuntu, Pop!_OS, etc
 if [ "$IS_DEBIAN" = true ]; then
-	process_sites configure_site_debian
 	ensure_global_confs
+	press_enter_to_continue
+	process_sites configure_site_debian
 	# Validate Apache configuration before reload
 	if ! apache_config_test; then
 		echo "Apache test FAILED. Aborting reload. Please check configuration files."
@@ -1445,23 +1446,25 @@ if [ "$IS_DEBIAN" = true ]; then
 elif [ -n "$CONF_DIR" ]; then
 	# cPanel
 	if [ "$IS_CPANEL" = true ]; then
-		process_sites configure_site_cpanel
 		ensure_global_confs
+		press_enter_to_continue
+		process_sites configure_site_cpanel
 		
 		# Rebuild Apache configuration and validate
-		echo "Rebuilding Apache configuration..."
+		echo "Rebuilding Apache configuration ..."
 		/scripts/rebuildhttpdconf
 		if ! apache_config_test; then
 			echo "Apache test FAILED. Aborting restart. Please check configuration files."
 			exit 1
 		fi
-		echo "Gracefully restarting httpd..."
+		echo "Gracefully restarting httpd ..."
 		/scripts/restartsrv_httpd --graceful
 	
 	# NOT cPanel
 	else
-		process_sites configure_site_redhat
 		ensure_global_confs
+		press_enter_to_continue
+		process_sites configure_site_redhat
 		# Validate Apache configuration before reload
 		if ! apache_config_test; then
 			echo "Apache test FAILED. Aborting reload. Please check configuration files."
