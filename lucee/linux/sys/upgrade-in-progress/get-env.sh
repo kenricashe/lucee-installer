@@ -108,20 +108,72 @@ check_apache_configured() {
 	return 1
 }
 
+echo_apache_status() {
+	if command -v systemctl >/dev/null 2>&1; then
+		echo ""
+		echo "Apache service status:"
+		echo ""
+		systemctl status ${APACHE_CONTROLLER}.service --no-pager -l || true
+	else
+		echo ""
+		echo "Check your Apache error logs for more information."
+	fi
+}
+
 echo_apache_reload_failed() {
 	echo ""
 	echo "ERROR: Apache reload failed."
 	echo ""
-	if command -v systemctl >/dev/null 2>&1; then
-		echo "Apache service status:"
-		echo ""
-		if [ "$APACHE_CONTROLLER" = "apache2" ]; then
-			systemctl status apache2.service --no-pager -l || true
+	echo "Apache config test result:"
+	echo ""
+	local CONFIG_TEST_RAN=false
+	# prep return code (RC)
+	local CONFIG_TEST_RC=1
+	case "$APACHE_CONTROLLER" in
+		httpd)
+			if command -v httpd >/dev/null 2>&1; then
+				CONFIG_TEST_RAN=true
+				if ${SUDO} httpd -t; then
+					CONFIG_TEST_RC=0
+				else
+					CONFIG_TEST_RC=$?
+				fi
+			fi
+			;;
+		apache2|apache2ctl)
+			if command -v apache2ctl >/dev/null 2>&1; then
+				CONFIG_TEST_RAN=true
+				if ${SUDO} apache2ctl -t; then
+					CONFIG_TEST_RC=0
+				else
+					CONFIG_TEST_RC=$?
+				fi
+			fi
+			;;
+		apachectl)
+			if command -v apachectl >/dev/null 2>&1; then
+				CONFIG_TEST_RAN=true
+				if ${SUDO} apachectl -t; then
+					CONFIG_TEST_RC=0
+				else
+					CONFIG_TEST_RC=$?
+				fi
+			fi
+			;;
+		*)
+			echo "No apache config test command found (apache2ctl/apachectl/httpd)."
+			CONFIG_TEST_RAN=false
+			;;
+	esac
+	# conditionally show service status or prompt to check error logs
+	if [ "$CONFIG_TEST_RAN" = true ]; then
+		if [ "$CONFIG_TEST_RC" -eq 0 ]; then
+			echo_apache_status
 		else
-			systemctl status httpd.service --no-pager -l || true
+			:
 		fi
 	else
-		echo "Check your Apache error logs for more information."
+		echo_apache_status
 	fi
 }
 
