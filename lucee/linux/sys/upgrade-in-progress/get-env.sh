@@ -108,9 +108,21 @@ check_apache_configured() {
 	return 1
 }
 
-echo_check_your_apache_logs() {
+echo_apache_reload_failed() {
 	echo ""
-	echo "Check your Apache error logs for more information."
+	echo "ERROR: Apache reload failed."
+	echo ""
+	if command -v systemctl >/dev/null 2>&1; then
+		echo "Apache service status:"
+		echo ""
+		if [ "$APACHE_CONTROLLER" = "apache2" ]; then
+			systemctl status apache2.service --no-pager -l || true
+		else
+			systemctl status httpd.service --no-pager -l || true
+		fi
+	else
+		echo "Check your Apache error logs for more information."
+	fi
 }
 
 # Reload Apache/httpd in a cross-distro way (uses graceful semantics where applicable)
@@ -123,10 +135,7 @@ apache_graceful_reload() {
 			if command -v systemctl >/dev/null 2>&1 && systemctl list-units --type=service | grep -q '^[[:space:]]*apache2\.service'; then
 				echo "Reloading Apache via systemctl reload apache2..."
 				if ! ${SUDO} systemctl reload apache2; then
-					echo ""
-					echo "ERROR: reload failed. Status output:"
-					echo ""
-					systemctl status apache2.service --no-pager -l || true
+					echo_apache_reload_failed
 					return 1
 				fi
 				return 0
@@ -134,23 +143,19 @@ apache_graceful_reload() {
 			elif command -v apache2ctl >/dev/null 2>&1; then
 				echo "Reloading Apache via apache2ctl -k graceful..."
 				if ! ${SUDO} apache2ctl -k graceful; then
-					echo ""
-					echo "ERROR: reload failed."
-					echo_check_your_apache_logs
+					echo_apache_reload_failed
 					return 1
 				fi
 				return 0
 			else
-				echo "ERROR: No apache2 control command found."
-				echo_check_your_apache_logs
+				echo_apache_reload_failed
 				return 1
 			fi
 			;;
 		apachectl)
 			echo "Reloading Apache via apachectl -k graceful..."
 			if ! ${SUDO} apachectl -k graceful; then
-				echo "ERROR: apachectl graceful reload failed."
-				echo_check_your_apache_logs
+				echo_apache_reload_failed
 				return 1
 			fi
 			return 0
@@ -158,8 +163,7 @@ apache_graceful_reload() {
 		apache2ctl)
 			echo "Reloading Apache via apache2ctl -k graceful..."
 			if ! ${SUDO} apache2ctl -k graceful; then
-				echo "ERROR: apache2ctl graceful reload failed."
-				echo_check_your_apache_logs
+				echo_apache_reload_failed
 				return 1
 			fi
 			return 0
@@ -169,9 +173,7 @@ apache_graceful_reload() {
 			if command -v systemctl >/dev/null 2>&1 && systemctl list-units --type=service | grep -q '^[[:space:]]*httpd\.service'; then
 				echo "Reloading Apache via systemctl reload httpd..."
 				if ! ${SUDO} systemctl reload httpd; then
-					echo "ERROR: httpd reload failed."
-					echo "Status output:"
-					systemctl status httpd.service --no-pager -l || true
+					echo_apache_reload_failed
 					return 1
 				fi
 				return 0
@@ -179,8 +181,7 @@ apache_graceful_reload() {
 			elif command -v httpd >/dev/null 2>&1; then
 				echo "Reloading Apache via httpd -k graceful..."
 				if ! ${SUDO} httpd -k graceful; then
-					echo "ERROR: httpd graceful reload failed."
-					echo_check_your_apache_logs
+					echo_apache_reload_failed
 					return 1
 				fi
 				return 0
@@ -188,8 +189,7 @@ apache_graceful_reload() {
 			elif command -v apachectl >/dev/null 2>&1; then
 				echo "Reloading Apache via apachectl -k graceful..."
 				if ! ${SUDO} apachectl -k graceful; then
-					echo "ERROR: apachectl graceful reload failed."
-					echo_check_your_apache_logs
+					echo_apache_reload_failed
 					return 1
 				fi
 				return 0
@@ -206,9 +206,7 @@ apache_graceful_reload() {
 }
 
 
-# cPanel-specific graceful restart helper
-# Rebuilds httpd configuration and performs a graceful restart.
-# Returns 0 on success, non-zero on failure.
+# cPanel-specific rebuild httpd.conf + graceful restart
 apache_cpanel_graceful_restart() {
 	
 	echo ""
@@ -225,13 +223,13 @@ apache_cpanel_graceful_restart() {
 
 	echo "Running /scripts/rebuildhttpdconf..."
 	if ! ${SUDO} /scripts/rebuildhttpdconf; then
-		echo "ERROR: Failed to rebuild httpd configuration via /scripts/rebuildhttpdconf"
+		echo "ERROR: Rebuild failed. Check your Apache or cPanel logs."
 		return 1
 	fi
 
 	echo "Running /scripts/restartsrv_httpd --graceful..."
 	if ! ${SUDO} /scripts/restartsrv_httpd --graceful; then
-		echo "ERROR: Failed to gracefully restart httpd via /scripts/restartsrv_httpd --graceful"
+		echo "ERROR: Restart failed. Check your Apache or cPanel logs."
 		return 1
 	fi
 
