@@ -32,6 +32,8 @@ run_edit_ip_allow() {
 	# Let user edit the allow list
 	${SUDO} ${EDITOR:-nano} "${TXT_FILE}"
 
+	clear
+
 	# Build new conf from non-empty, non-comment lines
 	TMP_CONF="$(mktemp)"
 	{
@@ -91,6 +93,8 @@ run_edit_ip_allow() {
 	if ! apache_reload; then
 		echo "Warning: Apache reload may have failed; see messages above."
 	fi
+
+	press_enter_to_continue
 }
 
 run_configure_apache() {
