@@ -108,6 +108,11 @@ check_apache_configured() {
 	return 1
 }
 
+echo_check_your_apache_logs() {
+	echo ""
+	echo "Check your Apache error logs for more information."
+}
+
 # Reload Apache/httpd in a cross-distro way (uses graceful semantics where applicable)
 apache_graceful_reload() {
 	echo ""
@@ -131,11 +136,13 @@ apache_graceful_reload() {
 				if ! ${SUDO} apache2ctl -k graceful; then
 					echo ""
 					echo "ERROR: reload failed."
+					echo_check_your_apache_logs
 					return 1
 				fi
 				return 0
 			else
 				echo "ERROR: No apache2 control command found."
+				echo_check_your_apache_logs
 				return 1
 			fi
 			;;
@@ -143,6 +150,7 @@ apache_graceful_reload() {
 			echo "Reloading Apache via apachectl -k graceful..."
 			if ! ${SUDO} apachectl -k graceful; then
 				echo "ERROR: apachectl graceful reload failed."
+				echo_check_your_apache_logs
 				return 1
 			fi
 			return 0
@@ -151,6 +159,7 @@ apache_graceful_reload() {
 			echo "Reloading Apache via apache2ctl -k graceful..."
 			if ! ${SUDO} apache2ctl -k graceful; then
 				echo "ERROR: apache2ctl graceful reload failed."
+				echo_check_your_apache_logs
 				return 1
 			fi
 			return 0
@@ -171,6 +180,7 @@ apache_graceful_reload() {
 				echo "Reloading Apache via httpd -k graceful..."
 				if ! ${SUDO} httpd -k graceful; then
 					echo "ERROR: httpd graceful reload failed."
+					echo_check_your_apache_logs
 					return 1
 				fi
 				return 0
@@ -179,6 +189,7 @@ apache_graceful_reload() {
 				echo "Reloading Apache via apachectl -k graceful..."
 				if ! ${SUDO} apachectl -k graceful; then
 					echo "ERROR: apachectl graceful reload failed."
+					echo_check_your_apache_logs
 					return 1
 				fi
 				return 0
