@@ -144,12 +144,12 @@ BACKUP_TS="$(date +%Y-%m-%d-%H%M%S)"
 
 # LUCEE_ROOT is available via helper; UPG_DIR already computed above
 
-# Apache config test helper: uses SERVER_TYPE from get-env.sh
+# Apache config test helper: uses APACHE_CONTROLLER from get-env.sh
 apache_config_test() {
 	echo ""
 	echo "Testing Apache configuration..."
 	echo ""
-	case "$SERVER_TYPE" in
+	case "$APACHE_CONTROLLER" in
 		apache2)
 			apache2ctl -t
 			;;
@@ -503,9 +503,9 @@ ensure_include_in_vhost() {
 }
 
 # Check if mod_headers is enabled (needed for X-Lucee-Upgrade header polling)
-# Uses SERVER_TYPE from get-env.sh
+# Uses APACHE_CONTROLLER from get-env.sh
 headers_module_enabled() {
-	case "$SERVER_TYPE" in
+	case "$APACHE_CONTROLLER" in
 		apache2)
 			apache2ctl -M 2>/dev/null | grep -qiE '(^|[^[:alnum:]_])headers_module([^[:alnum:]_]|$)'
 			return $?

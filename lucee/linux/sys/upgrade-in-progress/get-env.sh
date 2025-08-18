@@ -56,9 +56,10 @@ if [ "$(id -u)" != "0" ]; then
 	SUDO="sudo"
 fi
 
-# Detect which web server type is available (available to callers)
-# Will be one of: "apache2", "httpd", "apachectl", "apache2ctl", or "unknown"
-detect_web_server() {
+# Detect which Apache controller is available to callers
+# Will be one of: "apache2", "httpd", "apachectl", "apache2ctl"
+# Abort if none are found
+detect_apache_controller() {
 
 	if command -v systemctl >/dev/null 2>&1; then
 		if systemctl list-units --type=service | grep -q '^[[:space:]]*apache2\.service'; then
@@ -78,12 +79,14 @@ detect_web_server() {
 		return 0
 	fi
 	
-	echo "unknown"
-	return 0
+	echo ""
+	echo "ERROR: No Apache controller found."
+	echo "Requires httpd, apache2, apache2ctl, or apachectl"
+	exit 1
 }
 
-# Detect and set global SERVER_TYPE
-SERVER_TYPE=$(detect_web_server)
+# Detect and set global APACHE_CONTROLLER
+APACHE_CONTROLLER=$(detect_apache_controller)
 
 # Check if Apache has been configured for upgrade-in-progress
 check_apache_configured() {
@@ -108,8 +111,8 @@ check_apache_configured() {
 # Reload Apache/httpd in a cross-distro way (uses graceful semantics where applicable)
 apache_graceful_reload() {
 	echo ""
-	# Emit service-specific messaging based on global SERVER_TYPE
-	case "$SERVER_TYPE" in
+	# Emit service-specific messaging based on global APACHE_CONTROLLER
+	case "$APACHE_CONTROLLER" in
 		apache2)
 			# Try systemd first if available
 			if command -v systemctl >/dev/null 2>&1 && systemctl list-units --type=service | grep -q '^[[:space:]]*apache2\.service'; then
