@@ -24,9 +24,9 @@ run_edit_ip_allow() {
 	TXT_FILE="${UPG_DIR}/ip-allow.txt"
 	CONF_FILE="${UPG_DIR}/ip-allow.conf"
 
-	# Ensure TXT file exists for editing
+	# start with localhost defaults
 	if [ ! -f "${TXT_FILE}" ]; then
-		${SUDO} touch "${TXT_FILE}"
+		printf "# commented lines are ignored\n127.0.0.1\n::1\n" | ${SUDO} tee "${TXT_FILE}" >/dev/null
 	fi
 
 	# Let user edit the allow list
