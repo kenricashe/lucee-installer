@@ -60,3 +60,11 @@ function copy_and_chmod() {
 for file in "${FILES[@]}"; do
 	copy_and_chmod "$file"
 done
+
+# Rewrite Include paths inside lucee-detect-upgrade.conf to match selected LUCEE_ROOT
+CONF_FILE="${DEST_DIR}/lucee-detect-upgrade.conf"
+if [ -f "$CONF_FILE" ]; then
+	# Escape '&' for sed replacement safety
+	ESC_LUCEE_ROOT="${LUCEE_ROOT//&/\\&}"
+	sed -i "s|/opt/lucee|${ESC_LUCEE_ROOT}|g" "$CONF_FILE"
+fi

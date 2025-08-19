@@ -45,7 +45,7 @@ Users are not redirected to a different page, so the URL does not change. They w
 
 ## Requirements
 
-- Apache installed in one of the two main Linux familes (Debian, Ubuntu, Pop!_OS, etc or Fedora, Red Hat, AlmaLinux, Rocky Linux, etc).
+- Apache 2.4 installed in one of the two main Linux familes (Debian, Ubuntu, Pop!_OS, etc or Fedora, Red Hat, AlmaLinux, Rocky Linux, etc).
 
 - Root or sudo permissions.
 

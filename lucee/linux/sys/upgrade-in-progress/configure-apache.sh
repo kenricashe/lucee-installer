@@ -463,10 +463,12 @@ ensure_include_in_vhost() {
 	local domain_match="$2"
 	local port_filter="$3"
 	local tmp
-	local include_line="Include /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf"
+	# Use the deployed upgrade directory path (absolute) for the Include line
+	local include_path="${UPG_DIR}/lucee-detect-upgrade.conf"
+	local include_line="Include ${include_path}"
 	[ -f "$vhost_file" ] || return 1
 	tmp=$(mktemp)
-	awk -v dom="$domain_match" -v port="$port_filter" -v inc="$include_line" '
+	awk -v dom="$domain_match" -v port="$port_filter" -v inc_line="$include_line" -v inc_path="$include_path" '
 		BEGIN { inblk=0; match_this=0; blk_port=""; inserted=0; had_inc=0 }
 		{ line=$0; lines[++n]=$0 }
 		/<VirtualHost[> \t]/ { inblk=1; match_this=0; blk_port=""; had_inc=0; if (match($0, /<VirtualHost[^>]*:([0-9]+)/, m)) { blk_port=m[1] } }
@@ -481,11 +483,14 @@ ensure_include_in_vhost() {
 				}
 			}
 		}
-		inblk && $0 ~ /^[\t ]*Include(Optional)?[\t ]+\/opt\/lucee\/sys\/upgrade-in-progress\/lucee-detect-upgrade\.conf([\t ]|$)/ { had_inc=1 }
+		# Detect an existing Include for this exact path inside the current vhost block
+		inblk && match($0, /^[\t ]*Include(Optional)?[\t ]+([^ \t#]+)([ \t#]|$)/, m) {
+			if (m[2] == inc_path) { had_inc=1 }
+		}
 		{
 			if ($0 ~ /<\/VirtualHost>/) {
 				if (inblk && inserted==0 && (dom=="" || match_this) && (port=="" || blk_port==port) && had_inc==0) {
-					print "\t" inc
+					print "\t" inc_line
 					print ""
 					inserted=1
 				}
