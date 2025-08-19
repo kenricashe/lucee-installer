@@ -644,10 +644,11 @@ generate_allowed_ip_proxy_include() {
 		echo "ProxyPassReverse /.lucee-upgrade-proxy/ ${backend_url}/"
 		echo ""
 		echo "<IfModule mod_rewrite.c>"
-		echo "\tRewriteEngine On"
-		echo "\t# Allow Lucee access only for IPs flagged via LUCEE_UPGRADE_BYPASS"
-		echo "\tRewriteCond %{ENV:LUCEE_UPGRADE_BYPASS} =1"
-		echo "\tRewriteRule ^/(.+\\.(?:cfm|cfml|cfc|cfs))(.*)$ /.lucee-upgrade-proxy/\\$1\\$2 [PT,QSA,L]"
+		# Use printf to emit real tabs for indentation
+		printf "\tRewriteEngine On\n"
+		printf "\t# Allow Lucee access only for IPs flagged via LUCEE_UPGRADE_BYPASS\n"
+		printf "\tRewriteCond %%{ENV:LUCEE_UPGRADE_BYPASS} =1\n"
+		printf "\tRewriteRule ^/(.+\\.(?:cfm|cfml|cfc|cfs))(.*)$ /.lucee-upgrade-proxy/\\$1\\$2 [PT,QSA,L]\n"
 		echo "</IfModule>"
 	} > "$tmp"
 
