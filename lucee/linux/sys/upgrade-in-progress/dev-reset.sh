@@ -117,41 +117,65 @@ revert_vhost_changes() {
 	
 	# Remove Include line and preceding empty line, unwrap IfDefine blocks
 	awk '
-		BEGIN { in_ifdefine=0; in_ifdefine_pos=0; skip_next_empty=0 }
+		BEGIN { 
+			in_ifdefine=0; 
+			in_ifdefine_pos=0; 
+			skip_next_empty=0;
+			blank_line_count = 0;
+			max_consecutive_blanks = 1;
+		}
 		
-		# Skip empty line before Include
-		/^[[:space:]]*$/ && skip_next_empty { skip_next_empty=0; next }
+		# Process blank lines
+		/^[[:space:]]*$/ {
+			if (skip_next_empty) { 
+				skip_next_empty=0; 
+				next 
+			}
+			
+			blank_line_count++
+			# Only print if we have not exceeded max consecutive blanks
+			if (blank_line_count <= max_consecutive_blanks) {
+				print
+			}
+			next
+		}
 		
 		# Remove Include line and mark to skip preceding empty line
 		/^[[:space:]]*Include[[:space:]]+\/opt\/lucee\/sys\/upgrade-in-progress\/lucee-detect-upgrade\.conf/ {
 			skip_next_empty=1
+			blank_line_count = 0
 			next
 		}
 		
 		# Start of our IfDefine block
 		/^[[:space:]]*<IfDefine[[:space:]]+!LUCEE_UPGRADE_IN_PROGRESS>/ {
 			in_ifdefine=1
+			blank_line_count = 0
 			next
 		}
 		# Start of positive upgrade-mode IfDefine block (remove entirely)
 		/^[[:space:]]*<IfDefine[[:space:]]+LUCEE_UPGRADE_IN_PROGRESS>/ {
 			in_ifdefine_pos=1
+			blank_line_count = 0
 			next
 		}
 		
 		# End of our IfDefine block
 		/^[[:space:]]*<\/IfDefine>/ && in_ifdefine {
 			in_ifdefine=0
+			blank_line_count = 0
 			next
 		}
 		# End of positive upgrade-mode IfDefine block
 		/^[[:space:]]*<\/IfDefine>/ && in_ifdefine_pos {
 			in_ifdefine_pos=0
+			blank_line_count = 0
 			next
 		}
 		
 		# Inside our IfDefine block - remove one tab/4 spaces of indentation
 		in_ifdefine {
+			blank_line_count = 0
 			if (match($0, /^\t/)) {
 				print substr($0, 2)
 			} else if (match($0, /^    /)) {
@@ -165,7 +189,11 @@ revert_vhost_changes() {
 		in_ifdefine_pos { next }
 		
 		# Regular lines outside IfDefine
-		!in_ifdefine { print; skip_next_empty=0 }
+		!in_ifdefine { 
+			blank_line_count = 0
+			print
+			skip_next_empty=0 
+		}
 	' "$vhost_file" > "$tmp"
 	
 	if [ $? -eq 0 ]; then
@@ -262,6 +290,52 @@ remove_errordocument_404() {
 	fi
 }
 
+# Function to remove per-site include files and their Include directives from vhost configs
+remove_site_includes() {
+	local conf_file="$1"
+	[ -f "$conf_file" ] || return 0
+	
+	local tmp
+	tmp=$(mktemp)
+	
+	# Remove Include lines for per-site includes and handle whitespace
+	awk '
+		BEGIN { 
+			blank_line_count = 0 
+			max_consecutive_blanks = 1
+		}
+		
+		# Process blank lines
+		/^[[:space:]]*$/ {
+			blank_line_count++
+			# Only print if we have not exceeded max consecutive blanks
+			if (blank_line_count <= max_consecutive_blanks) {
+				print
+			}
+			next
+		}
+		
+		# Check for Include lines for per-site includes (both paths)
+		/^[[:space:]]*Include[[:space:]]+\/opt\/lucee\/sys\/(site-includes|upgrade-in-progress\/sites)\/.*\.conf/ {
+			# Skip this line and reset blank line counter to compress whitespace
+			blank_line_count = 0
+			next
+		}
+		
+		# For non-blank lines, reset counter and print
+		{
+			blank_line_count = 0
+			print
+		}
+	' "$conf_file" > "$tmp"
+	
+	if [ $? -eq 0 ]; then
+		mv "$tmp" "$conf_file"
+	else
+		rm -f "$tmp"
+	fi
+}
+
 # Function to restore .htaccess ErrorDocument 404 lines
 restore_htaccess_404() {
 	local htaccess_file="$1"
@@ -305,9 +379,124 @@ restore_htaccess_404() {
 	fi
 }
 
-# append contents of lucee-proxy.conf to apache2.conf
+# Function to clean up apache2.conf
+cleanup_apache2_conf() {
+	local conf_file="$1"
+	[ -f "$conf_file" ] || return 0
+	
+	local tmp
+	tmp=$(mktemp)
+	
+	# Remove previously commented lines and normalize whitespace
+	awk '
+		BEGIN { 
+			blank_line_count = 0
+			max_consecutive_blanks = 1
+			in_commented_block = 0
+		}
+		
+		# Detect start of commented Lucee proxy block
+		/^# Lucee proxy configuration moved to/ {
+			in_commented_block = 1
+			next
+		}
+		
+		# Skip all lines in the commented block
+		in_commented_block && /^#/ { next }
+		
+		# End of commented block when we hit a non-comment line
+		in_commented_block && !/^#/ { in_commented_block = 0 }
+		
+		# Process blank lines
+		/^[[:space:]]*$/ {
+			blank_line_count++
+			# Only print if we have not exceeded max consecutive blanks
+			if (blank_line_count <= max_consecutive_blanks) {
+				print
+			}
+			next
+		}
+		
+		# For non-blank lines, reset counter and print
+		{
+			blank_line_count = 0
+			print
+		}
+		
+		# Ensure one empty line at end of file
+		END {
+			if (blank_line_count == 0) {
+				print ""
+			}
+		}
+	' "$conf_file" > "$tmp"
+	
+	if [ $? -eq 0 ]; then
+		mv "$tmp" "$conf_file"
+	else
+		rm -f "$tmp"
+	fi
+}
+
+# Function to normalize whitespace in any configuration file
+normalize_conf_whitespace() {
+	local conf_file="$1"
+	[ -f "$conf_file" ] || return 0
+	
+	local tmp
+	tmp=$(mktemp)
+	
+	# Normalize whitespace and ensure one empty line at end of file
+	awk '
+		BEGIN { 
+			blank_line_count = 0
+			max_consecutive_blanks = 1
+		}
+		
+		# Process blank lines
+		/^[[:space:]]*$/ {
+			blank_line_count++
+			# Only print if we have not exceeded max consecutive blanks
+			if (blank_line_count <= max_consecutive_blanks) {
+				print
+			}
+			next
+		}
+		
+		# For non-blank lines, reset counter and print
+		{
+			blank_line_count = 0
+			print
+		}
+		
+		# Ensure one empty line at end of file
+		END {
+			if (blank_line_count == 0) {
+				print ""
+			}
+		}
+	' "$conf_file" > "$tmp"
+	
+	if [ $? -eq 0 ]; then
+		mv "$tmp" "$conf_file"
+	else
+		rm -f "$tmp"
+	fi
+}
+
+# Function to normalize whitespace in VirtualHost blocks
+normalize_vhost_whitespace() {
+	# Use the generic whitespace normalization function
+	normalize_conf_whitespace "$1"
+}
+
+# append contents of lucee-proxy.conf to apache2.conf (without header comment)
 if [ -f "/etc/apache2/conf-available/lucee-proxy.conf" ]; then
-	cat "/etc/apache2/conf-available/lucee-proxy.conf" >> "/etc/apache2/apache2.conf"
+	# Skip the first line (header comment) when appending
+	awk 'NR>1' "/etc/apache2/conf-available/lucee-proxy.conf" >> "/etc/apache2/apache2.conf"
+	
+	# Clean up apache2.conf to remove commented blocks and normalize whitespace
+	cleanup_apache2_conf "/etc/apache2/apache2.conf"
 fi
 
 # disable and delete lucee-proxy.conf
@@ -317,6 +506,24 @@ rm -f "/etc/apache2/conf-available/lucee-proxy.conf"
 # disable and delete lucee-upgrade-in-progress.conf
 a2disconf lucee-upgrade-in-progress 2>/dev/null || true
 rm -f "/etc/apache2/conf-available/lucee-upgrade-in-progress.conf"
+
+# Normalize whitespace in all sites-available files
+echo "Normalizing whitespace in Apache vhost configuration files..."
+if [ -d "/etc/apache2/sites-available" ]; then
+	find "/etc/apache2/sites-available" -type f -name "*.conf" | while read -r vhost_file; do
+		echo "  Processing $vhost_file"
+		normalize_vhost_whitespace "$vhost_file"
+	done
+fi
+
+# Remove per-site include files directories if they exist
+for include_dir in "/opt/lucee/sys/site-includes" "/opt/lucee/sys/upgrade-in-progress/sites"; do
+	if [ -d "$include_dir" ]; then
+		echo ""
+		echo "Removing per-site include files from $include_dir..."
+		rm -rf "$include_dir"
+	fi
+done
 
 # Process all .conf files in sites-available
 echo ""
@@ -329,6 +536,7 @@ for conf_file in /etc/apache2/sites-available/*.conf; do
 		remove_duplicate_ifdefine_blocks "$conf_file"
 		revert_vhost_changes "$conf_file"
 		remove_errordocument_404 "$conf_file"
+		remove_site_includes "$conf_file"
 		
 		# Extract DocumentRoot and process files
 		docroot=$(grep -i '^[[:space:]]*DocumentRoot' "$conf_file" | head -1 | awk '{print $2}' | tr -d '"')
