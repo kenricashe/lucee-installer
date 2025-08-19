@@ -29,6 +29,109 @@ report_missing_module() {
 	echo "Error: Required Apache module '$1' is not enabled. Please enable it and try again."
 }
 
+# Extract the single ErrorDocument 404 line from a block (strip leading '#' and whitespace)
+extract_404_line_from_block() {
+	local block="$1"
+	if [ -z "$block" ]; then
+		return 1
+	fi
+	echo "$block" | awk -v IGNORECASE=1 '
+		/^[\t ]*#?[\t ]*ErrorDocument[\t ]+404[\t ]+/ { line=$0 }
+		END {
+			if (!length(line)) exit 1
+			gsub(/^\s*#\s*/, "", line)
+			gsub(/^\s*/, "", line)
+			print line
+		}
+	'
+}
+
+# Return 0 if a bypass 404 block exists inside upgrade-mode wrapper for the given vhost (domain/port)
+has_bypass_404_block_in_vhost() {
+	local file="$1"
+	local domain_match="$2"
+	local port_filter="$3"
+	[ -f "$file" ] || return 1
+	awk -v IGNORECASE=1 -v dom="$domain_match" -v port="$port_filter" '
+		BEGIN { inblk=0; match_this=0; blk_port=""; in_upg=0; in_if=0; found=0 }
+		/<VirtualHost[> \t]/ { inblk=1; match_this=0; blk_port=""; if (match($0, /<VirtualHost[^>]*:([0-9]+)/, m)) { blk_port=m[1] } }
+		inblk && tolower($0) ~ /^[\t ]*server(name|alias)[\t ]+/ {
+			if (dom == "") { match_this=1 }
+			else {
+				low=$0
+				if (tolower(low) ~ /(^|[\t ])[\t ]*server(name|alias)[\t ]+([^#]*)/) {
+					names=tolower(substr(low, RSTART+RLENGTH- length(substr(low, RSTART+RLENGTH))+1))
+					split(names, a, /[\t ]+/)
+					for (j in a) { if (a[j]==tolower(dom)) { match_this=1; break } }
+				}
+			}
+		}
+		inblk && $0 ~ /<IfDefine[ \t]+LUCEE_UPGRADE_IN_PROGRESS>/ { in_upg=1 }
+		# Match bypass If line regardless of single or double quotes around values
+		inblk && in_upg && $0 ~ /<If[ \t]+\".*env\([^)]*LUCEE_UPGRADE_BYPASS[^)]*\).*==.*1.*\">/ { in_if=1 }
+		inblk && in_if && $0 ~ /^[\t ]*ErrorDocument[\t ]+404[\t ]+/ {
+			if ((port=="" || blk_port==port) && (dom=="" || match_this)) { found=1 }
+		}
+		inblk && in_if && $0 ~ /<\/If>/ { in_if=0 }
+		inblk && in_upg && $0 ~ /<\/IfDefine>/ { in_upg=0 }
+		/<\/VirtualHost>/ {
+			if (found) exit 0
+			inblk=0; match_this=0; in_upg=0; in_if=0
+		}
+		END { exit found ? 0 : 1 }
+	' "$file"
+}
+
+# Insert the bypass 404 block immediately after the lucee-detect-upgrade.conf Include in the targeted vhost
+insert_bypass_404_after_include() {
+	local vhost_file="$1"
+	local error_line="$2"
+	local domain_match="$3"
+	local port_filter="$4"
+	[ -f "$vhost_file" ] || return 1
+	local tmp
+	tmp=$(mktemp)
+	local inc_path="${UPG_DIR}/lucee-detect-upgrade.conf"
+	awk -v dom="$domain_match" -v port="$port_filter" -v inc_path="$inc_path" -v eline="$error_line" '
+		BEGIN { inblk=0; match_this=0; blk_port=""; inserted=0 }
+		{ lines[++n]=$0 }
+		/<VirtualHost[> \t]/ { inblk=1; match_this=0; blk_port=""; if (match($0, /<VirtualHost[^>]*:([0-9]+)/, m)) { blk_port=m[1] } }
+		inblk && tolower($0) ~ /^[\t ]*server(name|alias)[\t ]+/ {
+			if (dom == "") { match_this=1 }
+			else {
+				low=$0
+				if (tolower(low) ~ /(^|[\t ])[\t ]*server(name|alias)[\t ]+([^#]*)/) {
+					names=tolower(substr(low, RSTART+RLENGTH- length(substr(low, RSTART+RLENGTH))+1))
+					split(names, a, /[\t ]+/)
+					for (j in a) { if (a[j]==tolower(dom)) { match_this=1; break } }
+				}
+			}
+		}
+		# When we find the Include line inside the targeted vhost, inject our bypass block immediately after it
+		inblk && match($0, /^[\t ]*Include(Optional)?[\t ]+([^ \t#]+)([ \t#]|$)/, m) {
+			if (m[2] == inc_path && inserted==0 && (dom=="" || match_this) && (port=="" || blk_port==port)) {
+				print $0
+				print "\t<IfDefine LUCEE_UPGRADE_IN_PROGRESS>"
+				print "\t\t<If \"env(\047LUCEE_UPGRADE_BYPASS\047) == \0471\047\">"
+				print "\t\t\t" eline
+				print "\t\t</If>"
+				print "\t</IfDefine>"
+				print ""
+				inserted=1
+				next
+			}
+		}
+		{ print $0 }
+	' "$vhost_file" > "$tmp"
+	if [ $? -eq 0 ]; then
+		mv -f "$tmp" "$vhost_file"
+		return 0
+	else
+		rm -f "$tmp"
+		return 1
+	fi
+}
+
 # Module check helper (return 0 if enabled, 1 if missing)
 check_module() {
 	DISPLAY_NAME="$1"   # e.g., mod_proxy
@@ -1146,6 +1249,13 @@ configure_site_debian() {
 			if [ "$ssl_include_present" != "true" ]; then
 				sed -i "s|</VirtualHost>|\tInclude /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf\\n\\n</VirtualHost>|" "$ssl_conf_file"
 			fi
+			# Insert bypass 404 restoration for allowlisted IPs during upgrade mode
+			if [ -n "$ssl_404_block" ]; then
+				ssl_404_line=$(extract_404_line_from_block "$ssl_404_block" || true)
+				if [ -n "$ssl_404_line" ] && ! has_bypass_404_block_in_vhost "$ssl_conf_file" "$domain" "443"; then
+					insert_bypass_404_after_include "$ssl_conf_file" "$ssl_404_line" "$domain" "443"
+				fi
+			fi
 		fi
 	else
 		echo "  Warning: Could not find SSL configuration file for $domain"
@@ -1246,6 +1356,13 @@ configure_site_debian() {
 			if [ "$http_include_present" != "true" ]; then
 				sed -i "s|</VirtualHost>|\tInclude /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf\\n\\n</VirtualHost>|" "$http_conf_file"
 			fi
+			# Insert bypass 404 restoration for allowlisted IPs during upgrade mode
+			if [ -n "$http_404_block" ]; then
+				http_404_line=$(extract_404_line_from_block "$http_404_block" || true)
+				if [ -n "$http_404_line" ] && ! has_bypass_404_block_in_vhost "$http_conf_file" "$domain" "80"; then
+					insert_bypass_404_after_include "$http_conf_file" "$http_404_line" "$domain" "80"
+				fi
+			fi
 		fi
 		# Best-effort warning if HTTP VirtualHost may not redirect to HTTPS
 		if ! grep -Eiq '(Redirect(\s+(permanent|temp|301|302))?\s+/?\s+https?://|RewriteRule\s+.*https://)' "$http_conf_file"; then
@@ -1326,6 +1443,8 @@ configure_site_cpanel() {
 	fi
 	# Create lucee.conf with appropriate includes
 	if [ -n "$cp_404_block" ]; then
+		# Extract single ErrorDocument 404 directive for bypass block
+		cp_404_line=$(extract_404_line_from_block "$cp_404_block" || true)
 		# Root sites get both upgrade detection and 404 routing
 		# Backup existing userdata files before overwriting (mirrored under BACKUP_ROOT)
 		backup_file ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf
@@ -1334,6 +1453,11 @@ configure_site_cpanel() {
 # ${UPG_DIR}/configure-apache.sh
 # Any manual changes will be overwritten when the script runs
 Include /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf
+<IfDefine LUCEE_UPGRADE_IN_PROGRESS>
+	<If "env('LUCEE_UPGRADE_BYPASS') == '1'">
+		${cp_404_line}
+	</If>
+</IfDefine>
 <IfDefine !LUCEE_UPGRADE_IN_PROGRESS>
 ${cp_404_block}
 </IfDefine>
@@ -1346,6 +1470,11 @@ EOF
 # ${UPG_DIR}/configure-apache.sh
 # Any manual changes will be overwritten when the script runs
 Include /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf
+<IfDefine LUCEE_UPGRADE_IN_PROGRESS>
+	<If "env('LUCEE_UPGRADE_BYPASS') == '1'">
+		${cp_404_line}
+	</If>
+</IfDefine>
 <IfDefine !LUCEE_UPGRADE_IN_PROGRESS>
 ${cp_404_block}
 </IfDefine>
@@ -1462,6 +1591,13 @@ configure_site_redhat() {
 		fi
 		# Ensure Include is present specifically in the SSL vhost
 		ensure_include_in_vhost "$ssl_conf_file" "$domain" "443"
+		# Insert bypass 404 restoration for allowlisted IPs during upgrade mode
+		if [ -n "$ssl_404_block" ]; then
+			ssl_404_line=$(extract_404_line_from_block "$ssl_404_block" || true)
+			if [ -n "$ssl_404_line" ] && ! has_bypass_404_block_in_vhost "$ssl_conf_file" "$domain" "443"; then
+				insert_bypass_404_after_include "$ssl_conf_file" "$ssl_404_line" "$domain" "443"
+			fi
+		fi
 	else
 		echo "  Warning: Could not find SSL VirtualHost for $domain"
 	fi
@@ -1562,6 +1698,13 @@ configure_site_redhat() {
 		fi
 		# Ensure Include is present specifically in the HTTP vhost
 		ensure_include_in_vhost "$http_conf_file" "$domain" "80"
+		# Insert bypass 404 restoration for allowlisted IPs during upgrade mode
+		if [ -n "$http_404_block" ]; then
+			http_404_line=$(extract_404_line_from_block "$http_404_block" || true)
+			if [ -n "$http_404_line" ] && ! has_bypass_404_block_in_vhost "$http_conf_file" "$domain" "80"; then
+				insert_bypass_404_after_include "$http_conf_file" "$http_404_line" "$domain" "80"
+			fi
+		fi
 	else
 		echo "  Info: No HTTP VirtualHost found for $domain"
 	fi

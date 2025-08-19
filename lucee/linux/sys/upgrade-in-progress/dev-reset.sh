@@ -117,7 +117,7 @@ revert_vhost_changes() {
 	
 	# Remove Include line and preceding empty line, unwrap IfDefine blocks
 	awk '
-		BEGIN { in_ifdefine=0; skip_next_empty=0 }
+		BEGIN { in_ifdefine=0; in_ifdefine_pos=0; skip_next_empty=0 }
 		
 		# Skip empty line before Include
 		/^[[:space:]]*$/ && skip_next_empty { skip_next_empty=0; next }
@@ -133,10 +133,20 @@ revert_vhost_changes() {
 			in_ifdefine=1
 			next
 		}
+		# Start of positive upgrade-mode IfDefine block (remove entirely)
+		/^[[:space:]]*<IfDefine[[:space:]]+LUCEE_UPGRADE_IN_PROGRESS>/ {
+			in_ifdefine_pos=1
+			next
+		}
 		
 		# End of our IfDefine block
 		/^[[:space:]]*<\/IfDefine>/ && in_ifdefine {
 			in_ifdefine=0
+			next
+		}
+		# End of positive upgrade-mode IfDefine block
+		/^[[:space:]]*<\/IfDefine>/ && in_ifdefine_pos {
+			in_ifdefine_pos=0
 			next
 		}
 		
@@ -151,6 +161,8 @@ revert_vhost_changes() {
 			}
 			next
 		}
+		# Inside positive upgrade-mode IfDefine block - drop lines entirely
+		in_ifdefine_pos { next }
 		
 		# Regular lines outside IfDefine
 		!in_ifdefine { print; skip_next_empty=0 }
