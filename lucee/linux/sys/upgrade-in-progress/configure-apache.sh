@@ -616,6 +616,10 @@ generate_allowed_ip_proxy_include() {
 		backend_type="http"
 	fi
 
+	# Normalize: strip any '/$1$2' suffix carried over from ProxyPassMatch tokens and trailing slash
+	backend_url="${backend_url%/\$1\$2}"
+	backend_url="${backend_url%/}"
+
 	# AJP secret handling: if using direct AJP backend, require secret and propagate it
 	local ppm_opts
 	ppm_opts=""
@@ -645,11 +649,11 @@ generate_allowed_ip_proxy_include() {
 		printf 'ProxyPassReverse /.lucee-upgrade-proxy/ %s/\n' "${backend_url}"
 		echo ""
 		echo "<IfModule mod_rewrite.c>"
-		# Use printf to emit real tabs for indentation
-		printf "\tRewriteEngine On\n"
-		printf "\t# Allow Lucee access only for IPs flagged via LUCEE_UPGRADE_BYPASS\n"
-		printf "\tRewriteCond %%{ENV:LUCEE_UPGRADE_BYPASS} =1\n"
-		printf "\tRewriteRule ^/(.+\\.(?:cfm|cfml|cfc|cfs))(.*)$ /.lucee-upgrade-proxy/$1$2 [PT,QSA,L]\n"
+		# Use printf (single-quoted) to avoid shell expansion of $1/$2 backrefs
+		printf '\tRewriteEngine On\n'
+		printf '\t# Allow Lucee access only for IPs flagged via LUCEE_UPGRADE_BYPASS\n'
+		printf '\tRewriteCond %%{ENV:LUCEE_UPGRADE_BYPASS} =1\n'
+		printf '\tRewriteRule ^/(.+\\.(?:cfm|cfml|cfc|cfs))(.*)$ /.lucee-upgrade-proxy/$1$2 [PT,QSA,L]\n'
 		echo "</IfModule>"
 	} > "$tmp"
 
