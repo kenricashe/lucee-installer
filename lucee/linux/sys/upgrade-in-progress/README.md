@@ -45,9 +45,11 @@ Users are not redirected to a different page, so the URL does not change. They w
 
 ## Requirements
 
-- Apache 2.4 installed in one of the two main Linux familes (Debian, Ubuntu, Pop!_OS, etc or Fedora, Red Hat, AlmaLinux, Rocky Linux, etc).
+- One of the two main Linux familes (Debian, Ubuntu, Pop!_OS, etc or Fedora, Red Hat, AlmaLinux, Rocky Linux, etc).
 
 - Root or sudo permissions.
+
+- Apache 2.4 with mod_rewrite, mod_proxy, mod_headers, and mod_setenvif (mod_cfml is optional and not modified by this package).
 
 - Lucee-related directives found in global Apache config as well as site-specific `.htaccess` will be migrated into semantically correct `.conf` files (e.g. `lucee-proxy.conf`) and `<VirtualHost>` blocks to enable toggling (also best practice for performance, consistency, security, and manageability).
 
