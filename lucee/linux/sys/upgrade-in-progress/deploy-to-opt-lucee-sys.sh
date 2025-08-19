@@ -21,6 +21,7 @@ FILES=(
 	"upgrade-in-progress.html"
 	"lucee-detect-upgrade.conf"
 	"lucee-upgrade-in-progress.conf"
+	"shared-functions.sh"
 	"dev-reset.sh"
 )
 
@@ -50,6 +51,15 @@ function copy_and_chmod() {
     local src="${THISPATH}/$1"
     local dst="${DEST_DIR}/$1"
     cp "$src" "$dst"
+    
+    # Ensure exactly one empty line at the end of the file
+    if [[ "$1" == *.conf || "$1" == *.html ]]; then
+        # Remove all trailing newlines first
+        sed -i -e :a -e '/^[[:space:]]*$/s/[[:space:]]*$//g' -e '/^$/N;/\n$/D' "$dst"
+        # Then add exactly one newline
+        echo "" >> "$dst"
+    fi
+    
     if [[ "$1" == *.sh ]]; then
         chmod +x "$dst"
     else

@@ -8,6 +8,10 @@
 # Update:
 # cat ./configure-apache.sh | sudo tee /opt/lucee/sys/upgrade-in-progress/configure-apache.sh
 
+# Source shared functions
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/shared-functions.sh"
+
 # Execute:
 # sudo /opt/lucee/sys/upgrade-in-progress/configure-apache.sh
 
@@ -97,7 +101,8 @@ EOF
 EOF
 	fi
 	
-	echo "" >> "$include_file"
+	# Normalize whitespace in the generated file
+	normalize_conf_whitespace "$include_file"
 	
 	# Fix permissions
 	chmod 644 "$include_file" 2>/dev/null || true
@@ -748,7 +753,6 @@ generate_allowed_ip_proxy_include() {
 		# Use printf to correctly emit literal $1 and $2 backrefs without stray escapes
 		printf 'ProxyPassMatch ^/\\.lucee-upgrade-proxy/(.+\\.(?:cfm|cfml|cfc|cfs))(.*)$ %s/$1$2%s\n' "${backend_url}" "${ppm_opts}"
 		printf 'ProxyPassReverse /.lucee-upgrade-proxy/ %s/\n' "${backend_url}"
-		echo ""
 		echo "<IfModule mod_rewrite.c>"
 		# Use printf (single-quoted) to avoid shell expansion of $1/$2 backrefs
 		printf '\tRewriteEngine On\n'
@@ -767,6 +771,10 @@ generate_allowed_ip_proxy_include() {
 	fi
 	cp -f "$tmp" "$dest"
 	rm -f "$tmp"
+	
+	# Normalize whitespace in the generated file
+	normalize_conf_whitespace "$dest"
+	
 	return 0
 }
 
@@ -878,48 +886,66 @@ replace_proxy_with_comment() {
 		# Check if replacement actually happened
 		if ! cmp -s "$config_file" "$tmp"; then
 			mv "$tmp" "$config_file"
+			# Normalize whitespace to prevent multiple empty lines
+			normalize_conf_whitespace "$config_file"
 			return 0
 		fi
 	fi
 	
-	# Fallback to regex-based replacement
+	# Fallback to regex-based replacement - completely rewritten to handle newlines properly
 	awk -v conf="$proxy_conf_path" '
-		BEGIN { in_proxy=0; replaced=0 }
+		BEGIN { 
+			in_proxy=0; 
+			replaced=0; 
+			proxy_content=""; 
+		}
+		
 		/<IfModule[[:space:]]+mod_proxy\.c>/ {
 			if (!replaced) {
-				# Start collecting proxy block
-				in_proxy=1; proxy_start=NR; proxy_content=$0 "\n"
-				next
+				in_proxy=1;
+				proxy_start=NR;
+				proxy_content=$0;
+				next;
 			}
 		}
+		
 		in_proxy && /<\/IfModule>/ {
-			proxy_content=proxy_content $0 "\n"
+			proxy_content = proxy_content "\n" $0;
+			
 			# Check if this is a Lucee proxy block
 			if (proxy_content ~ /ProxyPassMatch.*cf/) {
-				print "# Lucee proxy configuration moved to " conf
-				# Comment out each line of the proxy block, preserving empty lines
-				split(proxy_content, lines, "\n")
-				for (i = 1; i <= length(lines); i++) {
-					if (lines[i] == "") {
-						print ""
-					} else {
-						print "# " lines[i]
+				print "# Lucee proxy configuration moved to " conf;
+				
+				# Split the content into lines and comment each line
+				split(proxy_content, lines, "\n");
+				for (i = 1; i in lines; i++) {
+					if (lines[i] != "") {
+						print "# " lines[i];
 					}
 				}
-				replaced=1
+				replaced=1;
 			} else {
 				# Not a Lucee block, print it as-is
-				printf "%s", proxy_content
+				print proxy_content;
 			}
-			in_proxy=0; proxy_content=""
-			next
+			
+			in_proxy=0;
+			proxy_content="";
+			next;
 		}
-		in_proxy { proxy_content=proxy_content $0 "\n"; next }
-		!in_proxy { print }
+		
+		in_proxy { 
+			proxy_content = proxy_content "\n" $0; 
+			next; 
+		}
+		
+		{ print; }
 	' "$config_file" > "$tmp"
 	
 	if [ $? -eq 0 ]; then
 		mv "$tmp" "$config_file"
+		# Normalize whitespace to prevent multiple empty lines
+		normalize_conf_whitespace "$config_file"
 		return 0
 	else
 		rm -f "$tmp"
@@ -979,7 +1005,12 @@ migrate_lucee_proxy_config() {
 	backup_file "$source_file"
 	
 	# Write proxy block to lucee-proxy.conf
-	echo "$proxy_block" > "$proxy_conf_path"
+	{
+		echo "$proxy_block"
+	} > "$proxy_conf_path"
+	
+	# Normalize whitespace in the generated file
+	normalize_conf_whitespace "$proxy_conf_path"
 	
 	# Replace original block with comment indicating migration
 	if replace_proxy_with_comment "$source_file" "$proxy_conf_path"; then
@@ -1013,6 +1044,7 @@ ensure_global_confs() {
 		if [ -f "$opt_file" ] && [ ! -f "${conf_avail}/lucee-upgrade-in-progress.conf" ]; then
 			echo "Installing ${conf_avail}/lucee-upgrade-in-progress.conf ..."
 			cp -f "$opt_file" "${conf_avail}/lucee-upgrade-in-progress.conf"
+			normalize_conf_whitespace "${conf_avail}/lucee-upgrade-in-progress.conf"
 		fi
 		# Proxy migration already handled in early check
 		# Ensure upgrade flag is disabled by default
@@ -1056,6 +1088,7 @@ ensure_global_confs() {
 		if [ -f "$opt_file" ] && [ ! -f "${CONF_DIR}/lucee-upgrade-in-progress.disabled" ] && [ ! -f "${CONF_DIR}/lucee-upgrade-in-progress.conf" ]; then
 			echo "Installing global lucee-upgrade-in-progress.disabled into ${CONF_DIR}/"
 			cp -f "$opt_file" "${CONF_DIR}/lucee-upgrade-in-progress.disabled"
+			normalize_conf_whitespace "${CONF_DIR}/lucee-upgrade-in-progress.disabled"
 		fi
 		# Proxy migration already handled in early check
 		# Ensure normal state: upgrade flag disabled
@@ -1071,6 +1104,7 @@ ensure_global_confs() {
 		# Create lucee-proxy.conf in conf-available
 		echo "Creating lucee-proxy.conf ..."
 		find_regex_proxy_block > "$CONF_AVAILABLE_DIR/lucee-proxy.conf"
+		normalize_conf_whitespace "$CONF_AVAILABLE_DIR/lucee-proxy.conf"
 		# Ensure lucee-proxy.conf is enabled (rename from .disabled if needed)
 		if [ -f "${CONF_DIR}/lucee-proxy.conf.disabled" ] && [ ! -f "${CONF_DIR}/lucee-proxy.conf" ]; then
 			echo "Enabling lucee-proxy.conf (normal state)"
@@ -1371,9 +1405,10 @@ EOF
 	# Add per-site include if it exists
 	if [ -f "$ssl_include" ]; then
 		echo "Include $ssl_include" >> ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf
-		# Ensure file ends with a newline
-		echo "" >> ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf
 	fi
+	
+	# Normalize whitespace
+	normalize_conf_whitespace "${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf"
 	
 	# HTTP userdata file
 	backup_file ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf
@@ -1388,9 +1423,10 @@ EOF
 	# Add per-site include if it exists
 	if [ -f "$http_include" ]; then
 		echo "Include $http_include" >> ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf
-		# Ensure file ends with a newline
-		echo "" >> ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf
 	fi
+	
+	# Normalize whitespace
+	normalize_conf_whitespace "${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf"
 }
 
 # Function to configure RHEL sites
@@ -1618,5 +1654,6 @@ else
 	exit 1
 fi			
 	
+
 echo ""
 echo "DONE!"

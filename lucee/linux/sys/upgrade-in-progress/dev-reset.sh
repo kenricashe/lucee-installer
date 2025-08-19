@@ -10,6 +10,9 @@ fi
 SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd)"
 . "${SCRIPT_DIR}/get-env.sh"
 
+# Source shared functions
+. "${SCRIPT_DIR}/shared-functions.sh"
+
 # exit if not Debian
 if [ "$IS_DEBIAN" = false ]; then
 	echo "This script is only for Debian, Ubuntu, Pop!_OS, etc."
@@ -303,10 +306,15 @@ remove_site_includes() {
 		BEGIN { 
 			blank_line_count = 0 
 			max_consecutive_blanks = 1
+			skip_next_blank = 0
 		}
 		
 		# Process blank lines
 		/^[[:space:]]*$/ {
+			if (skip_next_blank) {
+				skip_next_blank = 0
+				next
+			}
 			blank_line_count++
 			# Only print if we have not exceeded max consecutive blanks
 			if (blank_line_count <= max_consecutive_blanks) {
@@ -317,8 +325,8 @@ remove_site_includes() {
 		
 		# Check for Include lines for per-site includes (both paths)
 		/^[[:space:]]*Include[[:space:]]+\/opt\/lucee\/sys\/(site-includes|upgrade-in-progress\/sites)\/.*\.conf/ {
-			# Skip this line and reset blank line counter to compress whitespace
-			blank_line_count = 0
+			# Skip this line and mark to skip the next blank line
+			skip_next_blank = 1
 			next
 		}
 		
@@ -423,58 +431,7 @@ cleanup_apache2_conf() {
 			print
 		}
 		
-		# Ensure one empty line at end of file
-		END {
-			if (blank_line_count == 0) {
-				print ""
-			}
-		}
-	' "$conf_file" > "$tmp"
-	
-	if [ $? -eq 0 ]; then
-		mv "$tmp" "$conf_file"
-	else
-		rm -f "$tmp"
-	fi
-}
-
-# Function to normalize whitespace in any configuration file
-normalize_conf_whitespace() {
-	local conf_file="$1"
-	[ -f "$conf_file" ] || return 0
-	
-	local tmp
-	tmp=$(mktemp)
-	
-	# Normalize whitespace and ensure one empty line at end of file
-	awk '
-		BEGIN { 
-			blank_line_count = 0
-			max_consecutive_blanks = 1
-		}
-		
-		# Process blank lines
-		/^[[:space:]]*$/ {
-			blank_line_count++
-			# Only print if we have not exceeded max consecutive blanks
-			if (blank_line_count <= max_consecutive_blanks) {
-				print
-			}
-			next
-		}
-		
-		# For non-blank lines, reset counter and print
-		{
-			blank_line_count = 0
-			print
-		}
-		
-		# Ensure one empty line at end of file
-		END {
-			if (blank_line_count == 0) {
-				print ""
-			}
-		}
+		# We will let normalize_conf_whitespace handle the trailing newline
 	' "$conf_file" > "$tmp"
 	
 	if [ $? -eq 0 ]; then
@@ -486,8 +443,57 @@ normalize_conf_whitespace() {
 
 # Function to normalize whitespace in VirtualHost blocks
 normalize_vhost_whitespace() {
-	# Use the generic whitespace normalization function
+	# Use the simplified generic whitespace normalization function
 	normalize_conf_whitespace "$1"
+}
+
+# Function to add empty line between </VirtualHost> and <Directory tags
+# and ensure empty line at end of file
+normalize_vhost_tags() {
+	local conf_file="$1"
+	[ -f "$conf_file" ] || return 0
+	
+	local tmp
+	tmp=$(mktemp)
+	
+	# Process file to add empty line between </VirtualHost> and <Directory
+	awk '
+		BEGIN { 
+			prev_line_was_virtualhost_end = 0
+		}
+		
+		# Check if line is </VirtualHost> closing tag
+		/^[[:space:]]*<\/VirtualHost>/ {
+			print
+			prev_line_was_virtualhost_end = 1
+			next
+		}
+		
+		# Check if line starts a <Directory tag and previous line was </VirtualHost>
+		/^[[:space:]]*<Directory/ {
+			if (prev_line_was_virtualhost_end) {
+				# Add empty line before <Directory
+				print ""
+			}
+			print
+			prev_line_was_virtualhost_end = 0
+			next
+		}
+		
+		# Any other line
+		{
+			print
+			prev_line_was_virtualhost_end = 0
+		}
+	' "$conf_file" > "$tmp"
+	
+	if [ $? -eq 0 ]; then
+		mv "$tmp" "$conf_file"
+		# Ensure exactly one newline at the end
+		normalize_conf_whitespace "$conf_file"
+	else
+		rm -f "$tmp"
+	fi
 }
 
 # append contents of lucee-proxy.conf to apache2.conf (without header comment)
@@ -537,6 +543,10 @@ for conf_file in /etc/apache2/sites-available/*.conf; do
 		revert_vhost_changes "$conf_file"
 		remove_errordocument_404 "$conf_file"
 		remove_site_includes "$conf_file"
+		
+		# Add empty line between </VirtualHost> and <Directory tags
+		# and ensure exactly one newline at the end
+		normalize_vhost_tags "$conf_file"
 		
 		# Extract DocumentRoot and process files
 		docroot=$(grep -i '^[[:space:]]*DocumentRoot' "$conf_file" | head -1 | awk '{print $2}' | tr -d '"')
