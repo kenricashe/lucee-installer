@@ -640,15 +640,16 @@ generate_allowed_ip_proxy_include() {
 		echo "# Conditional proxy for allowlisted IPs only"
 		echo ""
 		echo "# Internal upgrade proxy mapping (not directly reachable unless rewritten)"
-		echo "ProxyPassMatch ^/\\.lucee-upgrade-proxy/(.+\\.(?:cfm|cfml|cfc|cfs))(.*)$ ${backend_url}/\\$1\\$2${ppm_opts}"
-		echo "ProxyPassReverse /.lucee-upgrade-proxy/ ${backend_url}/"
+		# Use printf to correctly emit literal $1 and $2 backrefs without stray escapes
+		printf 'ProxyPassMatch ^/\\.lucee-upgrade-proxy/(.+\\.(?:cfm|cfml|cfc|cfs))(.*)$ %s/$1$2%s\n' "${backend_url}" "${ppm_opts}"
+		printf 'ProxyPassReverse /.lucee-upgrade-proxy/ %s/\n' "${backend_url}"
 		echo ""
 		echo "<IfModule mod_rewrite.c>"
 		# Use printf to emit real tabs for indentation
 		printf "\tRewriteEngine On\n"
 		printf "\t# Allow Lucee access only for IPs flagged via LUCEE_UPGRADE_BYPASS\n"
 		printf "\tRewriteCond %%{ENV:LUCEE_UPGRADE_BYPASS} =1\n"
-		printf "\tRewriteRule ^/(.+\\.(?:cfm|cfml|cfc|cfs))(.*)$ /.lucee-upgrade-proxy/\\$1\\$2 [PT,QSA,L]\n"
+		printf "\tRewriteRule ^/(.+\\.(?:cfm|cfml|cfc|cfs))(.*)$ /.lucee-upgrade-proxy/$1$2 [PT,QSA,L]\n"
 		echo "</IfModule>"
 	} > "$tmp"
 
