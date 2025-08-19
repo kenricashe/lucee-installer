@@ -616,9 +616,8 @@ generate_allowed_ip_proxy_include() {
 		backend_type="http"
 	fi
 
-	# Normalize: strip any '/$1$2' suffix carried over from ProxyPassMatch tokens and trailing slash
-	backend_url="${backend_url%/\$1\$2}"
-	backend_url="${backend_url%/}"
+	# Normalize: strip any trailing '/$1$2' (with optional trailing '/') carried over from ProxyPassMatch
+	backend_url=$(echo "$backend_url" | sed -E 's#/\$1\$2/?$##')
 
 	# AJP secret handling: if using direct AJP backend, require secret and propagate it
 	local ppm_opts
