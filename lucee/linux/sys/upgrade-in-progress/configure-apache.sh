@@ -1029,7 +1029,7 @@ ensure_global_confs() {
 	echo ""
 	echo "Checking for existing Lucee proxy configuration ..."
 
-	# Debian/Ubuntu
+	# Debian, Ubuntu, Pop!_OS, etc
 	if [ "$IS_DEBIAN" = true ]; then
 
 		# Debian/Ubuntu - check if proxy migration is needed
@@ -1074,7 +1074,7 @@ ensure_global_confs() {
 		return
 	fi
 
-	# RHEL family and cPanel
+	# has conf.d (Fedora, Red Hat, AlmaLinux, Rocky Linux, etc)
 	if [ -n "$CONF_DIR" ]; then
 
 		# RedHat/CentOS - check if proxy migration is needed
@@ -1603,28 +1603,23 @@ process_sites() {
 # Debian, Ubuntu, Pop!_OS, etc
 if [ "$IS_DEBIAN" = true ]; then
 	ensure_global_confs
-	# Generate per-vhost proxy include for allowlisted IPs from active lucee-proxy.conf
 	generate_allowed_ip_proxy_include || exit 1
 	press_enter_to_continue
 	process_sites configure_site_debian
-	# Validate Apache configuration before reload
 	if ! apache_config_test; then
 		echo "Apache test FAILED. Aborting reload. Please check configuration files."
 		exit 1
 	fi
 	apache_reload
 	
-# Fedora, Red Hat, AlmaLinux, Rocky Linux, etc
+# has conf.d (Fedora, Red Hat, AlmaLinux, Rocky Linux, etc)
 elif [ -n "$CONF_DIR" ]; then
 	# cPanel
 	if [ "$IS_CPANEL" = true ]; then
 		ensure_global_confs
-		# Generate per-vhost proxy include for allowlisted IPs from active lucee-proxy.conf
 		generate_allowed_ip_proxy_include || exit 1
 		press_enter_to_continue
 		process_sites configure_site_cpanel
-		
-		# Rebuild Apache configuration and validate
 		echo "Rebuilding Apache configuration ..."
 		/scripts/rebuildhttpdconf
 		if ! apache_config_test; then
@@ -1637,11 +1632,9 @@ elif [ -n "$CONF_DIR" ]; then
 	# NOT cPanel
 	else
 		ensure_global_confs
-		# Generate per-vhost proxy include for allowlisted IPs from active lucee-proxy.conf
 		generate_allowed_ip_proxy_include || exit 1
 		press_enter_to_continue
 		process_sites configure_site_redhat
-		# Validate Apache configuration before reload
 		if ! apache_config_test; then
 			echo "Apache test FAILED. Aborting reload. Please check configuration files."
 			exit 1
@@ -1654,6 +1647,5 @@ else
 	exit 1
 fi			
 	
-
 echo ""
 echo "DONE!"
