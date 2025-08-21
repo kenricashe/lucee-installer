@@ -67,9 +67,11 @@ remove_duplicate_ifdefine_blocks() {
 				while ((getline line < info_file) > 0) {
 					if (match(line, /^BLOCK_([0-9]+)_START=([0-9]+)$/, arr)) {
 						block_start[arr[1]] = arr[2]
-					} else if (match(line, /^BLOCK_([0-9]+)_END=([0-9]+)$/, arr)) {
+					}
+					else if (match(line, /^BLOCK_([0-9]+)_END=([0-9]+)$/, arr)) {
 						block_end[arr[1]] = arr[2]
-					} else if (match(line, /^BLOCK_COUNT=([0-9]+)$/, arr)) {
+					}
+					else if (match(line, /^BLOCK_COUNT=([0-9]+)$/, arr)) {
 						block_count = arr[1]
 					}
 				}
@@ -92,9 +94,11 @@ remove_duplicate_ifdefine_blocks() {
 			{
 				if (skip_line[NR] == "block") {
 					next
-				} else if (skip_line[NR] == "maybe_empty" && /^[[:space:]]*$/) {
+				}
+				else if (skip_line[NR] == "maybe_empty" && /^[[:space:]]*$/) {
 					next
-				} else {
+				}
+				else {
 					print
 				}
 			}
@@ -181,9 +185,11 @@ revert_vhost_changes() {
 			blank_line_count = 0
 			if (match($0, /^\t/)) {
 				print substr($0, 2)
-			} else if (match($0, /^    /)) {
+			}
+			else if (match($0, /^    /)) {
 				print substr($0, 5)
-			} else {
+			}
+			else {
 				print $0
 			}
 			next

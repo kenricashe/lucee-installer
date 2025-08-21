@@ -19,7 +19,8 @@ remove_site_includes() {
 			if (next_line ~ /^[[:space:]]*Include[[:space:]]+\/opt\/lucee\/sys\/site-includes\/.*\.conf/) {
 				# Skip this empty line
 				next
-			} else {
+			}
+			else {
 				# Print both lines
 				print
 				print next_line

@@ -145,11 +145,13 @@ parse_vhosts_file() {
 		in_vh==1 {
 			if ($0 ~ /^[ \t]*ServerName[ \t]+/) {
 				gsub(/^[ \t]*ServerName[ \t]+/, "", $0); gsub(/[ \t#].*$/, "", $0); server=$0
-			} else if ($0 ~ /^[ \t]*ServerAlias[ \t]+/) {
+			}
+			else if ($0 ~ /^[ \t]*ServerAlias[ \t]+/) {
 				line=$0; sub(/^[ \t]*ServerAlias[ \t]+/, "", line); sub(/[#].*$/, "", line)
 				n=split(line, arr, /[ \t]+/);
 				for (i=1;i<=n;i++) { if (arr[i] != "") { ac++; alias[ac]=arr[i] } }
-			} else if ($0 ~ /^[ \t]*DocumentRoot[ \t]+/) {
+			}
+			else if ($0 ~ /^[ \t]*DocumentRoot[ \t]+/) {
 				gsub(/^[ \t]*DocumentRoot[ \t]+/, "", $0); gsub(/[ \t#].*$/, "", $0); docroot=$0
 			}
 		}

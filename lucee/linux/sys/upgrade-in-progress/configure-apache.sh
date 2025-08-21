@@ -409,8 +409,10 @@ comment_all_404_lines() {
 				for (i=1;i<=n;i++) {
 					if (lines[i] ~ pat) {
 						print note
-						if (lines[i] ~ /^[\t ]*#/) { print lines[i] } else { print "# " lines[i] }
-					} else { print lines[i] }
+						if (lines[i] ~ /^[\t ]*#/) { print lines[i] }
+						else { print "# " lines[i] }
+					}
+					else { print lines[i] }
 				}
 			}
 		' "$file" > "$tmp"
@@ -421,8 +423,10 @@ comment_all_404_lines() {
 				for (i=1;i<=n;i++) {
 					if (lines[i] ~ pat) {
 						print note
-						if (lines[i] ~ /^[\t ]*#/) { print lines[i] } else { print "# " lines[i] }
-					} else { print lines[i] }
+						if (lines[i] ~ /^[\t ]*#/) { print lines[i] }
+						else { print "# " lines[i] }
+					}
+					else { print lines[i] }
 				}
 			}
 		' "$file" > "$tmp"
@@ -486,10 +490,12 @@ remove_404_block() {
 						print note
 						if (lines[i] ~ /^[\t ]*#/) {
 							print lines[i]
-						} else {
+						}
+						else {
 							print "# " lines[i]
 						}
-					} else {
+					}
+					else {
 						print lines[i]
 					}
 				}
@@ -505,10 +511,12 @@ remove_404_block() {
 						print note
 						if (lines[i] ~ /^[\t ]*#/) {
 							print lines[i]
-						} else {
+						}
+						else {
 							print "# " lines[i]
 						}
-					} else {
+					}
+					else {
 						print lines[i]
 					}
 				}
@@ -924,7 +932,8 @@ replace_proxy_with_comment() {
 					}
 				}
 				replaced=1;
-			} else {
+			}
+			else {
 				# Not a Lucee block, print it as-is
 				print proxy_content;
 			}
