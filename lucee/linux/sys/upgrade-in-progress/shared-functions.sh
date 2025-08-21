@@ -1,6 +1,36 @@
 #!/bin/bash
 
-# Shared functions for Lucee upgrade scripts
+# Ensure the site exclusions file exists with sensible defaults.
+ensure_default_exclusions_file() {
+	if [ ! -f "$EXCLUSIONS_FILE" ] || [ ! -s "$EXCLUSIONS_FILE" ]; then
+		${SUDO} mkdir -p "$(dirname "$EXCLUSIONS_FILE")" 2>/dev/null || true
+		${SUDO} tee "$EXCLUSIONS_FILE" >/dev/null <<'EOF'
+# Lucee site search exclusions
+#
+# Domain patterns:
+#   exact domains: example.com
+#   wildcard domains: *.example.com
+# Path exclusions:
+#   path: /var/www/html/some-static-site
+
+# Common non-app / platform subdomains (cPanel, etc)
+cpanel
+whm
+webmail
+webdisk
+mail
+default
+localhost
+_wildcard_
+
+# cPanel and control panel vhosts
+proxy-subdomains-vhost
+
+# Path exclusions (examples)
+# path: /var/www/html/default
+EOF
+	fi
+}
 
 # Function to normalize whitespace in any configuration file
 normalize_conf_whitespace() {

@@ -49,7 +49,7 @@ LUCEE_ROOT="$(cd "$LIB_DIR/../.." && pwd)"
 LUCEE_ROOT="${LUCEE_ROOT%/}"
 UPG_DIR="${LUCEE_ROOT}/sys/upgrade-in-progress"
 SITES_FILE="${UPG_DIR}/sites-configured.txt"
-
+EXCLUSIONS_FILE="${UPG_DIR}/site-exclusions.txt"
 # Determine sudo prefix for privileged actions
 SUDO=""
 if [ "$(id -u)" != "0" ]; then

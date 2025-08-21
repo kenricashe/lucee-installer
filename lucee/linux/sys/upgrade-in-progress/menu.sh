@@ -6,10 +6,17 @@
 # Determine script directory and source shared env
 SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "${SCRIPT_DIR}/get-env.sh"
+. "${SCRIPT_DIR}/shared-functions.sh"
+
+run_edit_exclusions() {
+	ensure_default_exclusions_file
+	${SUDO} ${EDITOR:-nano} "$EXCLUSIONS_FILE"
+}
 
 run_get_sites() {
 	clear
 	${SUDO} "${UPG_DIR}/get-lucee-sites.sh"
+	press_enter_to_continue
 }
 
 run_edit_sites() {
@@ -124,6 +131,8 @@ while true; do
 	echo " (based on /var/lucee-upgrade-in-progress)"
 	echo "------------------------------------------"
 	echo ""
+	echo "s) Customize Site Search Exclusions (optional)"
+	echo ""
 	echo "g) Get Apache Site Data"
 	echo ""
 	echo "v) View/Edit Apache Site Data File"
@@ -140,6 +149,9 @@ while true; do
 	echo ""
 	read -r -p "Select an option: " choice
 	case "${choice}" in
+		s|S)
+			run_edit_exclusions
+			;;
 		g|G)
 			run_get_sites
 			;;
