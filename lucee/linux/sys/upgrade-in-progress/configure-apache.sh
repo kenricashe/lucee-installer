@@ -778,6 +778,7 @@ generate_allowed_ip_proxy_include() {
 		backup_file "$dest"
 	fi
 	cp -f "$tmp" "$dest"
+	chmod 644 "$dest"
 	rm -f "$tmp"
 	
 	# Normalize whitespace in the generated file
@@ -1146,7 +1147,35 @@ copy_upgrade_html() {
 	# Backup existing docroot file (mirrored under BACKUP_ROOT)
 	backup_file ${docroot}/upgrade-in-progress.html
 	cp -f "${UPG_DIR}/upgrade-in-progress.html" ${docroot}/upgrade-in-progress.html
-	chown --reference=${docroot} ${docroot}/upgrade-in-progress.html 2>/dev/null || true
+	
+	# Ensure proper ownership - try to match docroot ownership
+	if ! chown --reference=${docroot} ${docroot}/upgrade-in-progress.html 2>/dev/null; then
+		echo "Warning: Could not set ownership of ${docroot}/upgrade-in-progress.html to match docroot"
+		
+		# Fallback: Try to use Apache user if we can detect it
+		local apache_user=""
+		if [ "$IS_DEBIAN" = true ]; then
+			apache_user="www-data"
+		elif [ "$IS_CPANEL" = true ]; then
+			apache_user="nobody"
+		else
+			# Try to detect Apache user on RHEL/CentOS systems
+			apache_user=$(grep -i "^User" "$CONF_DIR/httpd.conf" 2>/dev/null | head -1 | awk '{print $2}' || echo "apache")
+		fi
+		
+		if [ -n "$apache_user" ]; then
+			echo "  Attempting to set ownership to Apache user: $apache_user"
+			chown $apache_user ${docroot}/upgrade-in-progress.html 2>/dev/null || echo "  Failed to set ownership to $apache_user"
+		fi
+		
+		# Ensure the file is at least world-readable as last resort
+		chmod 644 ${docroot}/upgrade-in-progress.html 2>/dev/null || echo "  Warning: Could not ensure ${docroot}/upgrade-in-progress.html is readable"
+	fi
+	
+	# Verify the file is readable
+	if [ ! -r "${docroot}/upgrade-in-progress.html" ]; then
+		echo "Error: ${docroot}/upgrade-in-progress.html is not readable. This may cause issues during upgrades."
+	fi
 }
 
 configure_site_debian() {
