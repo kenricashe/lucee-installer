@@ -54,8 +54,11 @@ normalize_conf_whitespace() {
 	fi
 	
 	if [ -s "$tmp" ]; then
+		# Preserve original permissions before overwriting
+		local orig_perms
+		orig_perms=$(stat -c %a "$conf_file" 2>/dev/null || echo "644")
 		mv "$tmp" "$conf_file"
-		chmod --reference="$conf_file" "$conf_file" 2>/dev/null || true
+		chmod "$orig_perms" "$conf_file" 2>/dev/null || chmod 644 "$conf_file"
 	else
 		echo "Warning: Empty output when processing $conf_file"
 		rm -f "$tmp"

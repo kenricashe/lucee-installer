@@ -105,7 +105,11 @@ remove_duplicate_ifdefine_blocks() {
 		' "$vhost_file" > "$tmp"
 		
 		if [ $? -eq 0 ]; then
+			# Preserve original permissions before overwriting
+			local orig_perms
+			orig_perms=$(stat -c %a "$vhost_file" 2>/dev/null || echo "644")
 			mv "$tmp" "$vhost_file"
+			chmod "$orig_perms" "$vhost_file" 2>/dev/null || chmod 644 "$vhost_file"
 		else
 			rm -f "$tmp"
 		fi
@@ -206,7 +210,11 @@ revert_vhost_changes() {
 	' "$vhost_file" > "$tmp"
 	
 	if [ $? -eq 0 ]; then
+		# Preserve original permissions before overwriting
+		local orig_perms
+		orig_perms=$(stat -c %a "$vhost_file" 2>/dev/null || echo "644")
 		mv "$tmp" "$vhost_file"
+		chmod "$orig_perms" "$vhost_file" 2>/dev/null || chmod 644 "$vhost_file"
 	else
 		rm -f "$tmp"
 	fi
@@ -244,7 +252,11 @@ remove_legacy_inlined_blocks() {
 	' "$conf_file" > "$tmp"
 	
 	if [ $? -eq 0 ]; then
+		# Preserve original permissions before overwriting
+		local orig_perms
+		orig_perms=$(stat -c %a "$conf_file" 2>/dev/null || echo "644")
 		mv "$tmp" "$conf_file"
+		chmod "$orig_perms" "$conf_file" 2>/dev/null || chmod 644 "$conf_file"
 	else
 		rm -f "$tmp"
 	fi
@@ -293,7 +305,11 @@ remove_errordocument_404() {
 	' "$conf_file" > "$tmp"
 	
 	if [ $? -eq 0 ]; then
+		# Preserve original permissions before overwriting
+		local orig_perms
+		orig_perms=$(stat -c %a "$conf_file" 2>/dev/null || echo "644")
 		mv "$tmp" "$conf_file"
+		chmod "$orig_perms" "$conf_file" 2>/dev/null || chmod 644 "$conf_file"
 	else
 		rm -f "$tmp"
 	fi
@@ -344,7 +360,11 @@ remove_site_includes() {
 	' "$conf_file" > "$tmp"
 	
 	if [ $? -eq 0 ]; then
+		# Preserve original permissions before overwriting
+		local orig_perms
+		orig_perms=$(stat -c %a "$conf_file" 2>/dev/null || echo "644")
 		mv "$tmp" "$conf_file"
+		chmod "$orig_perms" "$conf_file" 2>/dev/null || chmod 644 "$conf_file"
 	else
 		rm -f "$tmp"
 	fi
@@ -441,7 +461,11 @@ cleanup_apache2_conf() {
 	' "$conf_file" > "$tmp"
 	
 	if [ $? -eq 0 ]; then
+		# Preserve original permissions before overwriting
+		local orig_perms
+		orig_perms=$(stat -c %a "$conf_file" 2>/dev/null || echo "644")
 		mv "$tmp" "$conf_file"
+		chmod "$orig_perms" "$conf_file" 2>/dev/null || chmod 644 "$conf_file"
 	else
 		rm -f "$tmp"
 	fi
@@ -494,7 +518,11 @@ normalize_vhost_tags() {
 	' "$conf_file" > "$tmp"
 	
 	if [ $? -eq 0 ]; then
+		# Preserve original permissions before overwriting
+		local orig_perms
+		orig_perms=$(stat -c %a "$conf_file" 2>/dev/null || echo "644")
 		mv "$tmp" "$conf_file"
+		chmod "$orig_perms" "$conf_file" 2>/dev/null || chmod 644 "$conf_file"
 		# Ensure exactly one newline at the end
 		normalize_conf_whitespace "$conf_file"
 	else
