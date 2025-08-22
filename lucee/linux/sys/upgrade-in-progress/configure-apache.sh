@@ -895,7 +895,11 @@ replace_proxy_with_comment() {
 	' "$config_file" > "$tmp"; then
 		# Check if replacement actually happened
 		if ! cmp -s "$config_file" "$tmp"; then
+			# Preserve original permissions before overwriting
+			local orig_perms
+			orig_perms=$(stat -c %a "$config_file" 2>/dev/null || echo "644")
 			mv "$tmp" "$config_file"
+			chmod "$orig_perms" "$config_file" 2>/dev/null || chmod 644 "$config_file"
 			# Normalize whitespace to prevent multiple empty lines
 			normalize_conf_whitespace "$config_file"
 			return 0
@@ -954,7 +958,11 @@ replace_proxy_with_comment() {
 	' "$config_file" > "$tmp"
 	
 	if [ $? -eq 0 ]; then
+		# Preserve original permissions before overwriting
+		local orig_perms
+		orig_perms=$(stat -c %a "$config_file" 2>/dev/null || echo "644")
 		mv "$tmp" "$config_file"
+		chmod "$orig_perms" "$config_file" 2>/dev/null || chmod 644 "$config_file"
 		# Normalize whitespace to prevent multiple empty lines
 		normalize_conf_whitespace "$config_file"
 		return 0
