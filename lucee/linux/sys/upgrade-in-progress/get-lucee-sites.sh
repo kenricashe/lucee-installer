@@ -24,7 +24,7 @@ else
 fi
 
 # ------------------------------
-# Exclusions and CFML detection
+# Exclusions and Lucee detection
 # ------------------------------
 
 declare -a EXCL_DOMAINS
@@ -115,7 +115,7 @@ has_cfml_files() {
 	if [ -z "$root" ] || [ ! -d "$root" ]; then
 		return 1
 	fi
-	# Early-exit find for CFML file types (.cfm, .cfc, .cfml, .cfs)
+	# Early-exit find for Lucee file types (.cfm, .cfc, .cfml, .cfs)
 	if find "$root" -type f \( -iname '*.cfm' -o -iname '*.cfc' -o -iname '*.cfml' -o -iname '*.cfs' \) -print -quit 2>/dev/null | grep -q .; then
 		return 0
 	fi
@@ -302,7 +302,7 @@ while IFS= read -r line; do
 done <<< "$PAIR_LINES"
 
 
-# Evaluate CFML presence per docroot and assemble final results
+# Evaluate Lucee presence per docroot and assemble final results
 declare -a RESULT_DOMAINS
 declare -a RESULT_DOCROOTS
 
@@ -311,7 +311,7 @@ for docroot in "${!DOCROOT_TO_DOMAINS[@]}"; do
 		echo "Skipping excluded path: $docroot"
 		continue
 	fi
-	printf '\n Scanning for CFML in: %s\n' "$docroot"
+	printf '\n Scanning for Lucee files in: %s\n' "$docroot"
 	if has_cfml_files "$docroot"; then
 		for d in ${DOCROOT_TO_DOMAINS[$docroot]}; do
 			if is_excluded_domain "$d"; then
@@ -322,7 +322,7 @@ for docroot in "${!DOCROOT_TO_DOMAINS[@]}"; do
 			RESULT_DOCROOTS+=("$docroot")
 		done
 	else
-		echo "  - No CFML detected"
+		echo "  - No Lucee files detected"
 	fi
 done
 
