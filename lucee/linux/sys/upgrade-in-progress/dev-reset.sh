@@ -345,8 +345,8 @@ remove_site_includes() {
 			next
 		}
 		
-		# Check for Include lines for per-site includes (both paths)
-		/^[[:space:]]*Include[[:space:]]+\/opt\/lucee\/sys\/(site-includes|upgrade-in-progress\/sites)\/.*\.conf/ {
+		# Check for Include lines for per-site includes
+		/^[[:space:]]*Include[[:space:]]+\/opt\/lucee\/sys\/upgrade-in-progress\/sites\/.*\.conf/ {
 			# Skip this line and mark to skip the next blank line
 			skip_next_blank = 1
 			next
