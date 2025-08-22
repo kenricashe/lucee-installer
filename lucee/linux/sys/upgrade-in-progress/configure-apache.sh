@@ -535,27 +535,6 @@ remove_404_block() {
 	fi
 }
 
-# This function has been replaced by generate_site_include() and add_site_include_to_vhost()
-# Kept as stub for compatibility - remove after testing
-insert_wrapped_block_before_vhost_close() {
-	echo "Warning: insert_wrapped_block_before_vhost_close() is deprecated. Use generate_site_include() instead."
-	return 1
-}
-
-# This function has been replaced by has_site_include()
-# Kept as stub for compatibility - remove after testing
-has_wrapped_404_block() {
-	echo "Warning: has_wrapped_404_block() is deprecated. Use has_site_include() instead."
-	return 1
-}
-
-# This function has been replaced by has_site_include()
-# Kept as stub for compatibility - remove after testing
-has_wrapped_404_block_in_vhost() {
-	echo "Warning: has_wrapped_404_block_in_vhost() is deprecated. Use has_site_include() instead."
-	return 1
-}
-
 # Ensure the per-site Include line exists inside the targeted vhost (by domain and optional port).
 ensure_include_in_vhost() {
 	local vhost_file="$1"
