@@ -18,7 +18,7 @@ FILES=(
 	"menu.sh"
 	"begin.sh"
 	"end.sh"
-	"upgrade-in-progress.html"
+	"lucee-upgrade-in-progress.html"
 	"lucee-detect-upgrade.conf"
 	"lucee-upgrade-in-progress.conf"
 	"shared-functions.sh"

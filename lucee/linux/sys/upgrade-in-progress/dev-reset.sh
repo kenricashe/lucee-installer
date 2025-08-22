@@ -585,12 +585,16 @@ for conf_file in /etc/apache2/sites-available/*.conf; do
 		# Extract DocumentRoot and process files
 		docroot=$(grep -i '^[[:space:]]*DocumentRoot' "$conf_file" | head -1 | awk '{print $2}' | tr -d '"')
 		if [ -n "$docroot" ]; then
-			# Remove upgrade-in-progress.html
+			# Remove legacy upgrade-in-progress.html
 			if [ -f "${docroot}/upgrade-in-progress.html" ]; then
-				echo "  Removing ${docroot}/upgrade-in-progress.html"
+				echo "  Removing legacy ${docroot}/upgrade-in-progress.html"
 				rm -f "${docroot}/upgrade-in-progress.html"
 			fi
-			
+			# Remove lucee-upgrade-in-progress.html
+			if [ -f "${docroot}/lucee-upgrade-in-progress.html" ]; then
+				echo "  Removing ${docroot}/lucee-upgrade-in-progress.html"
+				rm -f "${docroot}/lucee-upgrade-in-progress.html"
+			fi
 			# Process .htaccess file (restore ErrorDocument 404 and fix ownership)
 			if [ -f "${docroot}/.htaccess" ]; then
 				echo "  Processing ${docroot}/.htaccess"

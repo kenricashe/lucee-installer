@@ -284,7 +284,7 @@ fi
 
 # preflight: required files must exist at /opt path used by per-site Includes and docroot copy
 DETECT_CONF="${UPG_DIR}/lucee-detect-upgrade.conf"
-UPG_HTML="${UPG_DIR}/upgrade-in-progress.html"
+UPG_HTML="${UPG_DIR}/lucee-upgrade-in-progress.html"
 if [ ! -f "$DETECT_CONF" ]; then
 	echo "Error: Required include not found: $DETECT_CONF"
 	echo "Run deploy-to-opt-lucee-sys.sh to deploy the package, then retry."
@@ -649,7 +649,7 @@ generate_allowed_ip_proxy_include() {
 	#   so we always define a ProxyPassMatch for that internal path,
 	#   then rewrite allowed client requests to it when LUCEE_UPGRADE_BYPASS=1.
 	# - This allows allowlisted IPs to reach Lucee normally while non-allowed
-	#   IPs are served upgrade-in-progress.html.
+	#   IPs are served lucee-upgrade-in-progress.html.
 	# - For AJP backends, we extract and propagate 'secret=...' to keep
 	#   upgrade-mode proxying secure.
 	
@@ -1141,12 +1141,12 @@ ensure_global_confs() {
 copy_upgrade_html() {
 	local docroot=$1
 	# Backup existing docroot file (mirrored under BACKUP_ROOT)
-	backup_file ${docroot}/upgrade-in-progress.html
-	cp -f "${UPG_DIR}/upgrade-in-progress.html" ${docroot}/upgrade-in-progress.html
+	backup_file ${docroot}/lucee-upgrade-in-progress.html
+	cp -f "${UPG_DIR}/lucee-upgrade-in-progress.html" ${docroot}/lucee-upgrade-in-progress.html
 	
 	# Ensure proper ownership - try to match docroot ownership
-	if ! chown --reference=${docroot} ${docroot}/upgrade-in-progress.html 2>/dev/null; then
-		echo "Warning: Could not set ownership of ${docroot}/upgrade-in-progress.html to match docroot"
+	if ! chown --reference=${docroot} ${docroot}/lucee-upgrade-in-progress.html 2>/dev/null; then
+		echo "Warning: Could not set ownership of ${docroot}/lucee-upgrade-in-progress.html to match docroot"
 		
 		# Fallback: Try to use Apache user if we can detect it
 		local apache_user=""
@@ -1165,11 +1165,11 @@ copy_upgrade_html() {
 		
 		if [ -n "$apache_user" ]; then
 			echo "  Attempting to set ownership to Apache user: $apache_user"
-			chown $apache_user ${docroot}/upgrade-in-progress.html 2>/dev/null || echo "  Failed to set ownership to $apache_user"
+			chown $apache_user ${docroot}/lucee-upgrade-in-progress.html 2>/dev/null || echo "  Failed to set ownership to $apache_user"
 		fi
 		
 		# Ensure the file is at least world-readable as last resort
-		chmod 644 ${docroot}/upgrade-in-progress.html 2>/dev/null || echo "  Warning: Could not ensure ${docroot}/upgrade-in-progress.html is readable"
+		chmod 644 ${docroot}/lucee-upgrade-in-progress.html 2>/dev/null || echo "  Warning: Could not ensure ${docroot}/lucee-upgrade-in-progress.html is readable"
 	fi
 	
 	# Handle SELinux context if SELinux is enabled (common on RHEL/CentOS)
@@ -1184,24 +1184,24 @@ copy_upgrade_html() {
 			if [ -n "$reference_file" ] && [ -f "$reference_file" ]; then
 				# Use reference file context
 				echo "  Using context from reference file: $reference_file"
-				chcon --reference="$reference_file" "${docroot}/upgrade-in-progress.html" 2>/dev/null || \
+				chcon --reference="$reference_file" "${docroot}/lucee-upgrade-in-progress.html" 2>/dev/null || \
 					echo "  Failed to set SELinux context from reference file"
 			else
 				# No reference file, use standard httpd_sys_content_t context
-				chcon -t httpd_sys_content_t "${docroot}/upgrade-in-progress.html" 2>/dev/null || \
+				chcon -t httpd_sys_content_t "${docroot}/lucee-upgrade-in-progress.html" 2>/dev/null || \
 					echo "  Failed to set standard httpd_sys_content_t context"
 				
 				# If restorecon is available, try that as well
 				if command -v restorecon >/dev/null 2>&1; then
-					restorecon -v "${docroot}/upgrade-in-progress.html" 2>/dev/null || true
+					restorecon -v "${docroot}/lucee-upgrade-in-progress.html" 2>/dev/null || true
 				fi
 			fi
 		fi
 	fi
 	
 	# Verify the file is readable
-	if [ ! -r "${docroot}/upgrade-in-progress.html" ]; then
-		echo "Error: ${docroot}/upgrade-in-progress.html is not readable. This may cause issues during upgrades."
+	if [ ! -r "${docroot}/lucee-upgrade-in-progress.html" ]; then
+		echo "Error: ${docroot}/lucee-upgrade-in-progress.html is not readable. This may cause issues during upgrades."
 	fi
 	
 }
@@ -1213,7 +1213,7 @@ configure_site_debian() {
 	echo ""
 	echo "Processing $domain with DocumentRoot: $docroot"
 	
-	# Copy upgrade-in-progress.html to DocumentRoot
+	# Copy lucee-upgrade-in-progress.html to DocumentRoot
 	copy_upgrade_html "$docroot"
 	
 	# Check if the SSL site in sites-enabled is a regular file (not a symlink)
@@ -1382,7 +1382,7 @@ configure_site_cpanel() {
 	# expected cPanel docroot: /home/user/public_html
 	user=$(echo "$docroot" | awk -F '/' '{print $3}')
 	
-	# Copy upgrade-in-progress.html to DocumentRoot
+	# Copy lucee-upgrade-in-progress.html to DocumentRoot
 	copy_upgrade_html "$docroot"
 	
 	# Create userdata directory
@@ -1502,7 +1502,7 @@ configure_site_redhat() {
 
 	echo "Processing RHEL site: $domain with DocumentRoot: $docroot"
 
-	# Copy upgrade-in-progress.html to DocumentRoot
+	# Copy lucee-upgrade-in-progress.html to DocumentRoot
 	copy_upgrade_html "$docroot"
 
 	# Locate SSL VirtualHost file containing ServerName and :443
