@@ -530,6 +530,8 @@ normalize_vhost_tags() {
 	fi
 }
 
+rm -f /var/lucee-upgrade-in-progress
+
 # append contents of lucee-proxy.conf to apache2.conf (without header comment)
 if [ -f "/etc/apache2/conf-available/lucee-proxy.conf" ]; then
 	# Skip the first line (header comment) when appending
