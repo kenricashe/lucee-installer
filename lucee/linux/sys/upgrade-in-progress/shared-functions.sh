@@ -14,6 +14,7 @@ ensure_default_exclusions_file() {
 #   path: /var/www/html/some-static-site
 
 # Common non-app / platform subdomains (cPanel, etc)
+localhost
 cpanel
 whm
 webmail
