@@ -326,4 +326,33 @@ for docroot in "${!DOCROOT_TO_DOMAINS[@]}"; do
 	fi
 done
 
+# Sort the results using temporary files (more memory-efficient for large datasets)
+echo ""
+echo "Sorting results..."
+
+# Create temporary files
+TMP_UNSORTED="$(mktemp)"
+TMP_SORTED="$(mktemp)"
+
+# Write domain and docroot pairs to temporary file
+for i in "${!RESULT_DOMAINS[@]}"; do
+	echo "${RESULT_DOMAINS[$i]}|${RESULT_DOCROOTS[$i]}" >> "$TMP_UNSORTED"
+done
+
+# Sort the temporary file (case-insensitive)
+sort -f "$TMP_UNSORTED" > "$TMP_SORTED"
+
+# Clear the original arrays
+RESULT_DOMAINS=()
+RESULT_DOCROOTS=()
+
+# Read back the sorted data
+while IFS='|' read -r domain docroot || [ -n "$domain" ]; do
+	RESULT_DOMAINS+=("$domain")
+	RESULT_DOCROOTS+=("$docroot")
+done < "$TMP_SORTED"
+
+# Clean up temporary files
+rm -f "$TMP_UNSORTED" "$TMP_SORTED"
+
 write_results_noninteractive
