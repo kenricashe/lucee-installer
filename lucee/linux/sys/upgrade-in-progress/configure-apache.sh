@@ -195,7 +195,11 @@ add_site_include_to_vhost() {
 		}
 	' "$vhost_file" > "$tmp"
 	if [ $? -eq 0 ]; then
+		# Preserve original permissions before overwriting
+		local orig_perms
+		orig_perms=$(stat -c %a "$vhost_file" 2>/dev/null || echo "644")
 		mv -f "$tmp" "$vhost_file"
+		chmod "$orig_perms" "$vhost_file" 2>/dev/null || chmod 644 "$vhost_file"
 		return 0
 	else
 		rm -f "$tmp"
@@ -595,7 +599,11 @@ ensure_include_in_vhost() {
 		}
 	' "$vhost_file" > "$tmp"
 	if [ $? -eq 0 ]; then
+		# Preserve original permissions before overwriting
+		local orig_perms
+		orig_perms=$(stat -c %a "$vhost_file" 2>/dev/null || echo "644")
 		mv -f "$tmp" "$vhost_file"
+		chmod "$orig_perms" "$vhost_file" 2>/dev/null || chmod 644 "$vhost_file"
 	else
 		rm -f "$tmp"
 		return 1
