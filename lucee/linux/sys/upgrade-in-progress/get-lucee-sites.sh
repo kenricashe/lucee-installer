@@ -225,19 +225,75 @@ write_results_noninteractive() {
 	local i
 	echo "" 
 	echo "Saving results ..."
-	> "$TXTPATH_ALL_DATA"
-	> "$TXTPATH_ONLY_DOMAINS"
+	
+	# Start with empty files
+	: > "$TXTPATH_ALL_DATA"
+	: > "$TXTPATH_ONLY_DOMAINS"
+	
+	# Create temporary files for sorted data
+	local tmp_all="$(mktemp)"
+	local tmp_domains="$(mktemp)"
+	
+	# Write data to temporary files
 	for (( i=0; i<${#RESULT_DOMAINS[@]}; i++ )); do
 		local d="${RESULT_DOMAINS[$i]}"
 		local r="${RESULT_DOCROOTS[$i]}"
 		if [ -n "$d" ] && [ -n "$r" ]; then
-			echo "$d $r" >> "$TXTPATH_ALL_DATA"
-			echo "$d" >> "$TXTPATH_ONLY_DOMAINS"
+			echo "$d $r" >> "$tmp_all"
+			echo "$d" >> "$tmp_domains"
 		fi
 	done
-	echo "" >> "$TXTPATH_ALL_DATA"
-	echo "" >> "$TXTPATH_ONLY_DOMAINS"
-
+	
+	# Sort the data
+	sort -f "$tmp_all" > "$tmp_all.sorted"
+	sort -f "$tmp_domains" > "$tmp_domains.sorted"
+	
+	# Write sorted data to files with no trailing newlines
+	: > "$TXTPATH_ALL_DATA"
+	: > "$TXTPATH_ONLY_DOMAINS"
+	
+	# Count lines in sorted files
+	local all_count=$(wc -l < "$tmp_all.sorted")
+	local domains_count=$(wc -l < "$tmp_domains.sorted")
+	
+	# Process each line individually to ensure proper formatting
+	if [ "$all_count" -gt 0 ]; then
+		local line_num=0
+		while IFS= read -r line; do
+			line_num=$((line_num+1))
+			if [ "$line_num" -lt "$all_count" ]; then
+				echo "$line" >> "$TXTPATH_ALL_DATA"
+			else
+				# Last line - no newline
+				printf "%s" "$line" >> "$TXTPATH_ALL_DATA"
+			fi
+		done < "$tmp_all.sorted"
+		# Add exactly one newline at the end
+		printf "\n" >> "$TXTPATH_ALL_DATA"
+	fi
+	
+	if [ "$domains_count" -gt 0 ]; then
+		local line_num=0
+		while IFS= read -r line; do
+			line_num=$((line_num+1))
+			if [ "$line_num" -lt "$domains_count" ]; then
+				echo "$line" >> "$TXTPATH_ONLY_DOMAINS"
+			else
+				# Last line - no newline
+				printf "%s" "$line" >> "$TXTPATH_ONLY_DOMAINS"
+			fi
+		done < "$tmp_domains.sorted"
+		# Add exactly one newline at the end
+		printf "\n" >> "$TXTPATH_ONLY_DOMAINS"
+	fi
+	
+	# Clean up additional temporary files
+	rm -f "$tmp_all.sorted" "$tmp_domains.sorted"
+	
+	# Clean up temporary files
+	rm -f "$tmp_all" "$tmp_domains"
+	
+	# Display file info
 	echo ""
 	echo "$TXTPATH_ALL_DATA"
 	echo ""
