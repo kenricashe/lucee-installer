@@ -320,6 +320,20 @@ remove_site_includes() {
 	local conf_file="$1"
 	[ -f "$conf_file" ] || return 0
 	
+	# Source ENVIRONMENT.sh to get directory variables
+	local script_dir
+	script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+	[ -f "$script_dir/ENVIRONMENT.sh" ] && source "$script_dir/ENVIRONMENT.sh"
+	
+	# Extract domain and port from conf file name
+	local domain port
+	domain=$(basename "$conf_file" | sed -E 's/^([^_]+)(_[0-9]+)?\.conf$/\1/')
+	port=$(basename "$conf_file" | grep -oE '_[0-9]+' | tr -d '_' || echo "80")
+	
+	# Remove the actual include files from both new and legacy directories
+	[ -n "$SITE_INCLUDES_404_DIR" ] && rm -f "${SITE_INCLUDES_404_DIR}/${domain}-${port}.conf" 2>/dev/null
+	[ -n "$SITE_INCLUDES_LEGACY_DIR" ] && rm -f "${SITE_INCLUDES_LEGACY_DIR}/${domain}-${port}.conf" 2>/dev/null
+	
 	local tmp
 	tmp=$(mktemp)
 	
@@ -345,8 +359,8 @@ remove_site_includes() {
 			next
 		}
 		
-		# Check for Include lines for per-site includes
-		/^[[:space:]]*Include[[:space:]]+\/opt\/lucee\/sys\/upgrade-in-progress\/sites\/.*\.conf/ {
+		# Check for Include lines for per-site includes (both new and legacy paths)
+		/^[[:space:]]*Include[[:space:]]+\/opt\/lucee\/sys\/upgrade-in-progress\/(sites|site-includes-for-404)\/.*\.conf/ {
 			# Skip this line and mark to skip the next blank line
 			skip_next_blank = 1
 			next

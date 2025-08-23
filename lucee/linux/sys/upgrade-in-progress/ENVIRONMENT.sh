@@ -48,6 +48,10 @@ LIB_DIR="$(cd -P "$(dirname "$LIB_PATH")" && pwd)"
 LUCEE_ROOT="$(cd "$LIB_DIR/../.." && pwd)"
 LUCEE_ROOT="${LUCEE_ROOT%/}"
 UPG_DIR="${LUCEE_ROOT}/sys/upgrade-in-progress"
+# Directory for site-specific 404 handler includes
+SITE_INCLUDES_404_DIR="${UPG_DIR}/site-includes-for-404"
+# Legacy directory (for backward compatibility)
+SITE_INCLUDES_LEGACY_DIR="${UPG_DIR}/sites"
 SITES_FILE="${UPG_DIR}/sites-configured.txt"
 EXCLUSIONS_FILE="${UPG_DIR}/site-exclusions.txt"
 # Determine sudo prefix for privileged actions
