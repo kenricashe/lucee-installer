@@ -572,7 +572,7 @@ if [ -d "/etc/apache2/sites-available" ]; then
 fi
 
 # Remove per-site include files directories if they exist
-for include_dir in "/opt/lucee/sys/site-includes" "/opt/lucee/sys/upgrade-in-progress/sites"; do
+for include_dir in "/opt/lucee/sys/upgrade-in-progress/site-includes-for-404"; do
 	if [ -d "$include_dir" ]; then
 		echo ""
 		echo "Removing per-site include files from $include_dir..."
