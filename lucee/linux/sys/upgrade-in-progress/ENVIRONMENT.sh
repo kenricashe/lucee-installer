@@ -262,7 +262,6 @@ apache_graceful_reload() {
 	esac
 }
 
-
 # cPanel-specific rebuild httpd.conf + graceful restart
 apache_cpanel_graceful_restart() {
 	
