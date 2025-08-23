@@ -59,6 +59,24 @@ backup_file() {
 	[ -f "$dest" ]
 }
 
+backup_folder() {
+	local src="$1"
+	
+	# Set backup variables if not already set
+	: ${BACKUP_ROOT:="${UPG_DIR}/backups"}
+	: ${BACKUP_TS:="$(date +%Y-%m-%d-%H%M%S)"}
+	
+	local dest_dir
+	dest_dir="${BACKUP_ROOT}/${BACKUP_TS}${src}"
+	mkdir -p "$dest_dir"
+	
+	# Copy contents of source directory to destination
+	cp -rf "$src/"* "$dest_dir/" 2>/dev/null || true
+	
+	# Return success if backup was created
+	[ -d "$dest_dir" ]
+}
+
 # Helper function to strip all trailing newlines from a string
 # Returns the cleaned string via echo
 strip_trailing_newlines() {

@@ -334,7 +334,10 @@ remove_site_includes() {
 	port=$(basename "$conf_file" | grep -oE '_[0-9]+' | tr -d '_' || echo "80")
 	
 	# Remove the actual include files
-	[ -n "$SITE_INCLUDES_404_DIR" ] && rm -f "${SITE_INCLUDES_404_DIR}/${domain}-${port}.conf" 2>/dev/null
+	if [ -n "$SITE_INCLUDES_404_DIR" ] && [ -f "${SITE_INCLUDES_404_DIR}/${domain}-${port}.conf" ]; then
+		backup_file "${SITE_INCLUDES_404_DIR}/${domain}-${port}.conf"
+		rm -f "${SITE_INCLUDES_404_DIR}/${domain}-${port}.conf" 2>/dev/null
+	fi
 	
 	local tmp
 	tmp=$(mktemp)
@@ -574,7 +577,8 @@ fi
 for include_dir in "/opt/lucee/sys/upgrade-in-progress/site-includes-for-404"; do
 	if [ -d "$include_dir" ]; then
 		echo ""
-		echo "Removing per-site include files from $include_dir..."
+		echo "Backing up then removing per-site include files from $include_dir..."
+		backup_folder "$include_dir"
 		rm -rf "$include_dir"
 	fi
 done
