@@ -2,9 +2,9 @@
 
 # One-shot installer to deploy the Upgrade-In-Progress toolkit into /opt/lucee/sys/...
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/main/lucee/linux/sys/upgrade-in-progress/install.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/master/lucee/linux/sys/upgrade-in-progress/install.sh | sudo bash
 # Optional env vars:
-#   OWNER=kenricashe REPO=lucee-installer REF=main
+#   OWNER=kenricashe REPO=lucee-installer REF=master
 
 # require root
 if [ "$(id -u)" != "0" ]; then
@@ -14,7 +14,7 @@ fi
 
 OWNER=${OWNER:-kenricashe}
 REPO=${REPO:-lucee-installer}
-REF=${REF:-main}
+REF=${REF:-master}
 
 TARBALL_URL="https://codeload.github.com/${OWNER}/${REPO}/tar.gz/refs/heads/${REF}"
 TMPDIR=$(mktemp -d)
