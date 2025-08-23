@@ -128,7 +128,7 @@ configure_site_includes() {
 }
 
 # Check if a per-site include already exists for the given domain and port
-has_site_include() {
+has_site_include_file_for_404() {
 	local domain="$1"
 	local port="$2"
 	local include_file="${SITE_INCLUDES_404_DIR}/${domain}-${port}.conf"
@@ -1214,7 +1214,7 @@ configure_site_debian() {
 		echo "  Updating $ssl_conf_file"
 		
 		# Check if per-site include already exists
-		if has_site_include "$domain" "443"; then
+		if has_site_include_file_for_404 "$domain" "443"; then
 			echo "  Per-site include already exists for ${domain}:443; ensuring vhost includes it"
 			add_include_404_to_vhost "$ssl_conf_file" "$domain" "443"
 			ensure_include_detect_upgrade_in_vhost "$ssl_conf_file" "$domain" "443"
@@ -1272,7 +1272,7 @@ configure_site_debian() {
 		echo "  Updating $http_conf_file"
 		
 		# Check if per-site include already exists
-		if has_site_include "$domain" "80"; then
+		if has_site_include_file_for_404 "$domain" "80"; then
 			echo "  Per-site include already exists for ${domain}:80; ensuring vhost includes it"
 			add_include_404_to_vhost "$http_conf_file" "$domain" "80"
 			ensure_include_detect_upgrade_in_vhost "$http_conf_file" "$domain" "80"
@@ -1331,7 +1331,7 @@ configure_site_debian() {
 
 	# Final normalization: if per-site includes exist and .htaccess still has any 404s, comment them out
 	if [ -f "$docroot/.htaccess" ] && grep -qiE "$ANY404_REGEX" "$docroot/.htaccess"; then
-		if has_site_include "$domain" "443" || has_site_include "$domain" "80"; then
+		if has_site_include_file_for_404 "$domain" "443" || has_site_include_file_for_404 "$domain" "80"; then
 			echo "  Commenting out 404 ErrorDocument in $docroot/.htaccess and adding note"
 			backup_file "$docroot/.htaccess"
 			comment_all_404_lines "$docroot/.htaccess"
@@ -1357,7 +1357,7 @@ configure_site_cpanel() {
 	mkdir -p ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}
 
 	# Check if per-site includes already exist
-	if has_site_include "$domain" "443" && has_site_include "$domain" "80"; then
+	if has_site_include_file_for_404 "$domain" "443" && has_site_include_file_for_404 "$domain" "80"; then
 		echo "  Per-site includes already exist for ${domain}; updating userdata files"
 	else
 		# Extract 404 block from existing userdata or .htaccess if site had one previously
@@ -1490,7 +1490,7 @@ configure_site_redhat() {
 		echo "  Updating $ssl_conf_file (SSL vhost)"
 		
 		# Check if per-site include already exists
-		if has_site_include "$domain" "443"; then
+		if has_site_include_file_for_404 "$domain" "443"; then
 			echo "  Per-site include already exists for ${domain}:443; ensuring vhost includes it"
 			add_include_404_to_vhost "$ssl_conf_file" "$domain" "443"
 			ensure_include_detect_upgrade_in_vhost "$ssl_conf_file" "$domain" "443"
@@ -1552,7 +1552,7 @@ configure_site_redhat() {
 		echo "  Updating $http_conf_file (HTTP vhost)"
 		
 		# Check if per-site include already exists
-		if has_site_include "$domain" "80"; then
+		if has_site_include_file_for_404 "$domain" "80"; then
 			echo "  Per-site include already exists for ${domain}:80; ensuring vhost includes it"
 			add_include_404_to_vhost "$http_conf_file" "$domain" "80"
 			ensure_include_detect_upgrade_in_vhost "$http_conf_file" "$domain" "80"
@@ -1607,7 +1607,7 @@ configure_site_redhat() {
 
 	# Final normalization: if per-site includes exist and .htaccess still has any 404s, comment them out
 	if [ -f "$docroot/.htaccess" ] && grep -qiE "$ANY404_REGEX" "$docroot/.htaccess"; then
-		if has_site_include "$domain" "443" || has_site_include "$domain" "80"; then
+		if has_site_include_file_for_404 "$domain" "443" || has_site_include_file_for_404 "$domain" "80"; then
 			echo "  Commenting out 404 ErrorDocument in $docroot/.htaccess and adding note"
 			backup_file "$docroot/.htaccess"
 			comment_all_404_lines "$docroot/.htaccess"
