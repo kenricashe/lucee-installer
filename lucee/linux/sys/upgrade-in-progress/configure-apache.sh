@@ -12,8 +12,8 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/shared-functions.sh"
 
-# Execute:
-# sudo /opt/lucee/sys/upgrade-in-progress/configure-apache.sh
+# Set backup timestamp for this run to keep all backups in the same directory
+BACKUP_TS="$(date +%Y-%m-%d-%H%M%S)"
 
 # require root
 if [ "$(id -u)" != "0" ]; then

@@ -10,6 +10,9 @@ fi
 SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd)"
 . "${SCRIPT_DIR}/ENVIRONMENT.sh"
 
+# Set backup timestamp for this run to keep all backups in the same directory
+BACKUP_TS="$(date +%Y-%m-%d-%H%M%S)"
+
 # Source shared functions
 . "${SCRIPT_DIR}/shared-functions.sh"
 

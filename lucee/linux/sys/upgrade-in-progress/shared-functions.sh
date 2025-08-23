@@ -46,6 +46,10 @@ backup_file() {
 	: ${BACKUP_TS:="$(date +%Y-%m-%d-%H%M%S)"}
 	
 	local dest="${BACKUP_ROOT}/${BACKUP_TS}${src}"
+	
+	# Skip if backup already exists for this timestamp
+	[ -f "$dest" ] && return 0
+	
 	local dest_dir
 	dest_dir=$(dirname "$dest")
 	mkdir -p "$dest_dir"
