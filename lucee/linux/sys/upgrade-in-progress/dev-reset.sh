@@ -223,48 +223,6 @@ revert_vhost_changes() {
 	fi
 }
 
-# Function to remove legacy inlined blocks from .conf files
-remove_legacy_inlined_blocks() {
-	local conf_file="$1"
-	[ -f "$conf_file" ] || return 0
-	
-	local tmp
-	tmp=$(mktemp)
-	
-	# Remove entire legacy inlined blocks
-	awk '
-		BEGIN { in_legacy_block=0 }
-		
-		# Start of legacy block
-		/^# Begin inlined legacy:.*lucee-404-routing\.conf/ {
-			in_legacy_block=1
-			next
-		}
-		
-		# End of legacy block
-		/^# End inlined legacy/ && in_legacy_block {
-			in_legacy_block=0
-			next
-		}
-		
-		# Skip lines inside legacy block
-		in_legacy_block { next }
-		
-		# Print all other lines
-		{ print }
-	' "$conf_file" > "$tmp"
-	
-	if [ $? -eq 0 ]; then
-		# Preserve original permissions before overwriting
-		local orig_perms
-		orig_perms=$(stat -c %a "$conf_file" 2>/dev/null || echo "644")
-		mv "$tmp" "$conf_file"
-		chmod "$orig_perms" "$conf_file" 2>/dev/null || chmod 644 "$conf_file"
-	else
-		rm -f "$tmp"
-	fi
-}
-
 # Function to remove ErrorDocument 404 /404.cfm lines and preceding comments/empty lines
 remove_errordocument_404() {
 	local conf_file="$1"
@@ -364,8 +322,8 @@ remove_site_includes() {
 			next
 		}
 		
-		# Check for Include lines for per-site includes (both new and legacy paths)
-		/^[[:space:]]*Include[[:space:]]+\/opt\/lucee\/sys\/upgrade-in-progress\/(sites|site-includes-for-404)\/.*\.conf/ {
+		# Check for Include lines for per-site includes
+		/^[[:space:]]*Include[[:space:]]+\/opt\/lucee\/sys\/upgrade-in-progress\/site-includes-for-404\/.*\.conf/ {
 			# Skip this line and mark to skip the next blank line
 			skip_next_blank = 1
 			next
@@ -590,7 +548,6 @@ for conf_file in /etc/apache2/sites-available/*.conf; do
 	if [ -f "$conf_file" ]; then
 		echo ""
 		echo "  Processing $(basename "$conf_file")"
-		remove_legacy_inlined_blocks "$conf_file"
 		remove_duplicate_ifdefine_blocks "$conf_file"
 		revert_vhost_changes "$conf_file"
 		remove_errordocument_404 "$conf_file"
@@ -603,11 +560,6 @@ for conf_file in /etc/apache2/sites-available/*.conf; do
 		# Extract DocumentRoot and process files
 		docroot=$(grep -i '^[[:space:]]*DocumentRoot' "$conf_file" | head -1 | awk '{print $2}' | tr -d '"')
 		if [ -n "$docroot" ]; then
-			# Remove legacy upgrade-in-progress.html
-			if [ -f "${docroot}/upgrade-in-progress.html" ]; then
-				echo "  Removing legacy ${docroot}/upgrade-in-progress.html"
-				rm -f "${docroot}/upgrade-in-progress.html"
-			fi
 			# Remove lucee-upgrade-in-progress.html
 			if [ -f "${docroot}/lucee-upgrade-in-progress.html" ]; then
 				echo "  Removing ${docroot}/lucee-upgrade-in-progress.html"
