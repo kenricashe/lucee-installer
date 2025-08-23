@@ -17,7 +17,7 @@ THISPATH=$(dirname "$0")
 FILES=(
 	"get-lucee-sites.sh"
 	"configure-apache.sh"
-	"get-env.sh"
+	"ENVIRONMENT.sh"
 	"menu.sh"
 	"begin.sh"
 	"end.sh"

@@ -10,7 +10,7 @@ fi
 
 # Source shared helper for LUCEE_ROOT, UPG_DIR, IS_CPANEL
 SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd)"
-. "${SCRIPT_DIR}/get-env.sh"
+. "${SCRIPT_DIR}/ENVIRONMENT.sh"
 . "${SCRIPT_DIR}/shared-functions.sh"
 
 TXTPATH_ALL_DATA="${UPG_DIR}/sites-configured.txt"

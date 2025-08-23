@@ -2,7 +2,7 @@
 
 # Source shared helper for IS_CPANEL (LUCEE_ROOT/UPG_DIR not needed here)
 SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd)"
-. "${SCRIPT_DIR}/get-env.sh"
+. "${SCRIPT_DIR}/ENVIRONMENT.sh"
 . "${SCRIPT_DIR}/shared-functions.sh"
 
 # require root
@@ -11,7 +11,7 @@ if [ "$(id -u)" != "0" ]; then
 	exit 1
 fi
 
-# check_apache_configured function is now in get-env.sh
+# check_apache_configured function is now in ENVIRONMENT.sh
 
 # preflight: check if Apache has been configured for upgrade-in-progress
 if ! check_apache_configured; then

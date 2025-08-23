@@ -5,7 +5,7 @@
 
 # Determine script directory and source shared env
 SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-. "${SCRIPT_DIR}/get-env.sh"
+. "${SCRIPT_DIR}/ENVIRONMENT.sh"
 . "${SCRIPT_DIR}/shared-functions.sh"
 
 run_edit_exclusions() {

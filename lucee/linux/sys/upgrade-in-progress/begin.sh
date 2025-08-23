@@ -8,7 +8,7 @@ fi
 
 # Source shared helper for LUCEE_ROOT, UPG_DIR, IS_CPANEL
 SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd)"
-. "${SCRIPT_DIR}/get-env.sh"
+. "${SCRIPT_DIR}/ENVIRONMENT.sh"
 . "${SCRIPT_DIR}/shared-functions.sh"
 
 # preflight: ensure detect include exists at the deployed UPG_DIR
@@ -26,7 +26,7 @@ if ! check_apache_configured; then
 	exit 1
 fi
 
-# IS_CPANEL is provided by get-env.sh
+# IS_CPANEL is provided by ENVIRONMENT.sh
 
 # The flag file is referenced by cron jobs, etc, to abort during 
 # Lucee upgrade (just before or after Lucee is stopped).

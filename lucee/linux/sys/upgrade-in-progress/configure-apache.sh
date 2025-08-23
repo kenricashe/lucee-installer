@@ -22,7 +22,7 @@ if [ "$(id -u)" != "0" ]; then
 fi
 
 SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd)"
-. "${SCRIPT_DIR}/get-env.sh"
+. "${SCRIPT_DIR}/ENVIRONMENT.sh"
 
 # preflight: check that required Apache modules are enabled
 # mod_proxy, mod_setenvif, mod_headers
@@ -314,13 +314,13 @@ if [ ! -f "$SITES_FILE" ]; then
 	clear
 fi
 
-# cPanel userdata paths (IS_CPANEL provided by get-env.sh)
+# cPanel userdata paths (IS_CPANEL provided by ENVIRONMENT.sh)
 if [ "$IS_CPANEL" = true ]; then
 	CPANEL_USERDATA_SSL_PATH="${CONF_DIR}/userdata/ssl/2_4"
 	CPANEL_USERDATA_STD_PATH="${CONF_DIR}/userdata/std/2_4"
 fi
 
-# Apache config test helper: uses APACHE_CONTROLLER from get-env.sh
+# Apache config test helper: uses APACHE_CONTROLLER from ENVIRONMENT.sh
 apache_config_test() {
 	echo ""
 	echo "Testing Apache configuration ..."
@@ -571,7 +571,7 @@ ensure_include_in_vhost() {
 }
 
 # Check if mod_headers is enabled (needed for X-Lucee-Upgrade header polling)
-# Uses APACHE_CONTROLLER from get-env.sh
+# Uses APACHE_CONTROLLER from ENVIRONMENT.sh
 headers_module_enabled() {
 	case "$APACHE_CONTROLLER" in
 		apache2)

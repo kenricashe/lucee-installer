@@ -8,7 +8,7 @@ fi
 
 # Source shared helper for LUCEE_ROOT, UPG_DIR, IS_CPANEL
 SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd)"
-. "${SCRIPT_DIR}/get-env.sh"
+. "${SCRIPT_DIR}/ENVIRONMENT.sh"
 
 # Source shared functions
 . "${SCRIPT_DIR}/shared-functions.sh"
@@ -549,9 +549,7 @@ disable_and_remove_conf "lucee-upgrade-in-progress"
 echo "Normalizing whitespace in Apache vhost configuration files..."
 if [ -d "/etc/apache2/sites-available" ]; then
 	find "/etc/apache2/sites-available" -type f -name "*.conf" | while read -r vhost_file; do
-		echo ""
-		echo "Processing $vhost_file"
-		echo "  - Normalize whitespace (trim trailing spaces, collapse blank lines, ensure single trailing newline)"
+		echo "  Processing $vhost_file"
 		normalize_vhost_whitespace "$vhost_file"
 	done
 fi
@@ -605,7 +603,7 @@ for conf_file in /etc/apache2/sites-available/*.conf; do
 done
 
 echo ""
-# apache_reload() is globally sourced from get-env.sh
+# apache_reload() is globally sourced from ENVIRONMENT.sh
 apache_reload
 echo ""
 echo "DEV reset complete!"
