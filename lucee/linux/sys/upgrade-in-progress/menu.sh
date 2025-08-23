@@ -86,7 +86,6 @@ run_edit_ip_allow() {
 			echo "# Use the menu.sh script to modify this file."
 			echo "# ==========================================="
 			echo "<IfModule mod_setenvif.c>"
-			# No IPs configured
 			printf "\t# No IPs currently allowed to bypass upgrade\n"
 			echo "</IfModule>"
 		} > "$TMP_CONF"
