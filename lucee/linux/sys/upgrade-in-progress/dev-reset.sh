@@ -333,9 +333,8 @@ remove_site_includes() {
 	domain=$(basename "$conf_file" | sed -E 's/^([^_]+)(_[0-9]+)?\.conf$/\1/')
 	port=$(basename "$conf_file" | grep -oE '_[0-9]+' | tr -d '_' || echo "80")
 	
-	# Remove the actual include files from both new and legacy directories
+	# Remove the actual include files
 	[ -n "$SITE_INCLUDES_404_DIR" ] && rm -f "${SITE_INCLUDES_404_DIR}/${domain}-${port}.conf" 2>/dev/null
-	[ -n "$SITE_INCLUDES_LEGACY_DIR" ] && rm -f "${SITE_INCLUDES_LEGACY_DIR}/${domain}-${port}.conf" 2>/dev/null
 	
 	local tmp
 	tmp=$(mktemp)
