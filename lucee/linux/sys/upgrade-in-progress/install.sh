@@ -1,10 +1,15 @@
 #!/bin/bash
 
 # One-shot installer to deploy the Upgrade-In-Progress toolkit into /opt/lucee/sys/...
+
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/master/lucee/linux/sys/upgrade-in-progress/install.sh | sudo bash
+
 # Optional env vars:
 #   OWNER=kenricashe REPO=lucee-installer REF=master
+
+# Example QA test of dev branch:
+# REF=feature/upgrade-in-progress-apache curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/feature/upgrade-in-progress-apache/lucee/linux/sys/upgrade-in-progress/install.sh | sudo bash
 
 # require root
 if [ "$(id -u)" != "0" ]; then
