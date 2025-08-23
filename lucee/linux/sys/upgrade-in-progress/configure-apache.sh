@@ -50,7 +50,7 @@ extract_404_line_from_block() {
 }
 
 # Generate per-site include file with conditional ErrorDocument block
-generate_site_include() {
+generate_site_404_include() {
 	local domain="$1"
 	local port="$2"
 	local error_block="$3"
@@ -70,33 +70,22 @@ generate_site_include() {
 <IfDefine !LUCEE_UPGRADE_IN_PROGRESS>
 EOF
 
-	# If we have a CF-specific 404 block, add it
-	if [ -n "$error_block" ]; then
-		local error_line
-		error_line=$(extract_404_line_from_block "$error_block" || true)
-		if [ -n "$error_line" ]; then
-			append_with_single_newline $'\t'"$error_line" "$include_file"
-		fi
-		
-		# Add closing sections
-		cat >> "$include_file" << EOF
-</IfDefine>
-
-<IfDefine LUCEE_UPGRADE_IN_PROGRESS>
-	# During upgrade mode, all 404s are handled by the main include
-</IfDefine>
-EOF
-	else
-		# No CF-specific 404 block, just close the IfDefine
-		cat >> "$include_file" << EOF
-	# No CF-specific 404 handler found
-</IfDefine>
-
-<IfDefine LUCEE_UPGRADE_IN_PROGRESS>
-	# During upgrade mode, all 404s are handled by the main include
-</IfDefine>
-EOF
+	# Add ErrorDocument 404 line if it exists
+	local error_line
+	error_line=$(extract_404_line_from_block "$error_block" || true)
+	if [ -n "$error_line" ]; then
+		append_with_single_newline $'\t'"$error_line" "$include_file"
 	fi
+	
+	# Add closing sections
+	cat >> "$include_file" << EOF
+</IfDefine>
+
+<IfDefine LUCEE_UPGRADE_IN_PROGRESS>
+	# Set flag to indicate this site has a Lucee 404 handler
+	Define LUCEE_SITE_HAS_CF_404
+</IfDefine>
+EOF
 	
 	# Normalize whitespace in the generated files
 	normalize_conf_whitespace "$include_file"
@@ -113,13 +102,13 @@ configure_site_includes() {
 	local port="$2"
 	local conf_file="$3"
 	local docroot="$4"
-	local error_block="$5"
+	local error_404_block="$5"
 	local from_htaccess="$6"
 	
 	# Only generate per-site include file if we have a CF 404 block
-	if [ -n "$error_block" ]; then
+	if [ -n "$error_404_block" ]; then
 		# Generate the include file with the 404 block
-		generate_site_include "$domain" "$port" "$error_block"
+		generate_site_404_include "$domain" "$port" "$error_404_block"
 		
 		# Comment out original 404s
 		backup_file "$conf_file"
@@ -1407,8 +1396,8 @@ configure_site_cpanel() {
 		
 		# Generate per-site include files if we have a 404 block
 		if [ -n "$cp_404_block" ]; then
-			generate_site_include "$domain" "443" "$cp_404_block"
-			generate_site_include "$domain" "80" "$cp_404_block"
+			generate_site_404_include "$domain" "443" "$cp_404_block"
+			generate_site_404_include "$domain" "80" "$cp_404_block"
 			
 			# Comment out original 404s after successful include generation
 			if [ "$cp_from_htaccess" = "true" ]; then
