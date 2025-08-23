@@ -83,6 +83,9 @@ EOF
 </IfDefine>
 
 <IfDefine LUCEE_UPGRADE_IN_PROGRESS>
+	# Set flag to indicate this site has a Lucee 404 handler
+	Define LUCEE_SITE_HAS_CF_404
+	
 	<If "env('LUCEE_UPGRADE_BYPASS') == '1'">
 		$error_line
 	</If>
