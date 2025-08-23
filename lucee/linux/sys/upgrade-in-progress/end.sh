@@ -3,6 +3,7 @@
 # Source shared helper for IS_CPANEL (LUCEE_ROOT/UPG_DIR not needed here)
 SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd)"
 . "${SCRIPT_DIR}/get-env.sh"
+. "${SCRIPT_DIR}/shared-functions.sh"
 
 # require root
 if [ "$(id -u)" != "0" ]; then
@@ -21,10 +22,8 @@ fi
 
 # Debian, Ubuntu, Pop!_OS, etc
 if [ "$IS_DEBIAN" = true ]; then
-	echo "Enabling lucee-proxy configuration..."
-	a2enconf lucee-proxy >/dev/null
-	echo "Disabling lucee-upgrade-in-progress configuration..."
-	a2disconf lucee-upgrade-in-progress >/dev/null
+	enable_conf lucee-proxy
+	disable_conf lucee-upgrade-in-progress
 	if ! apache_reload; then
 		echo "ERROR: Apache reload failed."
 		exit 1

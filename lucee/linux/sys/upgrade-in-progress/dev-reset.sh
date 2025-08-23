@@ -541,19 +541,17 @@ if [ -f "/etc/apache2/conf-available/lucee-proxy.conf" ]; then
 	cleanup_apache2_conf "/etc/apache2/apache2.conf"
 fi
 
-# disable and delete lucee-proxy.conf
-a2disconf lucee-proxy 2>/dev/null || true
-rm -f "/etc/apache2/conf-available/lucee-proxy.conf"
-
-# disable and delete lucee-upgrade-in-progress.conf
-a2disconf lucee-upgrade-in-progress 2>/dev/null || true
-rm -f "/etc/apache2/conf-available/lucee-upgrade-in-progress.conf"
+# Disable and delete configuration files
+disable_and_remove_conf "lucee-proxy"
+disable_and_remove_conf "lucee-upgrade-in-progress"
 
 # Normalize whitespace in all sites-available files
 echo "Normalizing whitespace in Apache vhost configuration files..."
 if [ -d "/etc/apache2/sites-available" ]; then
 	find "/etc/apache2/sites-available" -type f -name "*.conf" | while read -r vhost_file; do
-		echo "  Processing $vhost_file"
+		echo ""
+		echo "Processing $vhost_file"
+		echo "  - Normalize whitespace (trim trailing spaces, collapse blank lines, ensure single trailing newline)"
 		normalize_vhost_whitespace "$vhost_file"
 	done
 fi

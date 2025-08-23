@@ -239,56 +239,14 @@ write_results_noninteractive() {
 		local d="${RESULT_DOMAINS[$i]}"
 		local r="${RESULT_DOCROOTS[$i]}"
 		if [ -n "$d" ] && [ -n "$r" ]; then
-			echo "$d $r" >> "$tmp_all"
-			echo "$d" >> "$tmp_domains"
+			append_with_single_newline "$d $r" "$tmp_all"
+			append_with_single_newline "$d" "$tmp_domains"
 		fi
 	done
 	
-	# Sort the data
-	sort -f "$tmp_all" > "$tmp_all.sorted"
-	sort -f "$tmp_domains" > "$tmp_domains.sorted"
-	
-	# Write sorted data to files with no trailing newlines
-	: > "$TXTPATH_ALL_DATA"
-	: > "$TXTPATH_ONLY_DOMAINS"
-	
-	# Count lines in sorted files
-	local all_count=$(wc -l < "$tmp_all.sorted")
-	local domains_count=$(wc -l < "$tmp_domains.sorted")
-	
-	# Process each line individually to ensure proper formatting
-	if [ "$all_count" -gt 0 ]; then
-		local line_num=0
-		while IFS= read -r line; do
-			line_num=$((line_num+1))
-			if [ "$line_num" -lt "$all_count" ]; then
-				echo "$line" >> "$TXTPATH_ALL_DATA"
-			else
-				# Last line - no newline
-				printf "%s" "$line" >> "$TXTPATH_ALL_DATA"
-			fi
-		done < "$tmp_all.sorted"
-		# Add exactly one newline at the end
-		printf "\n" >> "$TXTPATH_ALL_DATA"
-	fi
-	
-	if [ "$domains_count" -gt 0 ]; then
-		local line_num=0
-		while IFS= read -r line; do
-			line_num=$((line_num+1))
-			if [ "$line_num" -lt "$domains_count" ]; then
-				echo "$line" >> "$TXTPATH_ONLY_DOMAINS"
-			else
-				# Last line - no newline
-				printf "%s" "$line" >> "$TXTPATH_ONLY_DOMAINS"
-			fi
-		done < "$tmp_domains.sorted"
-		# Add exactly one newline at the end
-		printf "\n" >> "$TXTPATH_ONLY_DOMAINS"
-	fi
-	
-	# Clean up additional temporary files
-	rm -f "$tmp_all.sorted" "$tmp_domains.sorted"
+	# Sort the data and write to files with proper newline at EOF
+	sort -f "$tmp_all" | awk 'BEGIN{ORS="";} {print $0 "\n"}' > "$TXTPATH_ALL_DATA"
+	sort -f "$tmp_domains" | awk 'BEGIN{ORS="";} {print $0 "\n"}' > "$TXTPATH_ONLY_DOMAINS"
 	
 	# Clean up temporary files
 	rm -f "$tmp_all" "$tmp_domains"
@@ -306,14 +264,10 @@ write_results_noninteractive() {
 
 # If previous results exist, back them up automatically
 if [ -f "$TXTPATH_ALL_DATA" ]; then
-	BACKUP_ROOT="${UPG_DIR}/backups"
-	BACKUP_TS="$(date +%Y-%m-%d-%H%M%S)"
-	BACKUP_DEST="${BACKUP_ROOT}/${BACKUP_TS}${TXTPATH_ALL_DATA}"
-	BACKUP_DIR="$(dirname "$BACKUP_DEST")"
-	mkdir -p "$BACKUP_DIR"
-	if cp -f "$TXTPATH_ALL_DATA" "$BACKUP_DEST"; then
+	# Use the shared backup_file function
+	if backup_file "$TXTPATH_ALL_DATA"; then
 		echo ""
-		echo "Existing file backed up to: $BACKUP_DEST"
+		echo "Existing file backed up successfully"
 	else
 		echo ""
 		echo "ERROR: Failed to back up existing file. Aborting."
@@ -392,7 +346,7 @@ TMP_SORTED="$(mktemp)"
 
 # Write domain and docroot pairs to temporary file
 for i in "${!RESULT_DOMAINS[@]}"; do
-	echo "${RESULT_DOMAINS[$i]}|${RESULT_DOCROOTS[$i]}" >> "$TMP_UNSORTED"
+	append_with_single_newline "${RESULT_DOMAINS[$i]}|${RESULT_DOCROOTS[$i]}" "$TMP_UNSORTED"
 done
 
 # Sort the temporary file (case-insensitive)

@@ -11,6 +11,9 @@ fi
 
 THISPATH=$(dirname "$0")
 
+# Source helpers for newline handling
+. "${THISPATH}/shared-functions.sh"
+
 FILES=(
 	"get-lucee-sites.sh"
 	"configure-apache.sh"
@@ -51,14 +54,6 @@ function copy_and_chmod() {
     local src="${THISPATH}/$1"
     local dst="${DEST_DIR}/$1"
     cp "$src" "$dst"
-    
-    # Ensure exactly one empty line at the end of the file
-    if [[ "$1" == *.conf || "$1" == *.html ]]; then
-        # Remove all trailing newlines first
-        sed -i -e :a -e '/^[[:space:]]*$/s/[[:space:]]*$//g' -e '/^$/N;/\n$/D' "$dst"
-        # Then add exactly one newline
-        echo "" >> "$dst"
-    fi
     
     if [[ "$1" == *.sh ]]; then
         chmod +x "$dst"

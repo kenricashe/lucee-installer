@@ -9,6 +9,7 @@ fi
 # Source shared helper for LUCEE_ROOT, UPG_DIR, IS_CPANEL
 SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd)"
 . "${SCRIPT_DIR}/get-env.sh"
+. "${SCRIPT_DIR}/shared-functions.sh"
 
 # preflight: ensure detect include exists at the deployed UPG_DIR
 DETECT_CONF="${UPG_DIR}/lucee-detect-upgrade.conf"
@@ -35,10 +36,8 @@ touch /var/lucee-upgrade-in-progress
 
 # Debian, Ubuntu, Pop!_OS, etc
 if [ "$IS_DEBIAN" = true ]; then
-	echo "Enabling lucee-upgrade-in-progress configuration..."
-	a2enconf lucee-upgrade-in-progress >/dev/null
-	echo "Disabling lucee-proxy configuration..."
-	a2disconf lucee-proxy >/dev/null
+	enable_conf lucee-upgrade-in-progress
+	disable_conf lucee-proxy
 	if ! apache_reload; then
 		exit 1
 	fi
