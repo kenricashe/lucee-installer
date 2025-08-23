@@ -1468,7 +1468,7 @@ configure_site_redhat() {
 	local domain=$1
 	local docroot=$2
 
-	echo "Processing RHEL site: $domain with DocumentRoot: $docroot"
+	echo "Processing site $domain with DocumentRoot: $docroot"
 
 	# Copy lucee-upgrade-in-progress.html to DocumentRoot
 	copy_upgrade_html "$docroot"
