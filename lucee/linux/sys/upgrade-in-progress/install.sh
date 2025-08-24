@@ -30,6 +30,7 @@ OWNER=${OWNER:-kenricashe}
 REPO=${REPO:-lucee-installer}
 REF=${REF:-master}
 
+echo ""
 echo "Using: OWNER=$OWNER REPO=$REPO REF=$REF"
 
 # Detect mismatch between REF and the branch referenced in the installer URL (if available)
@@ -47,9 +48,13 @@ for PID in "$PPID" "$$"; do
 done
 
 if [ -n "$SCRIPT_REF" ] && [ "$REF" != "$SCRIPT_REF" ]; then
+	echo ""
 	echo "WARNING: REF is '$REF' but installer URL branch appears to be '$SCRIPT_REF'."
+	echo ""
 	echo "This mismatch can cause a 404 when downloading the tarball."
+	echo ""
 	echo "Please set REF=$SCRIPT_REF or use an installer URL that points to the '$REF' branch."
+	echo ""
 	exit 1
 fi
 
