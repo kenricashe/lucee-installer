@@ -3,24 +3,16 @@
 # One-shot installer to deploy the Upgrade-In-Progress toolkit into /opt/lucee/sys/...
 
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/master/lucee/linux/sys/upgrade-in-progress/install.sh | sudo bash
 #
-# To use a specific branch/ref:
-#   curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/feature/branch-name/lucee/linux/sys/upgrade-in-progress/install.sh | sudo bash -s feature/branch-name
+# curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/master/lucee/linux/sys/upgrade-in-progress/install.sh | sudo bash
 #
-# Example:
-#   curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/feature/upgrade-in-progress-apache/lucee/linux/sys/upgrade-in-progress/install.sh | sudo bash -s feature/upgrade-in-progress-apache
+# Example with Lucee root path and branch name:
+# sudo LUCEE_ROOT=/opt/lucee REF=feature/branch-name bash -c 'curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/master/lucee/linux/sys/upgrade-in-progress/install.sh | bash'
 
 # require root
 if [ "$(id -u)" != "0" ]; then
 	echo "This script must be run as root"
 	exit 1
-fi
-
-# Check for command line arguments first (highest priority)
-if [ -n "$1" ]; then
-	REF="$1"
-	echo "Using REF=$REF from command line argument"
 fi
 
 # Extract the REF from the URL if it's not set
@@ -92,12 +84,22 @@ if [ ! -x "$SUBDIR/deploy-to-opt-lucee-sys.sh" ]; then
 	chmod +x "$SUBDIR/deploy-to-opt-lucee-sys.sh" 2>/dev/null || true
 fi
 
-# Prompt for Lucee root path
+# Check for Lucee root path from environment variable first
 DEFAULT_LUCEE_ROOT="/opt/lucee"
-read -r -p "Enter target Lucee root path [${DEFAULT_LUCEE_ROOT}]: " INPUT_LUCEE_ROOT
-LUCEE_ROOT="${INPUT_LUCEE_ROOT:-$DEFAULT_LUCEE_ROOT}"
 
-echo "Deploying to Lucee root: $LUCEE_ROOT"
+if [ -n "$LUCEE_ROOT" ]; then
+	# Environment variable provided
+	echo "Using LUCEE_ROOT from environment: $LUCEE_ROOT"
+elif [ -t 0 ]; then
+	# Interactive mode - prompt for Lucee root path
+	read -r -p "Enter target Lucee root path [${DEFAULT_LUCEE_ROOT}]: " INPUT_LUCEE_ROOT
+	LUCEE_ROOT="${INPUT_LUCEE_ROOT:-$DEFAULT_LUCEE_ROOT}"
+else
+	# Non-interactive mode (curl pipe) - use default and continue
+	LUCEE_ROOT="$DEFAULT_LUCEE_ROOT"
+	echo "Using default Lucee root path: $LUCEE_ROOT"
+fi
+
 exit 0
 
 # Execute the deployment script and capture its exit status
