@@ -23,6 +23,10 @@ if [ "$(id -u)" != "0" ]; then
 	exit 1
 fi
 
+# UPDATE THIS WITH EACH COMMIT
+echo ""
+echo "install.sh version: 2025-08-24 13:33:50 Pacific"
+
 OWNER=${OWNER:-kenricashe}
 REPO=${REPO:-lucee-installer}
 
@@ -82,124 +86,10 @@ if [ -z "$REF" ]; then
 fi
 REF=${REF:-master}
 
-# Show installer origin and headers to help detect CDN caching (when invoked via curl | bash)
-INSTALLER_URL=""
-for PID in "$PPID" "$$"; do
-	if [ -r "/proc/$PID/cmdline" ]; then
-		CMDLINE=$(tr '\0' ' ' < "/proc/$PID/cmdline" 2>/dev/null)
-		if [[ "$CMDLINE" == *"/raw.githubusercontent.com/"* ]]; then
-			INSTALLER_URL=$(printf '%s\n' "$CMDLINE" | sed -n 's|.*\(https://raw.githubusercontent.com/[^ ]*\).*|\1|p' | head -n1)
-			if [ -n "$INSTALLER_URL" ]; then
-				break
-			fi
-		fi
-	fi
-done
-
-# Fallback: search across all processes (useful for curl | sudo bash pipelines)
-if [ -z "$INSTALLER_URL" ]; then
-	for PROC in /proc/[0-9]*/cmdline; do
-		if [ -r "$PROC" ]; then
-			CMDLINE=$(tr '\0' ' ' < "$PROC" 2>/dev/null)
-			if [[ "$CMDLINE" == *"/raw.githubusercontent.com/"* ]] && [[ "$CMDLINE" == *"/lucee/linux/sys/upgrade-in-progress/install.sh"* ]]; then
-				CANDIDATE_URL=$(printf '%s\n' "$CMDLINE" | sed -n 's|.*\(https://raw.githubusercontent.com/[^ ]*\).*|\1|p' | head -n1)
-				if [ -n "$CANDIDATE_URL" ]; then
-					INSTALLER_URL="$CANDIDATE_URL"
-					break
-				fi
-			fi
-		fi
-	done
-fi
-
-# Prefer SOURCE_URL for header diagnostics if provided
-if [ -n "$SOURCE_URL" ] && [[ "$SOURCE_URL" == *"/raw.githubusercontent.com/"* ]]; then
-	INSTALLER_URL="$SOURCE_URL"
-fi
-
-RAW_URL_DERIVED="https://raw.githubusercontent.com/$OWNER/$REPO/$REF/lucee/linux/sys/upgrade-in-progress/install.sh"
-
-echo ""
-if [ -n "$INSTALLER_URL" ]; then
-	echo "Installer URL (detected): $INSTALLER_URL"
-	HEADERS=""
-	if HEADERS=$(curl -sIL "$INSTALLER_URL" 2>/dev/null); then
-		:
-	else
-		echo "Failed to retrieve headers for $INSTALLER_URL"
-	fi
-	if [ -n "$HEADERS" ]; then
-		LM=$(printf '%s\n' "$HEADERS" | awk -F': *' 'tolower($1)=="last-modified"{print $2}' | tr -d '\r')
-		ET=$(printf '%s\n' "$HEADERS" | awk -F': *' 'tolower($1)=="etag"{print $2}' | tr -d '\r')
-		if [ -n "$LM" ]; then
-			echo "Installer Last-Modified: $LM"
-		fi
-		if [ -n "$ET" ]; then
-			echo "Installer ETag: $ET"
-		fi
-		if [ -z "$LM" ] && [ -z "$ET" ]; then
-			echo "Installer response headers:" 
-			printf '%s\n' "$HEADERS"
-		fi
-	else
-		echo "No headers received for $INSTALLER_URL"
-	fi
-
-	if [ "$INSTALLER_URL" != "$RAW_URL_DERIVED" ]; then
-		echo ""
-		echo "Derived URL (from OWNER/REPO/REF): $RAW_URL_DERIVED"
-		HEADERS2=""
-		if HEADERS2=$(curl -sIL "$RAW_URL_DERIVED" 2>/dev/null); then
-			:
-		else
-			echo "Failed to retrieve headers for $RAW_URL_DERIVED"
-		fi
-		if [ -n "$HEADERS2" ]; then
-			LM2=$(printf '%s\n' "$HEADERS2" | awk -F': *' 'tolower($1)=="last-modified"{print $2}' | tr -d '\r')
-			ET2=$(printf '%s\n' "$HEADERS2" | awk -F': *' 'tolower($1)=="etag"{print $2}' | tr -d '\r')
-			if [ -n "$LM2" ]; then
-				echo "Derived Last-Modified: $LM2"
-			fi
-			if [ -n "$ET2" ]; then
-				echo "Derived ETag: $ET2"
-			fi
-			if [ -z "$LM2" ] && [ -z "$ET2" ]; then
-				echo "Derived response headers:" 
-				printf '%s\n' "$HEADERS2"
-			fi
-		else
-			echo "No headers received for $RAW_URL_DERIVED"
-		fi
-	fi
-else
-	echo "Installer URL not detected from process tree."
-	echo "Derived URL (from OWNER/REPO/REF): $RAW_URL_DERIVED"
-	HEADERS=""
-	if HEADERS=$(curl -sIL "$RAW_URL_DERIVED" 2>/dev/null); then
-		:
-	else
-		echo "Failed to retrieve headers for $RAW_URL_DERIVED"
-	fi
-	if [ -n "$HEADERS" ]; then
-		LM=$(printf '%s\n' "$HEADERS" | awk -F': *' 'tolower($1)=="last-modified"{print $2}' | tr -d '\r')
-		ET=$(printf '%s\n' "$HEADERS" | awk -F': *' 'tolower($1)=="etag"{print $2}' | tr -d '\r')
-		if [ -n "$LM" ]; then
-			echo "Derived Last-Modified: $LM"
-		fi
-		if [ -n "$ET" ]; then
-			echo "Derived ETag: $ET"
-		fi
-		if [ -z "$LM" ] && [ -z "$ET" ]; then
-			echo "Derived response headers:" 
-			printf '%s\n' "$HEADERS"
-		fi
-	else
-		echo "No headers received for $RAW_URL_DERIVED"
-	fi
-fi
-
 echo ""
 echo "Using: OWNER=$OWNER REPO=$REPO REF=$REF"
+
+# (Commit datetime is hardcoded above to keep CLI simple.)
 
 # Detect mismatch between REF and the branch referenced in the installer URL (if available)
 SCRIPT_REF=""
