@@ -1101,10 +1101,28 @@ ensure_global_confs() {
 			echo "Disabling lucee-upgrade-in-progress.conf (normal state)"
 			mv -f "${CONF_DIR}/lucee-upgrade-in-progress.conf" "${CONF_DIR}/lucee-upgrade-in-progress.disabled"
 		fi
-		# Create lucee-proxy.conf in conf-available
-		echo "Creating lucee-proxy.conf ..."
-		find_regex_proxy_block > "$CONF_AVAILABLE_DIR/lucee-proxy.conf"
-		normalize_conf_whitespace "$CONF_AVAILABLE_DIR/lucee-proxy.conf"
+		# Create lucee-proxy.conf in global conf.d (RHEL family)
+		if [ ! -f "${CONF_DIR}/lucee-proxy.conf" ]; then
+			echo "Creating lucee-proxy.conf ..."
+			# Try to extract Lucee proxy block from the main Apache config
+			local proxy_block=""
+			if [ -f "${CONF_DIR}/httpd.conf" ]; then
+				if proxy_block=$(find_lucee_proxy_block "${CONF_DIR}/httpd.conf" 2>/dev/null); then
+					:
+				fi
+			elif [ -f "/etc/httpd/conf/httpd.conf" ]; then
+				if proxy_block=$(find_lucee_proxy_block "/etc/httpd/conf/httpd.conf" 2>/dev/null); then
+					:
+				fi
+			fi
+			# Only write/normalize if we actually captured content
+			if [ -n "$proxy_block" ]; then
+				printf "%s\n" "$proxy_block" > "${CONF_DIR}/lucee-proxy.conf"
+				normalize_conf_whitespace "${CONF_DIR}/lucee-proxy.conf"
+			else
+				echo "Warning: Could not auto-generate lucee-proxy.conf; no Lucee proxy block found."
+			fi
+		fi
 		# Ensure lucee-proxy.conf is enabled (rename from .disabled if needed)
 		if [ -f "${CONF_DIR}/lucee-proxy.conf.disabled" ] && [ ! -f "${CONF_DIR}/lucee-proxy.conf" ]; then
 			echo "Enabling lucee-proxy.conf (normal state)"
