@@ -60,15 +60,15 @@ DEST_DIR="${LUCEE_ROOT}/sys/upgrade-in-progress"
 mkdir -p "$DEST_DIR"
 
 function copy_and_chmod() {
-    local src="${THISPATH}/$1"
-    local dst="${DEST_DIR}/$1"
-    cp "$src" "$dst"
-    
-    if [[ "$1" == *.sh ]]; then
-        chmod +x "$dst"
-    else
-        chmod 644 "$dst"
-    fi
+	local src="${THISPATH}/$1"
+	local dst="${DEST_DIR}/$1"
+	cp "$src" "$dst"
+	
+	if [[ "$1" == *.sh ]]; then
+		chmod +x "$dst"
+	else
+		chmod 644 "$dst"
+	fi
 }
 
 for file in "${FILES[@]}"; do
