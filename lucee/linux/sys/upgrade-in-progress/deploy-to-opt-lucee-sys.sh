@@ -49,7 +49,7 @@ DEFAULT_LUCEE_ROOT="/opt/lucee"
 # Check if a path was provided as an argument
 if [ -n "$1" ]; then
 	LUCEE_ROOT="$1"
-	echo "Using provided Lucee root path: $LUCEE_ROOT"
+	echo "Using Lucee root path: $LUCEE_ROOT"
 else
 	# No argument provided, prompt for input
 	read -r -p "Enter target Lucee root path [${DEFAULT_LUCEE_ROOT}]: " INPUT_LUCEE_ROOT

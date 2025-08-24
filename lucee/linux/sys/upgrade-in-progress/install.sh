@@ -22,7 +22,7 @@ fi
 
 # UPDATE THIS WITH EACH COMMIT
 echo ""
-echo "install.sh version: 2025-08-24 14:29:40 Pacific"
+echo "install.sh version: 2025-08-24 14:35:59 Pacific"
 
 OWNER=${OWNER:-kenricashe}
 REPO=${REPO:-lucee-installer}
@@ -156,8 +156,6 @@ DEFAULT_LUCEE_ROOT="/opt/lucee"
 
 if [ -n "$LUCEE_ROOT" ]; then
 	# Environment variable provided
-	echo ""
-	echo "Using LUCEE_ROOT from environment: $LUCEE_ROOT"
 elif [ -t 0 ]; then
 	# Interactive mode - prompt for Lucee root path
 	echo ""
@@ -166,8 +164,6 @@ elif [ -t 0 ]; then
 else
 	# Non-interactive mode (curl pipe) - use default and continue
 	LUCEE_ROOT="$DEFAULT_LUCEE_ROOT"
-	echo ""
-	echo "Using default Lucee root path: $LUCEE_ROOT"
 fi
 
 # Execute the deployment script and capture its exit status
@@ -175,10 +171,13 @@ if "$SUBDIR/deploy-to-opt-lucee-sys.sh" "$LUCEE_ROOT"; then
 	# Deployment was successful
 	echo ""
 	echo "=================================================================="
-	echo "Deployment complete! The Upgrade-In-Progress toolkit is now installed."
 	echo ""
-	echo "To configure and manage upgrade mode, run:"
-	echo "  sudo ${LUCEE_ROOT}/sys/upgrade-in-progress/menu.sh"
+	echo "Installation complete!"
+	echo ""
+	echo "To configure and manage 'Upgrade in Progress' toggling, run:"
+	echo ""
+	echo "sudo ${LUCEE_ROOT}/sys/upgrade-in-progress/menu.sh"
+	echo ""
 	echo "=================================================================="
 else
 	# Deployment failed
