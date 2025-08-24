@@ -8,11 +8,8 @@
 # To use a specific branch/ref:
 #   curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/feature/branch-name/lucee/linux/sys/upgrade-in-progress/install.sh | sudo bash -s feature/branch-name
 #
-# Alternative method using environment variables (may not work with all sudo configurations):
-#   REF=feature/branch-name curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/feature/branch-name/lucee/linux/sys/upgrade-in-progress/install.sh | sudo bash
-
-# Optional env vars:
-#   OWNER=kenricashe REPO=lucee-installer REF=master
+# Example:
+#   curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/feature/upgrade-in-progress-apache/lucee/linux/sys/upgrade-in-progress/install.sh | sudo bash -s feature/upgrade-in-progress-apache
 
 # require root
 if [ "$(id -u)" != "0" ]; then
@@ -95,4 +92,26 @@ if [ ! -x "$SUBDIR/deploy-to-opt-lucee-sys.sh" ]; then
 	chmod +x "$SUBDIR/deploy-to-opt-lucee-sys.sh" 2>/dev/null || true
 fi
 
+# Execute the deployment script and capture its exit status
 "$SUBDIR/deploy-to-opt-lucee-sys.sh"
+DEPLOY_STATUS=$?
+
+# Check if deployment was successful
+if [ $DEPLOY_STATUS -eq 0 ]; then
+	# Display confirmation and next steps on success
+	echo ""
+	echo "=================================================================="
+	echo "Deployment complete! The Upgrade-In-Progress toolkit is now installed."
+	echo ""
+	echo "To configure and manage upgrade mode, run:"
+	echo "  sudo /opt/lucee/sys/upgrade-in-progress/menu.sh"
+	echo "=================================================================="
+else
+	# Display error message on failure
+	echo ""
+	echo "=================================================================="
+	echo "ERROR: Deployment failed with status code $DEPLOY_STATUS"
+	echo "Please check the error messages above for more information."
+	echo "=================================================================="
+	exit $DEPLOY_STATUS
+fi
