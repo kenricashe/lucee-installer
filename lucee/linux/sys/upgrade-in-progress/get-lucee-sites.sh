@@ -174,6 +174,31 @@ collect_rhel_config_files() {
 	local -a QUEUE
 	local idx=0
 
+	# Determine Apache ServerRoot based on httpd.conf location
+	# On RHEL/Rocky the default is /etc/httpd with conf/httpd.conf under it.
+	# Include/IncludeOptional paths that are not absolute are resolved relative to ServerRoot.
+	local SERVER_ROOT
+	if [ -n "$RHEL_HTTPD_CONF" ] && [ -f "$RHEL_HTTPD_CONF" ]; then
+		# e.g. /etc/httpd/conf/httpd.conf -> /etc/httpd
+		SERVER_ROOT=$(dirname "$(dirname "$RHEL_HTTPD_CONF")")
+		# If ServerRoot directive exists, prefer it
+		local SR_LINE SR_VAL
+		SR_LINE=$(grep -iE '^[[:space:]]*ServerRoot[[:space:]]+' "$RHEL_HTTPD_CONF" 2>/dev/null | tail -n1)
+		if [ -n "$SR_LINE" ]; then
+			SR_VAL=$(printf '%s\n' "$SR_LINE" | awk '{ $1=""; sub(/^[ \t]+/, ""); print }')
+			# Strip surrounding single/double quotes
+			case "$SR_VAL" in
+				"\""*) SR_VAL=${SR_VAL#\"}; SR_VAL=${SR_VAL%\"} ;;
+				"'"*) SR_VAL=${SR_VAL#\'}; SR_VAL=${SR_VAL%\'} ;;
+			esac
+			if [ -n "$SR_VAL" ]; then
+				SERVER_ROOT="$SR_VAL"
+			fi
+		fi
+	else
+		SERVER_ROOT="/etc/httpd"
+	fi
+
 	if [ -f "$RHEL_HTTPD_CONF" ]; then
 		QUEUE+=("$RHEL_HTTPD_CONF")
 		SEEN["$RHEL_HTTPD_CONF"]=1
@@ -186,8 +211,20 @@ collect_rhel_config_files() {
 		while IFS= read -r inc; do
 			# Expand globs; include files under dirs
 			for pat in $inc; do
+				# Strip surrounding single/double quotes if present
+				case "$pat" in
+					"\""*) pat=${pat#\"}; pat=${pat%\"} ;;
+					"'"*) pat=${pat#\'}; pat=${pat%\'} ;;
+				esac
+				# Resolve relative paths against ServerRoot
+				local pat_abs
+				if [ "${pat#/}" != "$pat" ]; then
+					pat_abs="$pat"
+				else
+					pat_abs="$SERVER_ROOT/$pat"
+				fi
 				local expanded
-				expanded=$(compgen -G "$pat" 2>/dev/null || true)
+				expanded=$(compgen -G "$pat_abs" 2>/dev/null || true)
 				if [ -z "$expanded" ]; then
 					continue
 				fi
