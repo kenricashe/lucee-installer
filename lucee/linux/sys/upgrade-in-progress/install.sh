@@ -47,6 +47,36 @@ if [ -z "$REF" ]; then
 fi
 REF=${REF:-master}
 
+# Show installer origin and headers to help detect CDN caching (when invoked via curl | bash)
+INSTALLER_URL=""
+for PID in "$PPID" "$$"; do
+	if [ -r "/proc/$PID/cmdline" ]; then
+		CMDLINE=$(tr '\0' ' ' < "/proc/$PID/cmdline" 2>/dev/null)
+		if [[ "$CMDLINE" == *"/raw.githubusercontent.com/"* ]]; then
+			INSTALLER_URL=$(printf '%s\n' "$CMDLINE" | sed -n 's|.*\(https://raw.githubusercontent.com/[^ ]*\).*|\1|p' | head -n1)
+			if [ -n "$INSTALLER_URL" ]; then
+				break
+			fi
+		fi
+	fi
+done
+
+if [ -n "$INSTALLER_URL" ]; then
+	echo ""
+	echo "Installer URL: $INSTALLER_URL"
+	HEADERS=$(curl -sI "$INSTALLER_URL" 2>/dev/null)
+	if [ -n "$HEADERS" ]; then
+		LM=$(printf '%s\n' "$HEADERS" | awk -F': ' 'tolower($1)=="last-modified"{print $2}')
+		ET=$(printf '%s\n' "$HEADERS" | awk -F': ' 'tolower($1)=="etag"{print $2}')
+		if [ -n "$LM" ]; then
+			echo "Installer Last-Modified: $LM"
+		fi
+		if [ -n "$ET" ]; then
+			echo "Installer ETag: $ET"
+		fi
+	fi
+fi
+
 echo ""
 echo "Using: OWNER=$OWNER REPO=$REPO REF=$REF"
 
