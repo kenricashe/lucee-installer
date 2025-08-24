@@ -6,8 +6,14 @@
 #
 # curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/master/lucee/linux/sys/upgrade-in-progress/install.sh | sudo bash
 #
-# Example with Lucee root path and branch name:
-# sudo LUCEE_ROOT=/opt/lucee REF=feature/upgrade-in-progress-apache bash -c 'curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/feature/upgrade-in-progress-apache/lucee/linux/sys/upgrade-in-progress/install.sh | bash'
+# Example with custom Lucee root path in environment variable and non-master branch name in URL:
+# sudo LUCEE_ROOT=/opt/lucee6 bash -c 'curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/feature/upgrade-in-progress-apache/lucee/linux/sys/upgrade-in-progress/install.sh | bash'
+#
+# GitHub CDN caching can last 5 minutes. For quicker testing, in the URL replace branch with the commit sha:
+# sudo bash -c 'curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/<commit-sha>/lucee/linux/sys/upgrade-in-progress/install.sh | bash'
+#
+# Intentional branch mismatch should warn and exit:
+# sudo REF=oopsie bash -c 'curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/feature/upgrade-in-progress-apache/lucee/linux/sys/upgrade-in-progress/install.sh | bash'
 
 # require root
 if [ "$(id -u)" != "0" ]; then
@@ -15,19 +21,28 @@ if [ "$(id -u)" != "0" ]; then
 	exit 1
 fi
 
-# Extract the REF from the URL if it's not set
-# This handles the case where REF is set before curl but not passed through sudo
-if [ -z "$REF" ] && [ -n "$0" ] && [[ "$0" == *"/raw.githubusercontent.com/"* ]]; then
-	URL_PATH="$0"
-	REF_FROM_URL=$(echo "$URL_PATH" | sed -n 's|.*/raw.githubusercontent.com/[^/]*/[^/]*/\([^/]*\)/.*|\1|p')
-	if [ -n "$REF_FROM_URL" ]; then
-		REF="$REF_FROM_URL"
-		echo "Extracted REF=$REF from script URL"
-	fi
-fi
-
 OWNER=${OWNER:-kenricashe}
 REPO=${REPO:-lucee-installer}
+
+# Auto-derive REF from the invoking raw.githubusercontent.com URL (curl | bash) when not provided
+if [ -z "$REF" ]; then
+	URL_REF_AUTO=""
+	for PID in "$PPID" "$$"; do
+		if [ -r "/proc/$PID/cmdline" ]; then
+			CMDLINE=$(tr '\0' ' ' < "/proc/$PID/cmdline" 2>/dev/null)
+			if [[ "$CMDLINE" == *"/raw.githubusercontent.com/"* ]]; then
+				URL_REF_AUTO=$(printf '%s\n' "$CMDLINE" | sed -n 's|.*raw.githubusercontent.com/[^/]*/[^/]*/\([^/]*\)/.*|\1|p')
+				if [ -n "$URL_REF_AUTO" ]; then
+					break
+				fi
+			fi
+		fi
+	done
+	if [ -n "$URL_REF_AUTO" ]; then
+		REF="$URL_REF_AUTO"
+		echo "Auto-detected REF=$REF from installer URL"
+	fi
+fi
 REF=${REF:-master}
 
 echo ""
@@ -58,7 +73,7 @@ if [ -n "$SCRIPT_REF" ] && [ "$REF" != "$SCRIPT_REF" ]; then
 	exit 1
 fi
 
-TARBALL_URL="https://codeload.github.com/${OWNER}/${REPO}/tar.gz/refs/heads/${REF}"
+TARBALL_URL="https://codeload.github.com/${OWNER}/${REPO}/tar.gz/${REF}"
 TMPDIR=$(mktemp -d)
 
 cleanup() {
@@ -78,8 +93,8 @@ if ! curl -fsSL "$TARBALL_URL" | tar -xz -C "$TMPDIR"; then
 fi
 
 # Find the subdirectory containing this toolset
-# GitHub tarballs include a top-level directory named {repo}-{branch}
-# where branch names with slashes are converted to hyphens
+# GitHub tarballs include a top-level directory named {repo}-{ref}
+# where branch refs with slashes are converted to hyphens
 echo "Searching for upgrade-in-progress directory..."
 
 # First, find the top-level directory (should be something like lucee-installer-feature-upgrade-in-progress-apache)
