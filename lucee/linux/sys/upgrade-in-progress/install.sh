@@ -7,7 +7,7 @@
 # curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/master/lucee/linux/sys/upgrade-in-progress/install.sh | sudo bash
 #
 # Example with Lucee root path and branch name:
-# sudo LUCEE_ROOT=/opt/lucee REF=feature/branch-name bash -c 'curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/master/lucee/linux/sys/upgrade-in-progress/install.sh | bash'
+# sudo LUCEE_ROOT=/opt/lucee REF=feature/upgrade-in-progress bash -c 'curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/feature/upgrade-in-progress-apache/lucee/linux/sys/upgrade-in-progress/install.sh | bash'
 
 # require root
 if [ "$(id -u)" != "0" ]; then
