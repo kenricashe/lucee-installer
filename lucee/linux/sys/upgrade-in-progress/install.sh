@@ -93,12 +93,8 @@ if [ ! -x "$SUBDIR/deploy-to-opt-lucee-sys.sh" ]; then
 fi
 
 # Execute the deployment script and capture its exit status
-"$SUBDIR/deploy-to-opt-lucee-sys.sh"
-DEPLOY_STATUS=$?
-
-# Check if deployment was successful
-if [ -n "$DEPLOY_STATUS" ] && [ "$DEPLOY_STATUS" -eq 0 ]; then
-	# Display confirmation and next steps on success
+if "$SUBDIR/deploy-to-opt-lucee-sys.sh"; then
+	# Deployment was successful
 	echo ""
 	echo "=================================================================="
 	echo "Deployment complete! The Upgrade-In-Progress toolkit is now installed."
@@ -107,20 +103,12 @@ if [ -n "$DEPLOY_STATUS" ] && [ "$DEPLOY_STATUS" -eq 0 ]; then
 	echo "  sudo /opt/lucee/sys/upgrade-in-progress/menu.sh"
 	echo "=================================================================="
 else
-	# Display error message on failure
+	# Deployment failed
+	DEPLOY_STATUS=$?
 	echo ""
 	echo "=================================================================="
-	if [ -n "$DEPLOY_STATUS" ]; then
-		echo "ERROR: Deployment failed with status code $DEPLOY_STATUS"
-	else
-		echo "ERROR: Deployment failed"
-	fi
+	echo "ERROR: Deployment failed with exit code $DEPLOY_STATUS"
 	echo "Please check the error messages above for more information."
 	echo "=================================================================="
-	# Exit with the status code if available, otherwise use 1
-	if [ -n "$DEPLOY_STATUS" ]; then
-		exit "$DEPLOY_STATUS"
-	else
-		exit 1
-	fi
+	exit $DEPLOY_STATUS
 fi
