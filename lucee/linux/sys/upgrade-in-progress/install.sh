@@ -75,6 +75,9 @@ if [ -n "$INSTALLER_URL" ]; then
 			echo "Installer ETag: $ET"
 		fi
 	fi
+else
+	echo ""
+	echo "Installer URL not detected."
 fi
 
 echo ""
