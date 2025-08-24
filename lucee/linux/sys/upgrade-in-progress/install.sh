@@ -26,6 +26,26 @@ fi
 OWNER=${OWNER:-kenricashe}
 REPO=${REPO:-lucee-installer}
 
+# Optional: allow the invoking environment to pass the exact installer URL
+# This is useful for pipelines where the curl process isn't visible to this shell
+if [ -n "$SOURCE_URL" ] && [[ "$SOURCE_URL" == *"/raw.githubusercontent.com/"* ]]; then
+	SRC_OWNER=$(printf '%s\n' "$SOURCE_URL" | sed -n 's|.*/raw.githubusercontent.com/\([^/]*\)/[^/]*/.*|\1|p')
+	SRC_REPO=$(printf '%s\n' "$SOURCE_URL" | sed -n 's|.*/raw.githubusercontent.com/[^/]*/\([^/]*\)/.*|\1|p')
+	SRC_REF=$(printf '%s\n' "$SOURCE_URL" | sed -n 's|.*/raw.githubusercontent.com/[^/]*/[^/]*/\([^/]*\)/.*|\1|p')
+	if [ -n "$SRC_OWNER" ] && [ "$OWNER" = "kenricashe" ]; then
+		OWNER="$SRC_OWNER"
+		echo "OWNER set from SOURCE_URL: $OWNER"
+	fi
+	if [ -n "$SRC_REPO" ] && [ "$REPO" = "lucee-installer" ]; then
+		REPO="$SRC_REPO"
+		echo "REPO set from SOURCE_URL: $REPO"
+	fi
+	if [ -n "$SRC_REF" ] && [ -z "$REF" ]; then
+		REF="$SRC_REF"
+		echo "REF set from SOURCE_URL: $REF"
+	fi
+fi
+
 # Auto-derive REF from the invoking raw.githubusercontent.com URL (curl | bash) when not provided
 if [ -z "$REF" ]; then
 	URL_REF_AUTO=""
@@ -92,51 +112,89 @@ if [ -z "$INSTALLER_URL" ]; then
 	done
 fi
 
+# Prefer SOURCE_URL for header diagnostics if provided
+if [ -n "$SOURCE_URL" ] && [[ "$SOURCE_URL" == *"/raw.githubusercontent.com/"* ]]; then
+	INSTALLER_URL="$SOURCE_URL"
+fi
+
 RAW_URL_DERIVED="https://raw.githubusercontent.com/$OWNER/$REPO/$REF/lucee/linux/sys/upgrade-in-progress/install.sh"
 
 echo ""
 if [ -n "$INSTALLER_URL" ]; then
 	echo "Installer URL (detected): $INSTALLER_URL"
-	HEADERS=$(curl -sI "$INSTALLER_URL" 2>/dev/null)
+	HEADERS=""
+	if HEADERS=$(curl -sIL "$INSTALLER_URL" 2>/dev/null); then
+		:
+	else
+		echo "Failed to retrieve headers for $INSTALLER_URL"
+	fi
 	if [ -n "$HEADERS" ]; then
-		LM=$(printf '%s\n' "$HEADERS" | awk -F': ' 'tolower($1)=="last-modified"{print $2}')
-		ET=$(printf '%s\n' "$HEADERS" | awk -F': ' 'tolower($1)=="etag"{print $2}')
+		LM=$(printf '%s\n' "$HEADERS" | awk -F': *' 'tolower($1)=="last-modified"{print $2}' | tr -d '\r')
+		ET=$(printf '%s\n' "$HEADERS" | awk -F': *' 'tolower($1)=="etag"{print $2}' | tr -d '\r')
 		if [ -n "$LM" ]; then
 			echo "Installer Last-Modified: $LM"
 		fi
 		if [ -n "$ET" ]; then
 			echo "Installer ETag: $ET"
 		fi
+		if [ -z "$LM" ] && [ -z "$ET" ]; then
+			echo "Installer response headers:" 
+			printf '%s\n' "$HEADERS"
+		fi
+	else
+		echo "No headers received for $INSTALLER_URL"
 	fi
 
 	if [ "$INSTALLER_URL" != "$RAW_URL_DERIVED" ]; then
 		echo ""
 		echo "Derived URL (from OWNER/REPO/REF): $RAW_URL_DERIVED"
-		HEADERS2=$(curl -sI "$RAW_URL_DERIVED" 2>/dev/null)
+		HEADERS2=""
+		if HEADERS2=$(curl -sIL "$RAW_URL_DERIVED" 2>/dev/null); then
+			:
+		else
+			echo "Failed to retrieve headers for $RAW_URL_DERIVED"
+		fi
 		if [ -n "$HEADERS2" ]; then
-			LM2=$(printf '%s\n' "$HEADERS2" | awk -F': ' 'tolower($1)=="last-modified"{print $2}')
-			ET2=$(printf '%s\n' "$HEADERS2" | awk -F': ' 'tolower($1)=="etag"{print $2}')
+			LM2=$(printf '%s\n' "$HEADERS2" | awk -F': *' 'tolower($1)=="last-modified"{print $2}' | tr -d '\r')
+			ET2=$(printf '%s\n' "$HEADERS2" | awk -F': *' 'tolower($1)=="etag"{print $2}' | tr -d '\r')
 			if [ -n "$LM2" ]; then
 				echo "Derived Last-Modified: $LM2"
 			fi
 			if [ -n "$ET2" ]; then
 				echo "Derived ETag: $ET2"
 			fi
+			if [ -z "$LM2" ] && [ -z "$ET2" ]; then
+				echo "Derived response headers:" 
+				printf '%s\n' "$HEADERS2"
+			fi
+		else
+			echo "No headers received for $RAW_URL_DERIVED"
 		fi
 	fi
 else
 	echo "Installer URL not detected from process tree."
 	echo "Derived URL (from OWNER/REPO/REF): $RAW_URL_DERIVED"
-	HEADERS=$(curl -sI "$RAW_URL_DERIVED" 2>/dev/null)
+	HEADERS=""
+	if HEADERS=$(curl -sIL "$RAW_URL_DERIVED" 2>/dev/null); then
+		:
+	else
+		echo "Failed to retrieve headers for $RAW_URL_DERIVED"
+	fi
 	if [ -n "$HEADERS" ]; then
-		LM=$(printf '%s\n' "$HEADERS" | awk -F': ' 'tolower($1)=="last-modified"{print $2}')
-		ET=$(printf '%s\n' "$HEADERS" | awk -F': ' 'tolower($1)=="etag"{print $2}')
+		LM=$(printf '%s\n' "$HEADERS" | awk -F': *' 'tolower($1)=="last-modified"{print $2}' | tr -d '\r')
+		ET=$(printf '%s\n' "$HEADERS" | awk -F': *' 'tolower($1)=="etag"{print $2}' | tr -d '\r')
 		if [ -n "$LM" ]; then
 			echo "Derived Last-Modified: $LM"
 		fi
 		if [ -n "$ET" ]; then
 			echo "Derived ETag: $ET"
 		fi
+		if [ -z "$LM" ] && [ -z "$ET" ]; then
+			echo "Derived response headers:" 
+			printf '%s\n' "$HEADERS"
+		fi
+	else
+		echo "No headers received for $RAW_URL_DERIVED"
 	fi
 fi
 
@@ -145,6 +203,15 @@ echo "Using: OWNER=$OWNER REPO=$REPO REF=$REF"
 
 # Detect mismatch between REF and the branch referenced in the installer URL (if available)
 SCRIPT_REF=""
+
+# Prefer SOURCE_URL for mismatch detection if provided
+if [ -n "$SOURCE_URL" ] && [[ "$SOURCE_URL" == *"/raw.githubusercontent.com/"* ]]; then
+	URL_REF_FROM_SRC=$(printf '%s\n' "$SOURCE_URL" | sed -n 's|.*/raw.githubusercontent.com/[^/]*/[^/]*/\([^/]*\)/.*|\1|p')
+	if [ -n "$URL_REF_FROM_SRC" ]; then
+		SCRIPT_REF="$URL_REF_FROM_SRC"
+	fi
+fi
+
 for PID in "$PPID" "$$"; do
 	if [ -r "/proc/$PID/cmdline" ]; then
 		CMDLINE=$(tr '\0' ' ' < "/proc/$PID/cmdline" 2>/dev/null)
