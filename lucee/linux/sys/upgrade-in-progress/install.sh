@@ -97,7 +97,7 @@ fi
 DEPLOY_STATUS=$?
 
 # Check if deployment was successful
-if [ $DEPLOY_STATUS -eq 0 ]; then
+if [ -n "$DEPLOY_STATUS" ] && [ "$DEPLOY_STATUS" -eq 0 ]; then
 	# Display confirmation and next steps on success
 	echo ""
 	echo "=================================================================="
