@@ -92,15 +92,20 @@ if [ ! -x "$SUBDIR/deploy-to-opt-lucee-sys.sh" ]; then
 	chmod +x "$SUBDIR/deploy-to-opt-lucee-sys.sh" 2>/dev/null || true
 fi
 
+# Prompt for Lucee root path
+DEFAULT_LUCEE_ROOT="/opt/lucee"
+read -r -p "Enter target Lucee root path [${DEFAULT_LUCEE_ROOT}]: " INPUT_LUCEE_ROOT
+LUCEE_ROOT="${INPUT_LUCEE_ROOT:-$DEFAULT_LUCEE_ROOT}"
+
 # Execute the deployment script and capture its exit status
-if "$SUBDIR/deploy-to-opt-lucee-sys.sh"; then
+if "$SUBDIR/deploy-to-opt-lucee-sys.sh" "$LUCEE_ROOT"; then
 	# Deployment was successful
 	echo ""
 	echo "=================================================================="
 	echo "Deployment complete! The Upgrade-In-Progress toolkit is now installed."
 	echo ""
 	echo "To configure and manage upgrade mode, run:"
-	echo "  sudo /opt/lucee/sys/upgrade-in-progress/menu.sh"
+	echo "  sudo ${LUCEE_ROOT}/sys/upgrade-in-progress/menu.sh"
 	echo "=================================================================="
 else
 	# Deployment failed

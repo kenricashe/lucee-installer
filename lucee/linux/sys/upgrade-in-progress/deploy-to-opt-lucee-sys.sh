@@ -43,10 +43,19 @@ if [ ${#missing[@]} -gt 0 ]; then
 	exit 1
 fi
 
-# Prompt for Lucee root path and deploy there
+# Use Lucee root path from command line argument or prompt for it
 DEFAULT_LUCEE_ROOT="/opt/lucee"
-read -r -p "Enter target Lucee root path [${DEFAULT_LUCEE_ROOT}]: " INPUT_LUCEE_ROOT
-LUCEE_ROOT="${INPUT_LUCEE_ROOT:-$DEFAULT_LUCEE_ROOT}"
+
+# Check if a path was provided as an argument
+if [ -n "$1" ]; then
+	LUCEE_ROOT="$1"
+	echo "Using provided Lucee root path: $LUCEE_ROOT"
+else
+	# No argument provided, prompt for input
+	read -r -p "Enter target Lucee root path [${DEFAULT_LUCEE_ROOT}]: " INPUT_LUCEE_ROOT
+	LUCEE_ROOT="${INPUT_LUCEE_ROOT:-$DEFAULT_LUCEE_ROOT}"
+fi
+
 DEST_DIR="${LUCEE_ROOT}/sys/upgrade-in-progress"
 mkdir -p "$DEST_DIR"
 
