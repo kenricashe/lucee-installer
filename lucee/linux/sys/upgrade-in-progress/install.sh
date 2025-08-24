@@ -1,7 +1,5 @@
 #!/bin/bash
 
-# One-shot installer to deploy the Upgrade-In-Progress toolkit into /opt/lucee/sys/...
-
 # Usage:
 # curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/master/lucee/linux/sys/upgrade-in-progress/install.sh | sudo bash
 #
@@ -22,7 +20,7 @@ fi
 
 # UPDATE THIS WITH EACH COMMIT
 echo ""
-echo "install.sh version: 2025-08-24 14:35:59 Pacific"
+echo "install.sh version: 2025-08-24 14:38:12 Pacific"
 
 OWNER=${OWNER:-kenricashe}
 REPO=${REPO:-lucee-installer}
@@ -156,6 +154,7 @@ DEFAULT_LUCEE_ROOT="/opt/lucee"
 
 if [ -n "$LUCEE_ROOT" ]; then
 	# Environment variable provided
+	: # do nothing
 elif [ -t 0 ]; then
 	# Interactive mode - prompt for Lucee root path
 	echo ""
