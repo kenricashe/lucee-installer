@@ -32,6 +32,27 @@ REF=${REF:-master}
 
 echo "Using: OWNER=$OWNER REPO=$REPO REF=$REF"
 
+# Detect mismatch between REF and the branch referenced in the installer URL (if available)
+SCRIPT_REF=""
+for PID in "$PPID" "$$"; do
+	if [ -r "/proc/$PID/cmdline" ]; then
+		CMDLINE=$(tr '\0' ' ' < "/proc/$PID/cmdline" 2>/dev/null)
+		if [[ "$CMDLINE" == *"/raw.githubusercontent.com/"* ]]; then
+			SCRIPT_REF=$(printf '%s\n' "$CMDLINE" | sed -n 's|.*raw.githubusercontent.com/[^/]*/[^/]*/\([^/]*\)/.*|\1|p')
+			if [ -n "$SCRIPT_REF" ]; then
+				break
+			fi
+		fi
+	fi
+done
+
+if [ -n "$SCRIPT_REF" ] && [ "$REF" != "$SCRIPT_REF" ]; then
+	echo "WARNING: REF is '$REF' but installer URL branch appears to be '$SCRIPT_REF'."
+	echo "This mismatch can cause a 404 when downloading the tarball."
+	echo "Please set REF=$SCRIPT_REF or use an installer URL that points to the '$REF' branch."
+	exit 1
+fi
+
 TARBALL_URL="https://codeload.github.com/${OWNER}/${REPO}/tar.gz/refs/heads/${REF}"
 TMPDIR=$(mktemp -d)
 
