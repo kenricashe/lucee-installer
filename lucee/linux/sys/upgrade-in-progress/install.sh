@@ -141,8 +141,6 @@ else
 	echo "Using default Lucee root path: $LUCEE_ROOT"
 fi
 
-exit 0
-
 # Execute the deployment script and capture its exit status
 if "$SUBDIR/deploy-to-opt-lucee-sys.sh" "$LUCEE_ROOT"; then
 	# Deployment was successful
