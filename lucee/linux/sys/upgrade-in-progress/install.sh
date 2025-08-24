@@ -4,12 +4,15 @@
 
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/master/lucee/linux/sys/upgrade-in-progress/install.sh | sudo bash
+#
+# To use a specific branch/ref:
+#   curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/feature/branch-name/lucee/linux/sys/upgrade-in-progress/install.sh | sudo bash -s feature/branch-name
+#
+# Alternative method using environment variables (may not work with all sudo configurations):
+#   REF=feature/branch-name curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/feature/branch-name/lucee/linux/sys/upgrade-in-progress/install.sh | sudo bash
 
 # Optional env vars:
 #   OWNER=kenricashe REPO=lucee-installer REF=master
-
-# Example QA test of dev branch:
-# REF=feature/upgrade-in-progress-apache curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/feature/upgrade-in-progress-apache/lucee/linux/sys/upgrade-in-progress/install.sh | sudo bash
 
 # require root
 if [ "$(id -u)" != "0" ]; then
@@ -17,9 +20,28 @@ if [ "$(id -u)" != "0" ]; then
 	exit 1
 fi
 
+# Check for command line arguments first (highest priority)
+if [ -n "$1" ]; then
+	REF="$1"
+	echo "Using REF=$REF from command line argument"
+fi
+
+# Extract the REF from the URL if it's not set
+# This handles the case where REF is set before curl but not passed through sudo
+if [ -z "$REF" ] && [ -n "$0" ] && [[ "$0" == *"/raw.githubusercontent.com/"* ]]; then
+	URL_PATH="$0"
+	REF_FROM_URL=$(echo "$URL_PATH" | sed -n 's|.*/raw.githubusercontent.com/[^/]*/[^/]*/\([^/]*\)/.*|\1|p')
+	if [ -n "$REF_FROM_URL" ]; then
+		REF="$REF_FROM_URL"
+		echo "Extracted REF=$REF from script URL"
+	fi
+fi
+
 OWNER=${OWNER:-kenricashe}
 REPO=${REPO:-lucee-installer}
 REF=${REF:-master}
+
+echo "Using: OWNER=$OWNER REPO=$REPO REF=$REF"
 
 TARBALL_URL="https://codeload.github.com/${OWNER}/${REPO}/tar.gz/refs/heads/${REF}"
 TMPDIR=$(mktemp -d)
