@@ -6,16 +6,13 @@
 # curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/master/lucee/linux/sys/upgrade-in-progress/install.sh | sudo bash
 #
 # Example with custom Lucee root path in environment variable:
-# sudo LUCEE_ROOT=/opt/lucee6 bash -c 'curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/master/lucee/linux/sys/upgrade-in-progress/install.sh | bash'
+# curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/master/lucee/linux/sys/upgrade-in-progress/install.sh | sudo env LUCEE_ROOT=/opt/lucee6 bash
 #
 # Example with non-master branch name in URL e.g. for QA testing:
-# curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/feature/upgrade-in-progress-apache/lucee/linux/sys/upgrade-in-progress/install.sh | sudo bash
+# (URL="https://raw.githubusercontent.com/kenricashe/lucee-installer/feature/upgrade-in-progress-apache/lucee/linux/sys/upgrade-in-progress/install.sh"; curl -fsSL "$URL" | sudo env SOURCE_URL="$URL" bash)
 #
 # GitHub CDN caching can last 5 minutes. For quicker testing, in the URL replace branch with the commit sha:
-# curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/<commit-sha>/lucee/linux/sys/upgrade-in-progress/install.sh | sudo bash
-#
-# Intentional branch mismatch should warn and exit:
-# sudo REF=oopsie bash -c 'curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/feature/upgrade-in-progress-apache/lucee/linux/sys/upgrade-in-progress/install.sh | bash'
+# (URL="https://raw.githubusercontent.com/kenricashe/lucee-installer/<commit-sha>/lucee/linux/sys/upgrade-in-progress/install.sh"; curl -fsSL "$URL" | sudo env SOURCE_URL="$URL" bash)
 
 # require root
 if [ "$(id -u)" != "0" ]; then
@@ -88,57 +85,6 @@ REF=${REF:-master}
 
 echo ""
 echo "Using: OWNER=$OWNER REPO=$REPO REF=$REF"
-
-# (Commit datetime is hardcoded above to keep CLI simple.)
-
-# Detect mismatch between REF and the branch referenced in the installer URL (if available)
-SCRIPT_REF=""
-
-# Prefer SOURCE_URL for mismatch detection if provided
-if [ -n "$SOURCE_URL" ] && [[ "$SOURCE_URL" == *"/raw.githubusercontent.com/"* ]]; then
-	URL_REF_FROM_SRC=$(printf '%s\n' "$SOURCE_URL" | sed -n 's|.*/raw.githubusercontent.com/[^/]*/[^/]*/\([^/]*\)/.*|\1|p')
-	if [ -n "$URL_REF_FROM_SRC" ]; then
-		SCRIPT_REF="$URL_REF_FROM_SRC"
-	fi
-fi
-
-for PID in "$PPID" "$$"; do
-	if [ -r "/proc/$PID/cmdline" ]; then
-		CMDLINE=$(tr '\0' ' ' < "/proc/$PID/cmdline" 2>/dev/null)
-		if [[ "$CMDLINE" == *"/raw.githubusercontent.com/"* ]]; then
-			SCRIPT_REF=$(printf '%s\n' "$CMDLINE" | sed -n 's|.*raw.githubusercontent.com/[^/]*/[^/]*/\([^/]*\)/.*|\1|p')
-			if [ -n "$SCRIPT_REF" ]; then
-				break
-			fi
-		fi
-	fi
-done
-
-# Fallback: search across all processes (useful for curl | sudo bash pipelines)
-if [ -z "$SCRIPT_REF" ]; then
-	for PROC in /proc/[0-9]*/cmdline; do
-		if [ -r "$PROC" ]; then
-			CMDLINE=$(tr '\0' ' ' < "$PROC" 2>/dev/null)
-			if [[ "$CMDLINE" == *"/raw.githubusercontent.com/"* ]] && [[ "$CMDLINE" == *"/lucee/linux/sys/upgrade-in-progress/install.sh"* ]]; then
-				SCRIPT_REF=$(printf '%s\n' "$CMDLINE" | sed -n 's|.*raw.githubusercontent.com/[^/]*/[^/]*/\([^/]*\)/.*|\1|p')
-				if [ -n "$SCRIPT_REF" ]; then
-					break
-				fi
-			fi
-		fi
-	done
-fi
-
-if [ -n "$SCRIPT_REF" ] && [ "$REF" != "$SCRIPT_REF" ]; then
-	echo ""
-	echo "WARNING: REF is '$REF' but installer URL branch appears to be '$SCRIPT_REF'."
-	echo ""
-	echo "This mismatch can cause a 404 when downloading the tarball."
-	echo ""
-	echo "Please set REF=$SCRIPT_REF or use an installer URL that points to the '$REF' branch."
-	echo ""
-	exit 1
-fi
 
 TARBALL_URL="https://codeload.github.com/${OWNER}/${REPO}/tar.gz/${REF}"
 TMPDIR=$(mktemp -d)
