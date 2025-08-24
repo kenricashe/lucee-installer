@@ -65,11 +65,9 @@ Backups are created only when a file already exists and is about to be modified 
 
 ## QA Testing
 
-To exclude a site, *before configuring Apache*, remove it from the sites data file via the app menu.
+To add an IP address to the allow list, use the menu option "IP Allow List (for QA Testing)". `127.0.0.1` and `::1` (localhost) are pre-configured, but can be disabled by commenting out the line(s) with `#`.
 
-`127.0.0.1` (localhost) is always allowed access by default for admin testing.
-
-Allow other IPs: `/opt/lucee/sys/upgrade-in-progress/ip-allow.conf`
+To exclude an entire site, *before configuring Apache*, remove it from the sites data file via the app menu option "View/Edit Site Data". That is mostly suitable only for QA domains e.g. `qa.example.com`.
 
 
 ## Install
