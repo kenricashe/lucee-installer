@@ -22,7 +22,7 @@ fi
 
 # UPDATE THIS WITH EACH COMMIT
 echo ""
-echo "install.sh version: 2025-08-24 14:15:41 Pacific"
+echo "install.sh version: 2025-08-24 14:22:18 Pacific"
 
 OWNER=${OWNER:-kenricashe}
 REPO=${REPO:-lucee-installer}
@@ -32,7 +32,12 @@ REPO=${REPO:-lucee-installer}
 if [ -n "$SOURCE_URL" ] && [[ "$SOURCE_URL" == *"/raw.githubusercontent.com/"* ]]; then
 	SRC_OWNER=$(printf '%s\n' "$SOURCE_URL" | sed -n 's|.*/raw.githubusercontent.com/\([^/]*\)/[^/]*/.*|\1|p')
 	SRC_REPO=$(printf '%s\n' "$SOURCE_URL" | sed -n 's|.*/raw.githubusercontent.com/[^/]*/\([^/]*\)/.*|\1|p')
-	SRC_REF=$(printf '%s\n' "$SOURCE_URL" | sed -n 's|.*/raw.githubusercontent.com/[^/]*/[^/]*/\([^/]*\)/.*|\1|p')
+	# Try to capture refs that contain slashes by matching the known suffix path
+	SRC_REF=$(printf '%s\n' "$SOURCE_URL" | sed -n 's|.*/raw.githubusercontent.com/[^/]*/[^/]*/\(.*\)/lucee/linux/sys/upgrade-in-progress/install.sh|\1|p')
+	# Fallback to single-segment capture if the precise match fails
+	if [ -z "$SRC_REF" ]; then
+		SRC_REF=$(printf '%s\n' "$SOURCE_URL" | sed -n 's|.*/raw.githubusercontent.com/[^/]*/[^/]*/\([^/]*\)/.*|\1|p')
+	fi
 	if [ -n "$SRC_OWNER" ] && [ "$OWNER" = "kenricashe" ]; then
 		OWNER="$SRC_OWNER"
 		echo "OWNER set from SOURCE_URL: $OWNER"
@@ -54,7 +59,11 @@ if [ -z "$REF" ]; then
 		if [ -r "/proc/$PID/cmdline" ]; then
 			CMDLINE=$(tr '\0' ' ' < "/proc/$PID/cmdline" 2>/dev/null)
 			if [[ "$CMDLINE" == *"/raw.githubusercontent.com/"* ]]; then
-				URL_REF_AUTO=$(printf '%s\n' "$CMDLINE" | sed -n 's|.*raw.githubusercontent.com/[^/]*/[^/]*/\([^/]*\)/.*|\1|p')
+				# Prefer precise capture using known suffix to support refs with slashes
+				URL_REF_AUTO=$(printf '%s\n' "$CMDLINE" | sed -n 's|.*raw.githubusercontent.com/[^/]*/[^/]*/\(.*\)/lucee/linux/sys/upgrade-in-progress/install.sh|\1|p')
+				if [ -z "$URL_REF_AUTO" ]; then
+					URL_REF_AUTO=$(printf '%s\n' "$CMDLINE" | sed -n 's|.*raw.githubusercontent.com/[^/]*/[^/]*/\([^/]*\)/.*|\1|p')
+				fi
 				if [ -n "$URL_REF_AUTO" ]; then
 					break
 				fi
@@ -68,7 +77,11 @@ if [ -z "$REF" ]; then
 			if [ -r "$PROC" ]; then
 				CMDLINE=$(tr '\0' ' ' < "$PROC" 2>/dev/null)
 				if [[ "$CMDLINE" == *"/raw.githubusercontent.com/"* ]] && [[ "$CMDLINE" == *"/lucee/linux/sys/upgrade-in-progress/install.sh"* ]]; then
-					URL_REF_AUTO=$(printf '%s\n' "$CMDLINE" | sed -n 's|.*raw.githubusercontent.com/[^/]*/[^/]*/\([^/]*\)/.*|\1|p')
+					# Prefer precise capture using known suffix to support refs with slashes
+					URL_REF_AUTO=$(printf '%s\n' "$CMDLINE" | sed -n 's|.*raw.githubusercontent.com/[^/]*/[^/]*/\(.*\)/lucee/linux/sys/upgrade-in-progress/install.sh|\1|p')
+					if [ -z "$URL_REF_AUTO" ]; then
+						URL_REF_AUTO=$(printf '%s\n' "$CMDLINE" | sed -n 's|.*raw.githubusercontent.com/[^/]*/[^/]*/\([^/]*\)/.*|\1|p')
+					fi
 					if [ -n "$URL_REF_AUTO" ]; then
 						break
 					fi
