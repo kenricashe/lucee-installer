@@ -1520,7 +1520,7 @@ configure_site_redhat() {
 
 	# Locate SSL VirtualHost file containing ServerName and :443
 	local ssl_conf_file=""
-	for f in "${CONF_DIR}/*.conf" "${CONF_DIR}/httpd.conf"; do
+	for f in ${CONF_DIR}/*.conf /etc/httpd/conf/httpd.conf; do
 		[ -f "$f" ] || continue
 		if grep -q "ServerName $domain" "$f" 2>/dev/null; then
 			if grep -Eq '<VirtualHost[^>]*:443' "$f" 2>/dev/null; then
@@ -1583,7 +1583,7 @@ configure_site_redhat() {
 
 	# Locate HTTP VirtualHost file containing ServerName and :80 (or lacking :443 when matching domain)
 	local http_conf_file=""
-	for f in "${CONF_DIR}/*.conf" "${CONF_DIR}/httpd.conf"; do
+	for f in ${CONF_DIR}/*.conf /etc/httpd/conf/httpd.conf; do
 		[ -f "$f" ] || continue
 		if grep -q "ServerName $domain" "$f" 2>/dev/null; then
 			if grep -Eq '<VirtualHost[^>]*:80' "$f" 2>/dev/null || ! grep -Eq '<VirtualHost[^>]*:443' "$f" 2>/dev/null; then
