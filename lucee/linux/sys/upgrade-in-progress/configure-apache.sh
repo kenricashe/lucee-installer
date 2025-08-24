@@ -227,9 +227,25 @@ check_module() {
 			return 1
 		fi
 	elif [ -n "$CONF_DIR" ]; then
-		# Fedora, Red Hat, AlmaLinux, Rocky Linux, etc
-		if apachectl -M | grep -q "${DEBIAN_NAME}_module"; then
-			return 0
+		# Fedora, Red Hat, AlmaLinux, Rocky Linux, etc.
+		# Prefer httpd -M; fall back to apachectl -t -D DUMP_MODULES; try apachectl -M last.
+		if command -v httpd >/dev/null 2>&1; then
+			if httpd -M 2>/dev/null | grep -q "${DEBIAN_NAME}_module"; then
+				return 0
+			else
+				return 1
+			fi
+		elif command -v apachectl >/dev/null 2>&1; then
+			# Use syntax-dump which works even if apachectl does not support -M
+			if apachectl -t -D DUMP_MODULES 2>/dev/null | grep -q "${DEBIAN_NAME}_module"; then
+				return 0
+			else
+				# Try legacy -M as a last resort
+				if apachectl -M 2>/dev/null | grep -q "${DEBIAN_NAME}_module"; then
+					return 0
+				fi
+				return 1
+			fi
 		else
 			return 1
 		fi
@@ -569,8 +585,19 @@ headers_module_enabled() {
 			return $?
 			;;
 		apachectl)
-			apachectl -M 2>/dev/null | grep -qiE '(^|[^[:alnum:]_])headers_module([^[:alnum:]_]|$)'
-			return $?
+			# Prefer httpd -M on RHEL-like systems; fall back to apachectl -t -D DUMP_MODULES; try apachectl -M last
+			if command -v httpd >/dev/null 2>&1; then
+				httpd -M 2>/dev/null | grep -qiE '(^|[^[:alnum:]_])headers_module([^[:alnum:]_]|$)'
+				return $?
+			else
+				if apachectl -t -D DUMP_MODULES 2>/dev/null | grep -qiE '(^|[^[:alnum:]_])headers_module([^[:alnum:]_]|$)'; then
+					return 0
+				fi
+				if apachectl -M 2>/dev/null | grep -qiE '(^|[^[:alnum:]_])headers_module([^[:alnum:]_]|$)'; then
+					return 0
+				fi
+				return 1
+			fi
 			;;
 		apache2ctl)
 			apache2ctl -M 2>/dev/null | grep -qiE '(^|[^[:alnum:]_])headers_module([^[:alnum:]_]|$)'
