@@ -22,7 +22,7 @@ fi
 
 # UPDATE THIS WITH EACH COMMIT
 echo ""
-echo "install.sh version: 2025-08-24 14:22:18 Pacific"
+echo "install.sh version: 2025-08-24 14:29:40 Pacific"
 
 OWNER=${OWNER:-kenricashe}
 REPO=${REPO:-lucee-installer}
@@ -40,15 +40,12 @@ if [ -n "$SOURCE_URL" ] && [[ "$SOURCE_URL" == *"/raw.githubusercontent.com/"* ]
 	fi
 	if [ -n "$SRC_OWNER" ] && [ "$OWNER" = "kenricashe" ]; then
 		OWNER="$SRC_OWNER"
-		echo "OWNER set from SOURCE_URL: $OWNER"
 	fi
 	if [ -n "$SRC_REPO" ] && [ "$REPO" = "lucee-installer" ]; then
 		REPO="$SRC_REPO"
-		echo "REPO set from SOURCE_URL: $REPO"
 	fi
 	if [ -n "$SRC_REF" ] && [ -z "$REF" ]; then
 		REF="$SRC_REF"
-		echo "REF set from SOURCE_URL: $REF"
 	fi
 fi
 
@@ -96,9 +93,6 @@ if [ -z "$REF" ]; then
 fi
 REF=${REF:-master}
 
-echo ""
-echo "Using: OWNER=$OWNER REPO=$REPO REF=$REF"
-
 TARBALL_URL="https://codeload.github.com/${OWNER}/${REPO}/tar.gz/${REF}"
 TMPDIR=$(mktemp -d)
 
@@ -109,11 +103,13 @@ cleanup() {
 }
 trap cleanup EXIT
 
+echo ""
 echo "Downloading ${OWNER}/${REPO}@${REF} ..."
 
 # When extracting GitHub tarballs, the top directory will be named {repo}-{ref}
 # where {ref} has '/' characters replaced with '-'
 if ! curl -fsSL "$TARBALL_URL" | tar -xz -C "$TMPDIR"; then
+	echo ""
 	echo "Error: Failed to download or extract tarball: $TARBALL_URL"
 	exit 1
 fi
@@ -121,10 +117,12 @@ fi
 # Find the subdirectory containing this toolset
 # GitHub tarballs include a top-level directory named {repo}-{ref}
 # where branch refs with slashes are converted to hyphens
+echo ""
 echo "Searching for upgrade-in-progress directory..."
 
 # First, find the top-level directory (should be something like lucee-installer-feature-upgrade-in-progress-apache)
 TOP_DIR=$(find "$TMPDIR" -mindepth 1 -maxdepth 1 -type d | head -n1)
+echo ""
 echo "Found top-level directory: $TOP_DIR"
 
 # Now look for the upgrade-in-progress directory within that top-level directory
@@ -136,14 +134,16 @@ if [ ! -d "$SUBDIR" ]; then
 
 	if [ -z "$SUBDIR" ]; then
 		# Debug: Show the directory structure to help diagnose the issue
+		echo ""
 		echo "Directory structure in tarball:"
 		find "$TMPDIR" -type d | sort
-		
+		echo ""
 		echo "Error: Could not locate subdirectory lucee/linux/sys/upgrade-in-progress in the tarball"
 		exit 1
 	fi
 fi
 
+echo ""
 echo "Found upgrade-in-progress directory at: $SUBDIR"
 
 # Run the deployment script from the extracted directory
@@ -156,14 +156,17 @@ DEFAULT_LUCEE_ROOT="/opt/lucee"
 
 if [ -n "$LUCEE_ROOT" ]; then
 	# Environment variable provided
+	echo ""
 	echo "Using LUCEE_ROOT from environment: $LUCEE_ROOT"
 elif [ -t 0 ]; then
 	# Interactive mode - prompt for Lucee root path
+	echo ""
 	read -r -p "Enter target Lucee root path [${DEFAULT_LUCEE_ROOT}]: " INPUT_LUCEE_ROOT
 	LUCEE_ROOT="${INPUT_LUCEE_ROOT:-$DEFAULT_LUCEE_ROOT}"
 else
 	# Non-interactive mode (curl pipe) - use default and continue
 	LUCEE_ROOT="$DEFAULT_LUCEE_ROOT"
+	echo ""
 	echo "Using default Lucee root path: $LUCEE_ROOT"
 fi
 
