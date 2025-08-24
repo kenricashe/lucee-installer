@@ -40,6 +40,21 @@ if [ -z "$REF" ]; then
 			fi
 		fi
 	done
+
+	# Fallback: search across all processes (useful for curl | sudo bash pipelines)
+	if [ -z "$URL_REF_AUTO" ]; then
+		for PROC in /proc/[0-9]*/cmdline; do
+			if [ -r "$PROC" ]; then
+				CMDLINE=$(tr '\0' ' ' < "$PROC" 2>/dev/null)
+				if [[ "$CMDLINE" == *"/raw.githubusercontent.com/"* ]] && [[ "$CMDLINE" == *"/lucee/linux/sys/upgrade-in-progress/install.sh"* ]]; then
+					URL_REF_AUTO=$(printf '%s\n' "$CMDLINE" | sed -n 's|.*raw.githubusercontent.com/[^/]*/[^/]*/\([^/]*\)/.*|\1|p')
+					if [ -n "$URL_REF_AUTO" ]; then
+						break
+					fi
+				fi
+			fi
+		done
+	fi
 	if [ -n "$URL_REF_AUTO" ]; then
 		REF="$URL_REF_AUTO"
 		echo "Auto-detected REF=$REF from installer URL"
@@ -61,9 +76,27 @@ for PID in "$PPID" "$$"; do
 	fi
 done
 
+# Fallback: search across all processes (useful for curl | sudo bash pipelines)
+if [ -z "$INSTALLER_URL" ]; then
+	for PROC in /proc/[0-9]*/cmdline; do
+		if [ -r "$PROC" ]; then
+			CMDLINE=$(tr '\0' ' ' < "$PROC" 2>/dev/null)
+			if [[ "$CMDLINE" == *"/raw.githubusercontent.com/"* ]] && [[ "$CMDLINE" == *"/lucee/linux/sys/upgrade-in-progress/install.sh"* ]]; then
+				CANDIDATE_URL=$(printf '%s\n' "$CMDLINE" | sed -n 's|.*\(https://raw.githubusercontent.com/[^ ]*\).*|\1|p' | head -n1)
+				if [ -n "$CANDIDATE_URL" ]; then
+					INSTALLER_URL="$CANDIDATE_URL"
+					break
+				fi
+			fi
+		fi
+	done
+fi
+
+RAW_URL_DERIVED="https://raw.githubusercontent.com/$OWNER/$REPO/$REF/lucee/linux/sys/upgrade-in-progress/install.sh"
+
+echo ""
 if [ -n "$INSTALLER_URL" ]; then
-	echo ""
-	echo "Installer URL: $INSTALLER_URL"
+	echo "Installer URL (detected): $INSTALLER_URL"
 	HEADERS=$(curl -sI "$INSTALLER_URL" 2>/dev/null)
 	if [ -n "$HEADERS" ]; then
 		LM=$(printf '%s\n' "$HEADERS" | awk -F': ' 'tolower($1)=="last-modified"{print $2}')
@@ -75,9 +108,36 @@ if [ -n "$INSTALLER_URL" ]; then
 			echo "Installer ETag: $ET"
 		fi
 	fi
+
+	if [ "$INSTALLER_URL" != "$RAW_URL_DERIVED" ]; then
+		echo ""
+		echo "Derived URL (from OWNER/REPO/REF): $RAW_URL_DERIVED"
+		HEADERS2=$(curl -sI "$RAW_URL_DERIVED" 2>/dev/null)
+		if [ -n "$HEADERS2" ]; then
+			LM2=$(printf '%s\n' "$HEADERS2" | awk -F': ' 'tolower($1)=="last-modified"{print $2}')
+			ET2=$(printf '%s\n' "$HEADERS2" | awk -F': ' 'tolower($1)=="etag"{print $2}')
+			if [ -n "$LM2" ]; then
+				echo "Derived Last-Modified: $LM2"
+			fi
+			if [ -n "$ET2" ]; then
+				echo "Derived ETag: $ET2"
+			fi
+		fi
+	fi
 else
-	echo ""
-	echo "Installer URL not detected."
+	echo "Installer URL not detected from process tree."
+	echo "Derived URL (from OWNER/REPO/REF): $RAW_URL_DERIVED"
+	HEADERS=$(curl -sI "$RAW_URL_DERIVED" 2>/dev/null)
+	if [ -n "$HEADERS" ]; then
+		LM=$(printf '%s\n' "$HEADERS" | awk -F': ' 'tolower($1)=="last-modified"{print $2}')
+		ET=$(printf '%s\n' "$HEADERS" | awk -F': ' 'tolower($1)=="etag"{print $2}')
+		if [ -n "$LM" ]; then
+			echo "Derived Last-Modified: $LM"
+		fi
+		if [ -n "$ET" ]; then
+			echo "Derived ETag: $ET"
+		fi
+	fi
 fi
 
 echo ""
@@ -96,6 +156,21 @@ for PID in "$PPID" "$$"; do
 		fi
 	fi
 done
+
+# Fallback: search across all processes (useful for curl | sudo bash pipelines)
+if [ -z "$SCRIPT_REF" ]; then
+	for PROC in /proc/[0-9]*/cmdline; do
+		if [ -r "$PROC" ]; then
+			CMDLINE=$(tr '\0' ' ' < "$PROC" 2>/dev/null)
+			if [[ "$CMDLINE" == *"/raw.githubusercontent.com/"* ]] && [[ "$CMDLINE" == *"/lucee/linux/sys/upgrade-in-progress/install.sh"* ]]; then
+				SCRIPT_REF=$(printf '%s\n' "$CMDLINE" | sed -n 's|.*raw.githubusercontent.com/[^/]*/[^/]*/\([^/]*\)/.*|\1|p')
+				if [ -n "$SCRIPT_REF" ]; then
+					break
+				fi
+			fi
+		fi
+	done
+fi
 
 if [ -n "$SCRIPT_REF" ] && [ "$REF" != "$SCRIPT_REF" ]; then
 	echo ""
