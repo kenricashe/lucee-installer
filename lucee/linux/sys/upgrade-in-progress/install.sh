@@ -3,14 +3,16 @@
 # One-shot installer to deploy the Upgrade-In-Progress toolkit into /opt/lucee/sys/...
 
 # Usage:
-#
 # curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/master/lucee/linux/sys/upgrade-in-progress/install.sh | sudo bash
 #
-# Example with custom Lucee root path in environment variable and non-master branch name in URL:
-# sudo LUCEE_ROOT=/opt/lucee6 bash -c 'curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/feature/upgrade-in-progress-apache/lucee/linux/sys/upgrade-in-progress/install.sh | bash'
+# Example with custom Lucee root path in environment variable:
+# sudo LUCEE_ROOT=/opt/lucee6 bash -c 'curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/master/lucee/linux/sys/upgrade-in-progress/install.sh | bash'
+#
+# Example with non-master branch name in URL e.g. for QA testing:
+# curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/feature/upgrade-in-progress-apache/lucee/linux/sys/upgrade-in-progress/install.sh | sudo bash
 #
 # GitHub CDN caching can last 5 minutes. For quicker testing, in the URL replace branch with the commit sha:
-# sudo bash -c 'curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/<commit-sha>/lucee/linux/sys/upgrade-in-progress/install.sh | bash'
+# curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/<commit-sha>/lucee/linux/sys/upgrade-in-progress/install.sh | sudo bash
 #
 # Intentional branch mismatch should warn and exit:
 # sudo REF=oopsie bash -c 'curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/feature/upgrade-in-progress-apache/lucee/linux/sys/upgrade-in-progress/install.sh | bash'
