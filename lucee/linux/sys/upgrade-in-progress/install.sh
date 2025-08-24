@@ -110,8 +110,17 @@ else
 	# Display error message on failure
 	echo ""
 	echo "=================================================================="
-	echo "ERROR: Deployment failed with status code $DEPLOY_STATUS"
+	if [ -n "$DEPLOY_STATUS" ]; then
+		echo "ERROR: Deployment failed with status code $DEPLOY_STATUS"
+	else
+		echo "ERROR: Deployment failed"
+	fi
 	echo "Please check the error messages above for more information."
 	echo "=================================================================="
-	exit $DEPLOY_STATUS
+	# Exit with the status code if available, otherwise use 1
+	if [ -n "$DEPLOY_STATUS" ]; then
+		exit "$DEPLOY_STATUS"
+	else
+		exit 1
+	fi
 fi
