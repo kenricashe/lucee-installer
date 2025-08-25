@@ -73,18 +73,6 @@ if [ ! -f "$DETECT_CONF" ]; then
 	exit 1
 fi
 
-# Check if the upgrade-in-progress directory exists
-if [ ! -d "$UPG_DIR" ]; then
-	echo "Error: Upgrade directory $UPG_DIR does not exist."
-	exit 1
-fi
-
-# Check if the lucee-detect-upgrade.conf file exists
-if [ ! -f "$UPG_DIR/lucee-detect-upgrade.conf" ]; then
-	echo "Error: $UPG_DIR/lucee-detect-upgrade.conf does not exist."
-	exit 1
-fi
-
 # Check for required include files and fix SELinux contexts if needed
 REQUIRED_FILES=(
 	"$UPG_DIR/ip-allow.conf"
