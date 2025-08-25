@@ -97,7 +97,7 @@ EOF
 	mkdir -p /usr/local/cpanel/bin
 	cat > /usr/local/cpanel/bin/check_cpanel_module_status << 'EOF'
 #!/bin/bash
-# Dummy cPanel module status checker for simulation
+# cPanel module status checker simulation - wrapper for actual Apache module detection
 
 # Parse command line arguments
 MODULE=""
@@ -117,17 +117,69 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
-# Simulate common Apache modules as enabled
-case "$MODULE" in
-	"mod_rewrite"|"mod_headers"|"mod_proxy"|"mod_proxy_http"|"mod_ssl")
-		echo "${MODULE}: enabled"
-		exit 0
-		;;
-	*)
-		echo "${MODULE}: disabled"
-		exit 1
-		;;
-esac
+if [ -z "$MODULE" ]; then
+	echo "Error: No module specified"
+	exit 1
+fi
+
+# Map cPanel module names to Apache module names for detection
+declare -A MODULE_MAP=(
+	["mod_rewrite"]="rewrite"
+	["mod_headers"]="headers"
+	["mod_proxy"]="proxy"
+	["mod_proxy_http"]="proxy_http"
+	["mod_ssl"]="ssl"
+	["mod_setenvif"]="setenvif"
+)
+
+# Check if module is supported, fallback to disabled for unknown modules
+if [[ -v MODULE_MAP["$MODULE"] ]]; then
+	APACHE_MODULE="${MODULE_MAP[$MODULE]}"
+else
+	echo "${MODULE}: disabled"
+	exit 1
+fi
+
+# Check if module is actually enabled using Apache commands
+check_module_enabled() {
+	local mod_name="$1"
+	
+	# Try httpd -M first (RHEL/CentOS)
+	if command -v httpd >/dev/null 2>&1; then
+		if httpd -M 2>/dev/null | grep -q "${mod_name}_module"; then
+			return 0
+		fi
+	fi
+	
+	# Try apache2ctl -M (Debian/Ubuntu)
+	if command -v apache2ctl >/dev/null 2>&1; then
+		if apache2ctl -M 2>/dev/null | grep -q "${mod_name}_module"; then
+			return 0
+		fi
+	fi
+	
+	# Try apachectl as fallback
+	if command -v apachectl >/dev/null 2>&1; then
+		if apachectl -M 2>/dev/null | grep -q "${mod_name}_module"; then
+			return 0
+		fi
+		# Also try syntax dump method
+		if apachectl -t -D DUMP_MODULES 2>/dev/null | grep -q "${mod_name}_module"; then
+			return 0
+		fi
+	fi
+	
+	return 1
+}
+
+# Check the actual module status
+if check_module_enabled "$APACHE_MODULE"; then
+	echo "${MODULE}: enabled"
+	exit 0
+else
+	echo "${MODULE}: disabled"
+	exit 1
+fi
 EOF
 	chmod +x /usr/local/cpanel/bin/check_cpanel_module_status
 	echo "  Created: /usr/local/cpanel/bin/check_cpanel_module_status"
