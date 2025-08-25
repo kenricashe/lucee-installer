@@ -594,6 +594,10 @@ ensure_include_detect_upgrade_in_vhost() {
 	local domain_match="$2"
 	local port_filter="$3"
 	local tmp
+	
+	# Backup the file before making changes
+	backup_file "$vhost_file"
+	
 	# Use the deployed upgrade directory path (absolute) for the Include line
 	local include_path="${UPG_DIR}/lucee-detect-upgrade.conf"
 	local include_line="Include ${include_path}"
