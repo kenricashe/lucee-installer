@@ -25,6 +25,9 @@ selinux_enabled() {
 	return 1
 }
 
+# Check if quiet SELinux output is requested
+SELINUX_QUIET=${SELINUX_QUIET:-0}
+
 FILES=(
 	"get-lucee-sites.sh"
 	"configure-apache.sh"
@@ -100,15 +103,17 @@ if selinux_enabled; then
 	
 	# Try to use semanage for persistent context (preferred method)
 	if command -v semanage >/dev/null 2>&1; then
-		semanage fcontext -a -t httpd_config_t "${DEST_DIR}(/.*)?" || echo "Warning: semanage failed, falling back to chcon"
-		restorecon -Rv "${DEST_DIR}" || echo "Warning: restorecon failed, falling back to chcon"
+		semanage fcontext -a -t httpd_config_t "${DEST_DIR}(/.*)?" >/dev/null 2>&1 || echo "Warning: semanage failed, falling back to chcon"
+		# Suppress verbose "Relabeled" output lines
+		restorecon -R "${DEST_DIR}" >/dev/null 2>&1 || echo "Warning: restorecon failed, falling back to chcon"
 	# Fall back to chcon if semanage is not available
 	elif command -v chcon >/dev/null 2>&1; then
-		chcon -R -t httpd_config_t "${DEST_DIR}" || echo "Warning: chcon failed to set SELinux context"
+		chcon -R -t httpd_config_t "${DEST_DIR}" >/dev/null 2>&1 || echo "Warning: chcon failed to set SELinux context"
 	else
 		echo "Warning: SELinux is enabled but neither semanage nor chcon commands are available."
 		echo "Apache may not be able to read config files due to SELinux restrictions."
 	fi
+	echo "SELinux contexts set successfully."
 fi
 
 echo "Deployment to ${DEST_DIR} completed successfully."

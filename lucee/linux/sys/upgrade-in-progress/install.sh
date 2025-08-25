@@ -166,7 +166,9 @@ else
 fi
 
 # Execute the deployment script and capture its exit status
-if "$SUBDIR/deploy-to-opt-lucee-sys.sh" "$LUCEE_ROOT"; then
+echo "Using Lucee root path: ${LUCEE_ROOT}"
+SELINUX_QUIET=1 "$SUBDIR/deploy-to-opt-lucee-sys.sh" "$LUCEE_ROOT"
+if [ $? -eq 0 ]; then
 	# Deployment was successful
 	echo ""
 	echo "=================================================================="

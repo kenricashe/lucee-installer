@@ -37,15 +37,16 @@ check_and_fix_selinux_context() {
 	echo "Checking SELinux context for $file"
 	
 	if command -v restorecon >/dev/null 2>&1; then
-		restorecon -v "$file" >/dev/null 2>&1 || {
+		# Suppress verbose output
+		restorecon "$file" >/dev/null 2>&1 || {
 			echo "Warning: restorecon failed, trying chcon fallback"
 			if command -v chcon >/dev/null 2>&1; then
-				chcon -t httpd_config_t "$file" 2>/dev/null || \
+				chcon -t httpd_config_t "$file" >/dev/null 2>&1 || \
 				echo "Warning: Failed to set SELinux context on $file"
 			fi
 		}
 	elif command -v chcon >/dev/null 2>&1; then
-		chcon -t httpd_config_t "$file" 2>/dev/null || \
+		chcon -t httpd_config_t "$file" >/dev/null 2>&1 || \
 		echo "Warning: Failed to set SELinux context on $file"
 	else
 		echo "Warning: SELinux is enabled but neither restorecon nor chcon commands are available."
