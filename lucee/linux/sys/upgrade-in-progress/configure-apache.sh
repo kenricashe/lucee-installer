@@ -32,6 +32,31 @@ report_missing_module() {
 	echo "Error: Required Apache module '$1' is not enabled. Please enable it and try again."
 }
 
+# If SELinux is active, restore proper context for Apache config files
+restorecon_if_selinux() {
+	local file="$1"
+	# Only attempt on Apache config paths
+	case "$file" in
+		/etc/httpd/*|/etc/apache2/*)
+			;;
+		*)
+			return 0
+			;;
+	esac
+	if command -v getenforce >/dev/null 2>&1; then
+		local mode
+		mode=$(getenforce 2>/dev/null)
+		if [ "$mode" != "Disabled" ]; then
+			if command -v restorecon >/dev/null 2>&1; then
+				restorecon -v "$file" >/dev/null 2>&1 || true
+			else
+				# Best-effort fallback for RHEL-like systems
+				chcon -t httpd_config_t "$file" 2>/dev/null || true
+			fi
+		fi
+	fi
+}
+
 # Extract the single ErrorDocument 404 line from a block (strip leading '#' and whitespace)
 extract_404_line_from_block() {
 	local block="$1"
@@ -180,11 +205,13 @@ add_include_404_to_vhost() {
 		}
 	' "$vhost_file" > "$tmp"
 	if [ $? -eq 0 ]; then
-		# Preserve original permissions before overwriting
+		# Overwrite in place to preserve SELinux context
 		local orig_perms
 		orig_perms=$(stat -c %a "$vhost_file" 2>/dev/null || echo "644")
-		mv -f "$tmp" "$vhost_file"
+		cat "$tmp" > "$vhost_file"
+		rm -f "$tmp"
 		chmod "$orig_perms" "$vhost_file" 2>/dev/null || chmod 644 "$vhost_file"
+		restorecon_if_selinux "$vhost_file"
 		return 0
 	else
 		rm -f "$tmp"
@@ -511,7 +538,10 @@ remove_404_block() {
 		' "$file" > "$tmp"
 	fi
 	if [ $? -eq 0 ]; then
-		mv -f "$tmp" "$file"
+		cat "$tmp" > "$file"
+		rm -f "$tmp"
+		restorecon_if_selinux "$file"
+		return 0
 	else
 		rm -f "$tmp"
 		return 1
@@ -561,11 +591,14 @@ ensure_include_detect_upgrade_in_vhost() {
 		}
 	' "$vhost_file" > "$tmp"
 	if [ $? -eq 0 ]; then
-		# Preserve original permissions before overwriting
+		# Overwrite in place to preserve SELinux context
 		local orig_perms
 		orig_perms=$(stat -c %a "$vhost_file" 2>/dev/null || echo "644")
-		mv -f "$tmp" "$vhost_file"
+		cat "$tmp" > "$vhost_file"
+		rm -f "$tmp"
 		chmod "$orig_perms" "$vhost_file" 2>/dev/null || chmod 644 "$vhost_file"
+		restorecon_if_selinux "$vhost_file"
+		return 0
 	else
 		rm -f "$tmp"
 		return 1
@@ -876,11 +909,13 @@ replace_proxy_with_comment() {
 	' "$config_file" > "$tmp"; then
 		# Check if replacement actually happened
 		if ! cmp -s "$config_file" "$tmp"; then
-			# Preserve original permissions before overwriting
+			# Overwrite in place to preserve SELinux context
 			local orig_perms
 			orig_perms=$(stat -c %a "$config_file" 2>/dev/null || echo "644")
-			mv "$tmp" "$config_file"
+			cat "$tmp" > "$config_file"
+			rm -f "$tmp"
 			chmod "$orig_perms" "$config_file" 2>/dev/null || chmod 644 "$config_file"
+			restorecon_if_selinux "$config_file"
 			# Normalize whitespace to prevent multiple empty lines
 			normalize_conf_whitespace "$config_file"
 			return 0
@@ -939,11 +974,13 @@ replace_proxy_with_comment() {
 	' "$config_file" > "$tmp"
 	
 	if [ $? -eq 0 ]; then
-		# Preserve original permissions before overwriting
+		# Overwrite in place to preserve SELinux context
 		local orig_perms
 		orig_perms=$(stat -c %a "$config_file" 2>/dev/null || echo "644")
-		mv "$tmp" "$config_file"
+		cat "$tmp" > "$config_file"
+		rm -f "$tmp"
 		chmod "$orig_perms" "$config_file" 2>/dev/null || chmod 644 "$config_file"
+		restorecon_if_selinux "$config_file"
 		# Normalize whitespace to prevent multiple empty lines
 		normalize_conf_whitespace "$config_file"
 		return 0
@@ -1168,8 +1205,8 @@ copy_upgrade_html() {
 			apache_user="nobody"
 		else
 			# Try to detect Apache user on RHEL/CentOS systems
-			if [ -n "$CONF_DIR" ] && [ -f "$CONF_DIR/httpd.conf" ]; then
-				apache_user=$(grep -i "^User" "$CONF_DIR/httpd.conf" 2>/dev/null | head -1 | awk '{print $2}' || echo "apache")
+			if [ -f "/etc/httpd/conf/httpd.conf" ]; then
+				apache_user=$(grep -i "^User" "/etc/httpd/conf/httpd.conf" 2>/dev/null | head -1 | awk '{print $2}' || echo "apache")
 			else
 				apache_user="apache"
 			fi
@@ -1518,17 +1555,21 @@ configure_site_redhat() {
 	# Copy lucee-upgrade-in-progress.html to DocumentRoot
 	copy_upgrade_html "$docroot"
 
-	# Locate SSL VirtualHost file containing ServerName and :443
+	# Find SSL VirtualHost file from sites-configured.txt
 	local ssl_conf_file=""
-	for f in ${CONF_DIR}/*.conf /etc/httpd/conf/httpd.conf; do
-		[ -f "$f" ] || continue
-		if grep -q "ServerName $domain" "$f" 2>/dev/null; then
-			if grep -Eq '<VirtualHost[^>]*:443' "$f" 2>/dev/null; then
-				ssl_conf_file="$f"
+	while IFS= read -r line; do
+		local site_domain site_docroot site_vhost_file
+		site_domain=$(echo "$line" | awk '{print $1}')
+		site_docroot=$(echo "$line" | awk '{print $2}')
+		site_vhost_file=$(echo "$line" | awk '{print $3}')
+		
+		if [ "$site_domain" = "$domain" ] && [ "$site_docroot" = "$docroot" ]; then
+			if [ -f "$site_vhost_file" ] && grep -Eq '<VirtualHost[^>]*:443' "$site_vhost_file" 2>/dev/null; then
+				ssl_conf_file="$site_vhost_file"
 				break
 			fi
 		fi
-	done
+	done < "$SITES_FILE"
 
 	local ssl_404_block=""
 	if [ -n "$ssl_conf_file" ]; then
@@ -1581,17 +1622,21 @@ configure_site_redhat() {
 		echo "  Warning: Could not find SSL VirtualHost for $domain"
 	fi
 
-	# Locate HTTP VirtualHost file containing ServerName and :80 (or lacking :443 when matching domain)
+	# Find HTTP VirtualHost file from sites-configured.txt
 	local http_conf_file=""
-	for f in ${CONF_DIR}/*.conf /etc/httpd/conf/httpd.conf; do
-		[ -f "$f" ] || continue
-		if grep -q "ServerName $domain" "$f" 2>/dev/null; then
-			if grep -Eq '<VirtualHost[^>]*:80' "$f" 2>/dev/null || ! grep -Eq '<VirtualHost[^>]*:443' "$f" 2>/dev/null; then
-				http_conf_file="$f"
+	while IFS= read -r line; do
+		local site_domain site_docroot site_vhost_file
+		site_domain=$(echo "$line" | awk '{print $1}')
+		site_docroot=$(echo "$line" | awk '{print $2}')
+		site_vhost_file=$(echo "$line" | awk '{print $3}')
+		
+		if [ "$site_domain" = "$domain" ] && [ "$site_docroot" = "$docroot" ]; then
+			if [ -f "$site_vhost_file" ] && (grep -Eq '<VirtualHost[^>]*:80' "$site_vhost_file" 2>/dev/null || ! grep -Eq '<VirtualHost[^>]*:443' "$site_vhost_file" 2>/dev/null); then
+				http_conf_file="$site_vhost_file"
 				break
 			fi
 		fi
-	done
+	done < "$SITES_FILE"
 
 	if [ -n "$http_conf_file" ]; then
 		echo "  Updating $http_conf_file (HTTP vhost)"
@@ -1672,6 +1717,7 @@ process_sites() {
 	while IFS= read -r line; do
 		domain=$(echo "$line" | awk '{print $1}')
 		docroot=$(echo "$line" | awk '{print $2}')
+		# vhost_file=$(echo "$line" | awk '{print $3}') # Available but not used in this context
 		$configure_func "$domain" "$docroot"
 		
 	done < $SITES_FILE

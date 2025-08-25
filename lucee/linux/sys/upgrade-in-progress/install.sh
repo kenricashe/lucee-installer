@@ -20,7 +20,7 @@ fi
 
 # UPDATE THIS WITH EACH COMMIT
 echo ""
-echo "install.sh version: 2025-08-24 16:26:40 Pacific"
+echo "install.sh version: 2025-08-24 17:14:15 Pacific"
 
 OWNER=${OWNER:-kenricashe}
 REPO=${REPO:-lucee-installer}

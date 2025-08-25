@@ -127,18 +127,18 @@ has_cfml_files() {
 # ------------------------------
 
 parse_vhosts_file() {
-	# Emits lines: "domain|/path/to/docroot" for each vhost in a file
+	# Emits lines: "domain|/path/to/docroot|/path/to/vhost/file" for each vhost in a file
 	local f="$1"
 	if [ ! -f "$f" ]; then
 		return 0
 	fi
-	awk -v IGNORECASE=1 '
+	awk -v IGNORECASE=1 -v vhost_file="$f" '
 		/^[ \t]*#/ { next }
 		/<[ \t]*VirtualHost[> ]/ { in_vh=1; server=""; docroot=""; for (k in alias) delete alias[k]; ac=0; next }
 		in_vh==1 && /<[ \t]*\/[ \t]*VirtualHost[> ]/ {
 			# Only emit ServerName mapping, ignore ServerAlias to avoid duplicates
 			if (docroot != "" && server != "") {
-				printf "%s|%s\n", server, docroot
+				printf "%s|%s|%s\n", server, docroot, vhost_file
 			}
 			in_vh=0; server=""; docroot=""; for (k in alias) delete alias[k]; ac=0; next
 		}
@@ -159,13 +159,13 @@ parse_vhosts_file() {
 }
 
 collect_debian_vhosts() {
-	# Outputs pairs: domain docroot (space-separated)
+	# Outputs triplets: domain docroot vhost_file (space-separated)
 	local f
 	for f in /etc/apache2/sites-enabled/*; do
 		if [ -f "$f" ]; then
 			parse_vhosts_file "$f"
 		fi
-	done | awk -F'|' '{print tolower($1) " " $2}' | sort -u
+	done | awk -F'|' '{print tolower($1) " " $2 " " $3}' | sort -u
 }
 
 collect_rhel_config_files() {
@@ -254,7 +254,7 @@ collect_rhel_config_files() {
 collect_redhat_vhosts() {
 	collect_rhel_config_files | while IFS= read -r f; do
 		parse_vhosts_file "$f"
-	done | awk -F'|' '{print tolower($1) " " $2}' | sort -u
+	done | awk -F'|' '{print tolower($1) " " $2 " " $3}' | sort -u
 }
 
 write_results_noninteractive() {
@@ -275,8 +275,9 @@ write_results_noninteractive() {
 	for (( i=0; i<${#RESULT_DOMAINS[@]}; i++ )); do
 		local d="${RESULT_DOMAINS[$i]}"
 		local r="${RESULT_DOCROOTS[$i]}"
-		if [ -n "$d" ] && [ -n "$r" ]; then
-			append_with_single_newline "$d $r" "$tmp_all"
+		local v="${RESULT_VHOST_FILES[$i]}"
+		if [ -n "$d" ] && [ -n "$r" ] && [ -n "$v" ]; then
+			append_with_single_newline "$d $r $v" "$tmp_all"
 			append_with_single_newline "$d" "$tmp_domains"
 		fi
 	done
@@ -328,14 +329,17 @@ else
 	exit 1
 fi
 
-# Build docroot -> domains map
+# Build docroot -> domains map and track vhost files
+declare -A DOCROOT_TO_VHOST_FILES
 while IFS= read -r line; do
 	if [ -z "$line" ]; then
 		continue
 	fi
 	domain="${line%% *}"
-	docroot="${line#* }"
-	if [ -z "$domain" ] || [ -z "$docroot" ]; then
+	rest="${line#* }"
+	docroot="${rest%% *}"
+	vhost_file="${rest#* }"
+	if [ -z "$domain" ] || [ -z "$docroot" ] || [ -z "$vhost_file" ]; then
 		continue
 	fi
 	# normalize
@@ -346,12 +350,15 @@ while IFS= read -r line; do
 		*" $domain "*) ;;
 		*) DOCROOT_TO_DOMAINS[$docroot]="$current $domain" ;;
 	esac
+	# Store vhost file for this domain
+	DOCROOT_TO_VHOST_FILES["$domain"]="$vhost_file"
 done <<< "$PAIR_LINES"
 
 
 # Evaluate Lucee presence per docroot and assemble final results
 declare -a RESULT_DOMAINS
 declare -a RESULT_DOCROOTS
+declare -a RESULT_VHOST_FILES
 
 for docroot in "${!DOCROOT_TO_DOMAINS[@]}"; do
 	if is_excluded_path "$docroot"; then
@@ -367,6 +374,7 @@ for docroot in "${!DOCROOT_TO_DOMAINS[@]}"; do
 			fi
 			RESULT_DOMAINS+=("$d")
 			RESULT_DOCROOTS+=("$docroot")
+			RESULT_VHOST_FILES+=("${DOCROOT_TO_VHOST_FILES[$d]}")
 		done
 	else
 		echo "  - No Lucee files detected"
@@ -381,9 +389,9 @@ echo "Sorting results..."
 TMP_UNSORTED="$(mktemp)"
 TMP_SORTED="$(mktemp)"
 
-# Write domain and docroot pairs to temporary file
+# Write domain, docroot, and vhost file triplets to temporary file
 for i in "${!RESULT_DOMAINS[@]}"; do
-	append_with_single_newline "${RESULT_DOMAINS[$i]}|${RESULT_DOCROOTS[$i]}" "$TMP_UNSORTED"
+	append_with_single_newline "${RESULT_DOMAINS[$i]}|${RESULT_DOCROOTS[$i]}|${RESULT_VHOST_FILES[$i]}" "$TMP_UNSORTED"
 done
 
 # Sort the temporary file (case-insensitive)
@@ -392,11 +400,13 @@ sort -f "$TMP_UNSORTED" > "$TMP_SORTED"
 # Clear the original arrays
 RESULT_DOMAINS=()
 RESULT_DOCROOTS=()
+RESULT_VHOST_FILES=()
 
 # Read back the sorted data
-while IFS='|' read -r domain docroot || [ -n "$domain" ]; do
+while IFS='|' read -r domain docroot vhost_file || [ -n "$domain" ]; do
 	RESULT_DOMAINS+=("$domain")
 	RESULT_DOCROOTS+=("$docroot")
+	RESULT_VHOST_FILES+=("$vhost_file")
 done < "$TMP_SORTED"
 
 # Clean up temporary files
