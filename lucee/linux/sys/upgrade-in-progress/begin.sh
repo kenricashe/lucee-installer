@@ -57,18 +57,19 @@ check_and_fix_selinux_context() {
 	return 0
 }
 
+# preflight: check if Apache has been configured for upgrade-in-progress
+if ! check_apache_configured; then
+	echo "Error: Apache has not been configured for upgrade-in-progress."
+	echo "Please run the 'Configure Apache' option from the menu first."
+	exit 1
+fi
+
 # preflight: ensure detect include exists at the deployed UPG_DIR
 DETECT_CONF="${UPG_DIR}/lucee-detect-upgrade.conf"
 if [ ! -f "$DETECT_CONF" ]; then
 	echo "Error: Required file not found: $DETECT_CONF"
 	echo "Upgrade mode cannot be enabled safely without this include."
 	echo "Ensure the upgrade-in-progress package is deployed to $UPG_DIR and try again."
-	exit 1
-fi
-
-# Check if Apache is installed
-if ! apache_is_installed; then
-	echo "Error: Apache does not appear to be installed."
 	exit 1
 fi
 
@@ -111,12 +112,6 @@ done
 if [ $MISSING_FILES -eq 1 ]; then
 	echo "Error: One or more required files are missing."
 	echo "You may need to run menu.sh to create ip-allow.conf and configure-apache.sh to create lucee-proxy-for-allowed-ip.conf"
-	exit 1
-fi
-
-if ! check_apache_configured; then
-	echo "Error: Apache has not been configured for upgrade-in-progress."
-	echo "Please run the 'Configure Apache' option from the menu first."
 	exit 1
 fi
 
