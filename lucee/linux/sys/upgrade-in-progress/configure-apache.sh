@@ -1667,7 +1667,7 @@ configure_site_redhat() {
 			ensure_include_detect_upgrade_in_vhost "$ssl_conf_file" "$domain" "443"
 		fi
 	else
-		echo "  Warning: Could not find SSL VirtualHost for $domain"
+		echo "  No SSL VirtualHost found for $domain"
 	fi
 
 	# Find HTTP VirtualHost file from sites-configured.txt
