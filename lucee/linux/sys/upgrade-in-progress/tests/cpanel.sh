@@ -35,7 +35,7 @@ check_root() {
 detect_real_cpanel() {
 	if [ -f "/usr/local/cpanel/version" ] || \
 	   [ -f "/usr/local/cpanel/cpanel.config" ] || \
-	   [ -d "/usr/local/cpanel/bin" ] || \
+	   [ -f "/usr/local/cpanel/bin/cpwrap" ] || \
 	   pgrep -f "cpsrvd" >/dev/null 2>&1; then
 		return 0
 	fi
