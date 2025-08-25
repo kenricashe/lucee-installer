@@ -8,9 +8,46 @@
 # Update:
 # cat ./configure-apache.sh | sudo tee /opt/lucee/sys/upgrade-in-progress/configure-apache.sh
 
-# Source shared functions
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/shared-functions.sh"
+# Source environment variables and functions
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+. "${SCRIPT_DIR}/ENVIRONMENT.sh"
+. "${SCRIPT_DIR}/shared-functions.sh"
+
+# Helper function to check if SELinux is enabled
+selinux_enabled() {
+	if command -v getenforce >/dev/null 2>&1; then
+		mode=$(getenforce 2>/dev/null)
+		if [ "$mode" != "Disabled" ]; then
+			return 0
+		fi
+	fi
+	return 1
+}
+
+# Helper function to set SELinux context for Apache config files
+set_apache_selinux_context() {
+	local file="$1"
+	
+	if ! selinux_enabled; then
+		return 0
+	fi
+	
+	if command -v restorecon >/dev/null 2>&1; then
+		restorecon -v "$file" >/dev/null 2>&1 || {
+			echo "Warning: restorecon failed, trying chcon fallback"
+			if command -v chcon >/dev/null 2>&1; then
+				chcon -t httpd_config_t "$file" 2>/dev/null || \
+				echo "Warning: Failed to set SELinux context on $file"
+			fi
+		}
+	elif command -v chcon >/dev/null 2>&1; then
+		chcon -t httpd_config_t "$file" 2>/dev/null || \
+		echo "Warning: Failed to set SELinux context on $file"
+	else
+		echo "Warning: SELinux is enabled but neither restorecon nor chcon commands are available."
+		echo "Apache may not be able to read config files due to SELinux restrictions."
+	fi
+}
 
 # Set backup timestamp for this run to keep all backups in the same directory
 BACKUP_TS="$(date +%Y-%m-%d-%H%M%S)"
@@ -117,6 +154,9 @@ EOF
 	
 	# Fix permissions for both files
 	chmod 644 "$include_file" 2>/dev/null || true
+	
+	# Set SELinux context for Apache config file
+	set_apache_selinux_context "$include_file"
 	
 	echo "$include_file"
 }
@@ -709,24 +749,24 @@ generate_allowed_ip_proxy_include() {
 	ppm_line=""
 	# balancer
 	if echo "$content" | grep -Eiq "^[[:space:]]*ProxyPassMatch[[:space:]].*balancer://"; then
-		backend_url=$(echo "$content" | awk '/^[\t ]*ProxyPassMatch[\t ]/ { for (i=1;i<=NF;i++) if ($i ~ /^balancer:\/\//) { print $i; exit } }')
-		ppm_line=$(echo "$content" | awk '/^[\t ]*ProxyPassMatch[\t ]/ { for (i=1;i<=NF;i++) if ($i ~ /^balancer:\/\//) { print $0; exit } }')
+		backend_url=$(echo "$content" | awk '/^[\t ]*ProxyPassMatch[\t ]/ { for (i=1; i<=NF; i++) if ($i ~ /^balancer:\/\//) { print $i; exit } }')
+		ppm_line=$(echo "$content" | awk '/^[\t ]*ProxyPassMatch[\t ]/ { for (i=1; i<=NF; i++) if ($i ~ /^balancer:\/\//) { print $0; exit } }')
 		if [ -n "$backend_url" ]; then
 			backend_type="balancer"
 		fi
 	fi
 	# ajp
 	if [ -z "$backend_url" ] && echo "$content" | grep -Eiq "^[[:space:]]*ProxyPassMatch[[:space:]].*ajp://"; then
-		backend_url=$(echo "$content" | awk '/^[\t ]*ProxyPassMatch[\t ]/ { for (i=1;i<=NF;i++) if ($i ~ /^ajp:\/\//) { print $i; exit } }')
-		ppm_line=$(echo "$content" | awk '/^[\t ]*ProxyPassMatch[\t ]/ { for (i=1;i<=NF;i++) if ($i ~ /^ajp:\/\//) { print $0; exit } }')
+		backend_url=$(echo "$content" | awk '/^[\t ]*ProxyPassMatch[\t ]/ { for (i=1; i<=NF; i++) if ($i ~ /^ajp:\/\//) { print $i; exit } }')
+		ppm_line=$(echo "$content" | awk '/^[\t ]*ProxyPassMatch[\t ]/ { for (i=1; i<=NF; i++) if ($i ~ /^ajp:\/\//) { print $0; exit } }')
 		if [ -n "$backend_url" ]; then
 			backend_type="ajp"
 		fi
 	fi
 	# http/https
 	if [ -z "$backend_url" ] && echo "$content" | grep -Eiq "^[[:space:]]*ProxyPassMatch[[:space:]].*https?://"; then
-		backend_url=$(echo "$content" | awk '/^[\t ]*ProxyPassMatch[\t ]/ { for (i=1;i<=NF;i++) if ($i ~ /^https?:\/\//) { print $i; exit } }')
-		ppm_line=$(echo "$content" | awk '/^[\t ]*ProxyPassMatch[\t ]/ { for (i=1;i<=NF;i++) if ($i ~ /^https?:\/\//) { print $0; exit } }')
+		backend_url=$(echo "$content" | awk '/^[\t ]*ProxyPassMatch[\t ]/ { for (i=1; i<=NF; i++) if ($i ~ /^https?:\/\//) { print $i; exit } }')
+		ppm_line=$(echo "$content" | awk '/^[\t ]*ProxyPassMatch[\t ]/ { for (i=1; i<=NF; i++) if ($i ~ /^https?:\/\//) { print $0; exit } }')
 		if [ -n "$backend_url" ]; then
 			backend_type="http"
 		fi
@@ -797,6 +837,9 @@ generate_allowed_ip_proxy_include() {
 	
 	# Normalize whitespace in the generated file
 	normalize_conf_whitespace "$dest"
+	
+	# Set SELinux context for Apache config file
+	set_apache_selinux_context "$dest"
 	
 	return 0
 }

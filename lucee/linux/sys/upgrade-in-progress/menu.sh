@@ -8,6 +8,42 @@ SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "${SCRIPT_DIR}/ENVIRONMENT.sh"
 . "${SCRIPT_DIR}/shared-functions.sh"
 
+# Helper function to check if SELinux is enabled
+selinux_enabled() {
+	if command -v getenforce >/dev/null 2>&1; then
+		mode=$(getenforce 2>/dev/null)
+		if [ "$mode" != "Disabled" ]; then
+			return 0
+		fi
+	fi
+	return 1
+}
+
+# Helper function to set SELinux context for Apache config files
+set_apache_selinux_context() {
+	local file="$1"
+	
+	if ! selinux_enabled; then
+		return 0
+	fi
+	
+	if command -v restorecon >/dev/null 2>&1; then
+		restorecon -v "$file" >/dev/null 2>&1 || {
+			echo "Warning: restorecon failed, trying chcon fallback"
+			if command -v chcon >/dev/null 2>&1; then
+				chcon -t httpd_config_t "$file" 2>/dev/null || \
+				echo "Warning: Failed to set SELinux context on $file"
+			fi
+		}
+	elif command -v chcon >/dev/null 2>&1; then
+		chcon -t httpd_config_t "$file" 2>/dev/null || \
+		echo "Warning: Failed to set SELinux context on $file"
+	else
+		echo "Warning: SELinux is enabled but neither restorecon nor chcon commands are available."
+		echo "Apache may not be able to read config files due to SELinux restrictions."
+	fi
+}
+
 run_edit_exclusions() {
 	ensure_default_exclusions_file
 	${SUDO} ${EDITOR:-nano} "$EXCLUSIONS_FILE"
@@ -94,6 +130,9 @@ run_edit_ip_allow() {
 	# Move into place with sudo
 	${SUDO} mv "$TMP_CONF" "$CONF_FILE"
 	${SUDO} chmod 0644 "$CONF_FILE"
+	
+	# Set SELinux context for Apache config file
+	${SUDO} set_apache_selinux_context "$CONF_FILE"
 
 	# Reload Apache (handles cPanel vs non-cPanel)
 	if ! apache_reload; then
