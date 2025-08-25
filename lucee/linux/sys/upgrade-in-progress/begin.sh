@@ -103,8 +103,6 @@ if [ $MISSING_FILES -eq 1 ]; then
 	exit 1
 fi
 
-# IS_CPANEL is provided by ENVIRONMENT.sh
-
 # The flag file is referenced by cron jobs, etc, to abort during 
 # Lucee upgrade (just before or after Lucee is stopped).
 # It is not used by Apache because Define on Apache start/reload
