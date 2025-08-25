@@ -104,7 +104,7 @@ check_apache_configured() {
 		return 0
 	# Fedora, Red Hat, AlmaLinux, Rocky Linux, etc
 	elif [ -n "$CONF_DIR" ]; then
-		if [ ! -f "${CONF_DIR}/lucee-upgrade-in-progress.conf" ] && [ ! -f "${CONF_DIR}/lucee-upgrade-in-progress.conf.disabled" ]; then
+		if [ ! -f "${CONF_DIR}/lucee-upgrade-in-progress.conf" ] && [ ! -f "${CONF_DIR}/lucee-upgrade-in-progress.disabled" ]; then
 			return 1
 		fi
 		return 0
