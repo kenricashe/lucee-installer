@@ -267,7 +267,7 @@ case "${1:-}" in
 		echo ""
 		echo "✓ cPanel simulation ENABLED"
 		echo ""
-		echo "You can now test the Lucee upgrade toolkit in cPanel mode."
+		echo "You can now test the toolkit in cPanel mode."
 		echo "Use '$0 off' to disable simulation and restore original files."
 		;;
 	"off")
