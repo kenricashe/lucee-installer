@@ -39,7 +39,8 @@ FILES=(
 	"lucee-detect-upgrade.conf"
 	"lucee-upgrade-in-progress.conf"
 	"shared-functions.sh"
-	"dev-reset.sh"
+	"tests/dev-reset.sh"
+	"tests/cpanel.sh"
 )
 
 # preflight: ensure all source files exist in the script directory
@@ -63,6 +64,7 @@ DEFAULT_LUCEE_ROOT="/opt/lucee"
 # Check if a path was provided as an argument
 if [ -n "$1" ]; then
 	LUCEE_ROOT="$1"
+	echo ""
 	echo "Using Lucee root path: $LUCEE_ROOT"
 else
 	# No argument provided, prompt for input

@@ -20,7 +20,7 @@ fi
 
 # UPDATE THIS WITH EACH COMMIT
 echo ""
-echo "install.sh version: 2025-08-24 17:14:15 Pacific"
+echo "install.sh version: 2025-08-25 13:48:08 Pacific"
 
 OWNER=${OWNER:-kenricashe}
 REPO=${REPO:-lucee-installer}
@@ -166,7 +166,6 @@ else
 fi
 
 # Execute the deployment script and capture its exit status
-echo "Using Lucee root path: ${LUCEE_ROOT}"
 SELINUX_QUIET=1 "$SUBDIR/deploy-to-opt-lucee-sys.sh" "$LUCEE_ROOT"
 if [ $? -eq 0 ]; then
 	# Deployment was successful
