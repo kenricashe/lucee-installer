@@ -73,11 +73,12 @@ else
 fi
 
 DEST_DIR="${LUCEE_ROOT}/sys/upgrade-in-progress"
-mkdir -p "$DEST_DIR"
+mkdir -p "$DEST_DIR/tests"
 
 function copy_and_chmod() {
 	local src="${THISPATH}/$1"
 	local dst="${DEST_DIR}/$1"
+	
 	cp "$src" "$dst"
 	
 	if [[ "$1" == *.sh ]]; then
