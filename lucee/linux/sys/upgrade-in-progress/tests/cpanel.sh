@@ -32,6 +32,24 @@ check_root() {
 	fi
 }
 
+detect_real_cpanel() {
+	if [ -f "/usr/local/cpanel/version" ] || \
+	   [ -f "/usr/local/cpanel/cpanel.config" ] || \
+	   [ -d "/usr/local/cpanel/bin" ] || \
+	   pgrep -f "cpsrvd" >/dev/null 2>&1; then
+		return 0
+	fi
+	return 1
+}
+
+abort_if_real_cpanel() {
+	if detect_real_cpanel; then
+		echo "ERROR: Real cPanel environment detected. This script is for simulation only."
+		echo "Aborting to prevent damage to real cPanel installation."
+		exit 1
+	fi
+}
+
 backup_existing_files() {
 	echo "Backing up any existing files..."
 	mkdir -p "$BACKUP_DIR"
@@ -202,33 +220,25 @@ EOF
 	echo "  Created: /scripts/restartsrv_httpd"
 }
 
-detect_real_cpanel() {
-	if [ -f "/usr/local/cpanel/version" ] || \
-	   [ -f "/usr/local/cpanel/cpanel.config" ] || \
-	   [ -d "/usr/local/cpanel/bin" ] || \
-	   pgrep -f "cpsrvd" >/dev/null 2>&1; then
-		return 0
-	fi
-	return 1
-}
-
 remove_dummy_files() {
 
-	if detect_real_cpanel; then
-		echo "ERROR: Real cPanel environment detected. This script is for simulation only."
-		echo "Aborting cleanup to prevent damage to real cPanel installation."
-		exit 1
-	fi
-	
 	echo "Removing cPanel simulation files..."
 	rm -rf /usr/local/cpanel
 	rm -rf /scripts
 }
 
 show_status() {
+
+	echo ""
 	echo "cPanel Simulation Status:"
 	echo ""
 	
+	if detect_real_cpanel; then
+		echo ""
+		echo "Oops! Real cPanel environment detected. This script is for simulation only."
+		exit 0
+	fi
+
 	local all_exist=true
 	for file in "${CPANEL_FILES[@]}"; do
 		if [ -e "$file" ]; then
@@ -262,6 +272,7 @@ show_status() {
 case "${1:-}" in
 	"on")
 		check_root
+		abort_if_real_cpanel
 		backup_existing_files
 		create_dummy_files
 		echo ""
@@ -272,6 +283,7 @@ case "${1:-}" in
 		;;
 	"off")
 		check_root
+		abort_if_real_cpanel
 		remove_dummy_files
 		restore_files
 		echo ""
