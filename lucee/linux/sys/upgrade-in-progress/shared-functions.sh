@@ -215,6 +215,7 @@ discover_apache_configs() {
 	local -a upgrade_html_files
 	local -a site_includes
 	local -a modified_primary_configs
+	local -a legacy_files
 	
 	# Determine Apache configuration directories based on distribution
 	local apache_dirs=()
@@ -383,6 +384,60 @@ discover_apache_configs() {
 		IFS=$'\n' modified_primary_configs=($(sort <<<"${modified_primary_configs[*]}"))
 	fi
 	
+	# Search for legacy files from older versions of the upgrade system
+	if [ "$show_progress" = "true" ]; then
+		echo "Searching for legacy upgrade files..." >&2
+	fi
+	
+	# Legacy files in Apache conf directories
+	for apache_dir in "${apache_dirs[@]}"; do
+		[ -d "$apache_dir" ] || continue
+		
+		# Legacy files in conf.d
+		if [ -d "$apache_dir/conf.d" ]; then
+			# Old lucee-ajp-and-mod_cfml.conf (now lucee-proxy.conf)
+			if [ -f "$apache_dir/conf.d/lucee-ajp-and-mod_cfml.conf" ]; then
+				legacy_files+=("$apache_dir/conf.d/lucee-ajp-and-mod_cfml.conf")
+			fi
+			
+			# Disabled upgrade config
+			if [ -f "$apache_dir/conf.d/lucee-upgrade-in-progress.disabled" ]; then
+				legacy_files+=("$apache_dir/conf.d/lucee-upgrade-in-progress.disabled")
+			fi
+			
+			# cPanel userdata upgrade configs
+			if [ -d "$apache_dir/conf.d/userdata" ]; then
+				while IFS= read -r -d '' userdata_file; do
+					legacy_files+=("$userdata_file")
+				done < <(find "$apache_dir/conf.d/userdata" -name "*upgrade-in-progress*" -type f -print0 2>/dev/null)
+			fi
+		fi
+	done
+	
+	# Legacy files in /opt/lucee/sys (pre-upgrade-in-progress subdirectory)
+	if [ -d "/opt/lucee/sys" ]; then
+		local legacy_patterns=(
+			"configure-sites-for-upgrade-in-progress.sh"
+			"get-lucee-sites-for-upgrade-in-progress.sh"
+			"sites-configured-for-upgrade-in-progress.txt"
+			"upgrade-in-progress.html"
+			"upgrade-in-progress-nonroot.conf"
+			"upgrade-in-progress-root.conf"
+			"upgrade-in-progress.sh"
+		)
+		
+		for pattern in "${legacy_patterns[@]}"; do
+			if [ -f "/opt/lucee/sys/$pattern" ]; then
+				legacy_files+=("/opt/lucee/sys/$pattern")
+			fi
+		done
+	fi
+	
+	# Sort legacy files
+	if [ ${#legacy_files[@]} -gt 0 ]; then
+		IFS=$'\n' legacy_files=($(sort <<<"${legacy_files[*]}"))
+	fi
+	
 	# Generate output based on format
 	case "$output_format" in
 		"json")
@@ -411,10 +466,13 @@ $(printf '		"%s"' "${modified_htaccess[@]}" | sed 's/$/,/' | sed '$s/,$//')
 $(printf '		"%s"' "${upgrade_html_files[@]}" | sed 's/$/,/' | sed '$s/,$//')
 	],
 	"site_includes": [
-$(printf '		"%s"' "${site_includes[@]}" | sed 's/$/,/' | sed '$s/,$//')
+$(printf '\t\t"%s"' "${site_includes[@]}" | sed 's/$/,/' | sed '$s/,$//')
 	],
 	"modified_primary_configs": [
-$(printf '		"%s"' "${modified_primary_configs[@]}" | sed 's/$/,/' | sed '$s/,$//')
+$(printf '\t\t"%s"' "${modified_primary_configs[@]}" | sed 's/$/,/' | sed '$s/,$//')
+	],
+	"legacy_files": [
+$(printf '\t\t"%s"' "${legacy_files[@]}" | sed 's/$/,/' | sed '$s/,$//')
 	]
 }
 EOF
@@ -450,6 +508,9 @@ EOF
 				echo ""
 				echo "Per-site include files (${#site_includes[@]}):"
 				printf "  %s\n" "${site_includes[@]}"
+				echo ""
+				echo "Legacy files from older versions (${#legacy_files[@]}):"
+				printf "  %s\n" "${legacy_files[@]}"
 			} > "$temp_file"
 			;;
 		"paths-only")
@@ -461,6 +522,7 @@ EOF
 				printf "%s\n" "${upgrade_html_files[@]}"
 				printf "%s\n" "${site_includes[@]}"
 				printf "%s\n" "${modified_primary_configs[@]}"
+			printf "%s\n" "${legacy_files[@]}"
 			} > "$temp_file"
 			;;
 	esac
