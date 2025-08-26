@@ -591,7 +591,9 @@ find_primary_apache_config() {
 		primary_config="/etc/apache2/apache2.conf"
 	elif [ "$IS_CPANEL" = true ]; then
 		# cPanel typically uses httpd.conf
-		if [ -f "/usr/local/apache/conf/httpd.conf" ]; then
+		if [ -f "/etc/apache2/conf/httpd.conf" ]; then
+			primary_config="/etc/apache2/conf/httpd.conf"
+		elif [ -f "/usr/local/apache/conf/httpd.conf" ]; then
 			primary_config="/usr/local/apache/conf/httpd.conf"
 		elif [ -f "/etc/httpd/conf/httpd.conf" ]; then
 			primary_config="/etc/httpd/conf/httpd.conf"
