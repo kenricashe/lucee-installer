@@ -163,6 +163,7 @@ confirm_action() {
 	
 	echo -n "$message (y/N): "
 	read -r response
+	echo ""  # Add newline after response
 	case "$response" in
 		[yY]|[yY][eE][sS])
 			return 0
