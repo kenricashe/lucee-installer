@@ -252,14 +252,14 @@ main() {
 	# Parse JSON output to get file lists
 	local vhost_files proxy_configs upgrade_configs modified_htaccess upgrade_html_files site_includes legacy_files
 	
-	# Extract file arrays from JSON (simplified parsing)
-	vhost_files=$(echo "$discovery_output" | grep -o '"vhost_files":\[[^]]*\]' | sed 's/"vhost_files":\[//;s/\]$//;s/"//g' | tr ',' '\n' | grep -v '^$')
-	proxy_configs=$(echo "$discovery_output" | grep -o '"proxy_configs":\[[^]]*\]' | sed 's/"proxy_configs":\[//;s/\]$//;s/"//g' | tr ',' '\n' | grep -v '^$')
-	upgrade_configs=$(echo "$discovery_output" | grep -o '"upgrade_configs":\[[^]]*\]' | sed 's/"upgrade_configs":\[//;s/\]$//;s/"//g' | tr ',' '\n' | grep -v '^$')
-	modified_htaccess=$(echo "$discovery_output" | grep -o '"modified_htaccess":\[[^]]*\]' | sed 's/"modified_htaccess":\[//;s/\]$//;s/"//g' | tr ',' '\n' | grep -v '^$')
-	upgrade_html_files=$(echo "$discovery_output" | grep -o '"upgrade_html_files":\[[^]]*\]' | sed 's/"upgrade_html_files":\[//;s/\]$//;s/"//g' | tr ',' '\n' | grep -v '^$')
-	site_includes=$(echo "$discovery_output" | grep -o '"site_includes":\[[^]]*\]' | sed 's/"site_includes":\[//;s/\]$//;s/"//g' | tr ',' '\n' | grep -v '^$')
-	legacy_files=$(echo "$discovery_output" | grep -o '"legacy_files":\[[^]]*\]' | sed 's/"legacy_files":\[//;s/\]$//;s/"//g' | tr ',' '\n' | grep -v '^$')
+	# Extract file arrays from JSON (handle multi-line arrays)
+	vhost_files=$(echo "$discovery_output" | sed -n '/"vhost_files": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	proxy_configs=$(echo "$discovery_output" | sed -n '/"proxy_configs": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	upgrade_configs=$(echo "$discovery_output" | sed -n '/"upgrade_configs": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	modified_htaccess=$(echo "$discovery_output" | sed -n '/"modified_htaccess": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	upgrade_html_files=$(echo "$discovery_output" | sed -n '/"upgrade_html_files": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	site_includes=$(echo "$discovery_output" | sed -n '/"site_includes": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	legacy_files=$(echo "$discovery_output" | sed -n '/"legacy_files": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
 	
 	# Count total items to remove
 	local total_items=0
