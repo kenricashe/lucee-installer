@@ -301,6 +301,57 @@ discover_apache_configs() {
 				[[ "$path" == */status/* ]] && return 0
 				[[ "$path" == *"lucee-proxy"* ]] && return 0
 				[[ "$path" == *"upgrade-in-progress"* ]] && return 0
+				# cPanel hook files
+				[[ "$path" == */pre_main_global.conf ]] && return 0
+				[[ "$path" == */pre_main_2.conf ]] && return 0
+				[[ "$path" == *cloudflare* ]] && return 0
+				[[ "$path" == */account_suspensions.conf ]] && return 0
+				[[ "$path" == */errordocument.conf ]] && return 0
+				[[ "$path" == */pre_virtualhost_global.conf ]] && return 0
+				[[ "$path" == */pre_virtualhost_2.conf ]] && return 0
+				[[ "$path" == */post_virtualhost_global.conf ]] && return 0
+				[[ "$path" == */post_virtualhost_2.conf ]] && return 0
+				# Apache module configs
+				[[ "$path" == */00-suphp.conf ]] && return 0
+				[[ "$path" == */*mod_evasive.conf ]] && return 0
+				[[ "$path" == */autoindex.conf ]] && return 0
+				[[ "$path" == */cgid.conf ]] && return 0
+				[[ "$path" == */cperror.conf ]] && return 0
+				[[ "$path" == */http2.conf ]] && return 0
+				[[ "$path" == */lucee-mod_cfml.conf ]] && return 0
+				[[ "$path" == */lucee-proxy.conf ]] && return 0
+				[[ "$path" == */modsec2.conf ]] && return 0
+				[[ "$path" == */php_add_handler_fix.conf ]] && return 0
+				[[ "$path" == */php.conf ]] && return 0
+				# SSL/TLS configs
+				[[ "$path" == */ssl.conf ]] && return 0
+				[[ "$path" == */ssl-params.conf ]] && return 0
+				[[ "$path" == */default-ssl.conf ]] && return 0
+				# Load balancer/proxy configs
+				[[ "$path" == */proxy.conf ]] && return 0
+				[[ "$path" == */proxy_balancer.conf ]] && return 0
+				[[ "$path" == */remoteip.conf ]] && return 0
+				# Security configs
+				[[ "$path" == */security.conf ]] && return 0
+				[[ "$path" == */headers.conf ]] && return 0
+				[[ "$path" == */deflate.conf ]] && return 0
+				# cPanel specific
+				[[ "$path" == */bandwidth.conf ]] && return 0
+				[[ "$path" == */cpanel_php_config.conf ]] && return 0
+				[[ "$path" == */ea-php*.conf ]] && return 0
+				[[ "$path" == */mailman.conf ]] && return 0
+				[[ "$path" == */roundcube.conf ]] && return 0
+				[[ "$path" == */squirrelmail.conf ]] && return 0
+				# Debian/Ubuntu specific
+				[[ "$path" == */charset.conf ]] && return 0
+				[[ "$path" == */localized-error-pages.conf ]] && return 0
+				[[ "$path" == */other-vhosts-access-log.conf ]] && return 0
+				[[ "$path" == */serve-cgi-bin.conf ]] && return 0
+				# General Apache
+				[[ "$path" == */mime.conf ]] && return 0
+				[[ "$path" == */dir.conf ]] && return 0
+				[[ "$path" == */alias.conf ]] && return 0
+				[[ "$path" == */negotiation.conf ]] && return 0
 				return 1
 			}
 			
