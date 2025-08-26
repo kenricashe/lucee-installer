@@ -323,36 +323,55 @@ discover_apache_configs() {
 	# Use associative array to avoid duplicates
 	local -A seen_html
 	
-	# First, search in known DocumentRoots from VirtualHost files
+	# Search in DocumentRoots from VirtualHost files (all distributions)
 	for apache_dir in "${apache_dirs[@]}"; do
 		[ -d "$apache_dir" ] || continue
 		
+		# Check Debian-style sites directories
 		for sites_dir in "$apache_dir/sites-available" "$apache_dir/sites-enabled"; do
 			if [ -d "$sites_dir" ]; then
 				for vhost_file in "$sites_dir"/*.conf; do
 					[ -f "$vhost_file" ] || continue
 					local docroot
 					docroot=$(grep -i '^[[:space:]]*DocumentRoot' "$vhost_file" | head -1 | awk '{print $2}' | tr -d '"')
-					if [ -n "$docroot" ] && [ -f "${docroot}/lucee-upgrade-in-progress.html" ] && [ -z "${seen_html["${docroot}/lucee-upgrade-in-progress.html"]}" ]; then
-						upgrade_html_files+=("${docroot}/lucee-upgrade-in-progress.html")
-						seen_html["${docroot}/lucee-upgrade-in-progress.html"]=1
+					if [ -n "$docroot" ]; then
+						for html_name in "upgrade-in-progress.html" "lucee-upgrade-in-progress.html"; do
+							if [ -f "${docroot}/${html_name}" ] && [ -z "${seen_html["${docroot}/${html_name}"]}" ]; then
+								upgrade_html_files+=("${docroot}/${html_name}")
+								seen_html["${docroot}/${html_name}"]=1
+							fi
+						done
 					fi
 				done
 			fi
 		done
-	done
-	
-	# Also do a broader search in common web directories
-	while IFS= read -r -d '' html_file; do
-		if [ -z "${seen_html["$html_file"]}" ]; then
-			upgrade_html_files+=("$html_file")
-			seen_html["$html_file"]=1
+		
+		# Check RHEL/Rocky-style conf.d files
+		if [ -d "$apache_dir/conf.d" ]; then
+			for vhost_file in "$apache_dir/conf.d"/*.conf; do
+				[ -f "$vhost_file" ] || continue
+				# Skip our own config files
+				[[ "$vhost_file" == *"lucee-proxy"* ]] && continue
+				[[ "$vhost_file" == *"upgrade-in-progress"* ]] && continue
+				
+				local docroot
+				docroot=$(grep -i '^[[:space:]]*DocumentRoot' "$vhost_file" | head -1 | awk '{print $2}' | tr -d '"')
+				if [ -n "$docroot" ]; then
+					for html_name in "upgrade-in-progress.html" "lucee-upgrade-in-progress.html"; do
+						if [ -f "${docroot}/${html_name}" ] && [ -z "${seen_html["${docroot}/${html_name}"]}" ]; then
+							upgrade_html_files+=("${docroot}/${html_name}")
+							seen_html["${docroot}/${html_name}"]=1
+						fi
+					done
+				fi
+			done
 		fi
-	done < <(find /var/www /home -maxdepth 4 -name "*upgrade-in-progress.html" -type f 2>/dev/null | head -20)
+	done
 	
 	# Search for per-site include directories and files (avoid duplicates)
 	local include_dirs=()
 	local -A seen_dirs
+	local -A seen_site_includes
 	
 	if [ -n "$UPG_DIR" ] && [ -d "${UPG_DIR}/site-includes-for-404" ]; then
 		include_dirs+=("${UPG_DIR}/site-includes-for-404")
@@ -368,17 +387,25 @@ discover_apache_configs() {
 			echo "Checking per-site includes: $include_dir" >&2
 		fi
 		while IFS= read -r -d '' include_file; do
-			site_includes+=("$include_file")
+			if [ -z "${seen_site_includes["$include_file"]}" ]; then
+				site_includes+=("$include_file")
+				seen_site_includes["$include_file"]=1
+			fi
 		done < <(find "$include_dir" -type f -name "*.conf" -print0 2>/dev/null)
 	done
 	
 	# Also check for main upgrade config files that act as per-site includes
+	
+	# Add UPG_DIR version if it exists and is different from the hardcoded path
 	if [ -n "$UPG_DIR" ] && [ -f "${UPG_DIR}/lucee-upgrade-in-progress.conf" ]; then
 		site_includes+=("${UPG_DIR}/lucee-upgrade-in-progress.conf")
+		seen_site_includes["${UPG_DIR}/lucee-upgrade-in-progress.conf"]=1
 	fi
 	
-	if [ -f "/opt/lucee/sys/upgrade-in-progress/lucee-upgrade-in-progress.conf" ]; then
+	# Add hardcoded path only if it's different from UPG_DIR
+	if [ -f "/opt/lucee/sys/upgrade-in-progress/lucee-upgrade-in-progress.conf" ] && [ -z "${seen_site_includes["/opt/lucee/sys/upgrade-in-progress/lucee-upgrade-in-progress.conf"]}" ]; then
 		site_includes+=("/opt/lucee/sys/upgrade-in-progress/lucee-upgrade-in-progress.conf")
+		seen_site_includes["/opt/lucee/sys/upgrade-in-progress/lucee-upgrade-in-progress.conf"]=1
 	fi
 	
 	# Also find cPanel userdata upgrade-in-progress files (these are per-site includes)
@@ -386,7 +413,10 @@ discover_apache_configs() {
 		[ -d "$apache_dir" ] || continue
 		if [ -d "$apache_dir/conf.d/userdata" ]; then
 			while IFS= read -r -d '' userdata_file; do
-				site_includes+=("$userdata_file")
+				if [ -z "${seen_site_includes["$userdata_file"]}" ]; then
+					site_includes+=("$userdata_file")
+					seen_site_includes["$userdata_file"]=1
+				fi
 			done < <(find "$apache_dir/conf.d/userdata" -name "*upgrade-in-progress*" -type f -print0 2>/dev/null)
 		fi
 	done
