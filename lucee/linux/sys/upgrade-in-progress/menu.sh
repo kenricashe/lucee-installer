@@ -148,6 +148,11 @@ run_configure_apache() {
 	${SUDO} "${UPG_DIR}/configure-apache.sh"
 }
 
+run_discover_apache_configs() {
+	clear
+	${SUDO} "${UPG_DIR}/get-current-configs.sh"
+}
+
 run_begin() {
 	clear
 	${SUDO} "${UPG_DIR}/begin.sh"
@@ -178,6 +183,8 @@ while true; do
 	echo ""
 	echo "c) Configure Apache"
 	echo ""
+	echo "r) Apache Configuration Discovery Report"
+	echo ""
 	echo "i) IP Allow List (for QA Testing)"
 	echo ""
 	echo "b) Begin 'Upgrade in Progress'"
@@ -199,6 +206,10 @@ while true; do
 			;;
 		c|C)
 			run_configure_apache
+			press_enter_to_continue
+			;;
+		r|R)
+			run_discover_apache_configs
 			press_enter_to_continue
 			;;
 		i|I)
