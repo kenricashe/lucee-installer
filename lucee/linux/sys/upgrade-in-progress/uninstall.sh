@@ -117,13 +117,13 @@ execute_or_simulate() {
 			local matching_lines
 			matching_lines=$(grep "$pattern" "$file" 2>/dev/null || true)
 			if [ -n "$matching_lines" ]; then
-				echo "[PREVIEW] Would remove from $file:"
+				echo "Would remove from $file:"
 				echo "$matching_lines" | sed 's/^/  /'
 			else
-				echo "[PREVIEW] No matching lines found in $file for pattern: $pattern"
+				echo "No matching lines found in $file for pattern: $pattern"
 			fi
 		else
-			echo "[PREVIEW] Would execute: $action $*"
+			echo "Would execute: $action $*"
 		fi
 	else
 		log_action "$action $*"
@@ -158,7 +158,7 @@ confirm_action() {
 	local message="$1"
 	
 	if [ "$PREVIEW_MODE" = true ]; then
-		echo "[PREVIEW] Would prompt: $message (y/N)"
+		echo "Would prompt: $message (y/N)"
 		return 0
 	fi
 	
@@ -212,7 +212,7 @@ restore_original_errordocument_404() {
 				# Check if current file already has an ErrorDocument 404
 				if ! grep -q "^[[:space:]]*ErrorDocument[[:space:]]\+404[[:space:]]" "$vhost_file" 2>/dev/null; then
 					if [ "$PREVIEW_MODE" = true ]; then
-						echo "[PREVIEW] Would restore to $vhost_file:"
+						echo "Would restore to $vhost_file:"
 						echo "  $original_errordoc"
 					else
 						# Find a good place to insert it (after DocumentRoot, before </VirtualHost>)
@@ -347,7 +347,7 @@ process_uninstall_operations() {
 						backup_file "$proxy_file"
 					fi
 					if [ "$PREVIEW_MODE" = true ]; then
-						echo "[PREVIEW] Would execute: disable_and_remove_conf $conf_name"
+						echo "Would execute: disable_and_remove_conf $conf_name"
 					else
 						disable_and_remove_conf "$conf_name"
 					fi
@@ -376,7 +376,7 @@ process_uninstall_operations() {
 						backup_file "$upgrade_file"
 					fi
 					if [ "$PREVIEW_MODE" = true ]; then
-						echo "[PREVIEW] Would execute: disable_and_remove_conf $conf_name"
+						echo "Would execute: disable_and_remove_conf $conf_name"
 					else
 						disable_and_remove_conf "$conf_name"
 					fi
