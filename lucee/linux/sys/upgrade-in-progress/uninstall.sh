@@ -174,6 +174,61 @@ confirm_action() {
 	esac
 }
 
+# Function to restore original ErrorDocument 404 directives from backups
+restore_original_errordocument_404() {
+	local vhost_file="$1"
+	
+	log_verbose "Searching for original ErrorDocument 404 in backups for: $vhost_file"
+	
+	# Find all backup versions of this file, sorted by timestamp (newest first)
+	local backup_files
+	backup_files=$(find "${BACKUP_ROOT}" -path "*${vhost_file}" 2>/dev/null | sort -r)
+	
+	if [ -z "$backup_files" ]; then
+		log_verbose "No backups found for $vhost_file"
+		return 0
+	fi
+	
+	# Search through backups from most recent to oldest
+	local original_errordoc
+	while IFS= read -r backup_file; do
+		if [ -f "$backup_file" ]; then
+			log_verbose "Checking backup: $backup_file"
+			# Look for ErrorDocument 404 lines that aren't commented out
+			original_errordoc=$(grep -E "^[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+" "$backup_file" 2>/dev/null | head -1)
+			if [ -n "$original_errordoc" ]; then
+				log_verbose "Found original ErrorDocument 404: $original_errordoc"
+				
+				# Check if current file already has an ErrorDocument 404
+				if ! grep -q "^[[:space:]]*ErrorDocument[[:space:]]\+404[[:space:]]" "$vhost_file" 2>/dev/null; then
+					if [ "$DRY_RUN" = true ]; then
+						echo "[DRY-RUN] Would restore to $vhost_file:"
+						echo "  $original_errordoc"
+					else
+						# Find a good place to insert it (after DocumentRoot, before </VirtualHost>)
+						local insert_line
+						insert_line=$(grep -n "DocumentRoot\|</VirtualHost>" "$vhost_file" | grep "DocumentRoot" | tail -1 | cut -d: -f1)
+						if [ -n "$insert_line" ]; then
+							# Insert after DocumentRoot line
+							sed -i "${insert_line}a\\	${original_errordoc}" "$vhost_file"
+							log_action "Restored original ErrorDocument 404 to: $vhost_file"
+						else
+							# Fallback: insert before </VirtualHost>
+							sed -i "/<\/VirtualHost>/i\\	${original_errordoc}" "$vhost_file"
+							log_action "Restored original ErrorDocument 404 to: $vhost_file"
+						fi
+					fi
+				else
+					log_verbose "ErrorDocument 404 already exists in $vhost_file"
+				fi
+				return 0
+			fi
+		fi
+	done <<< "$backup_files"
+	
+	log_verbose "No original ErrorDocument 404 found in any backup for $vhost_file"
+}
+
 # Function to remove Include directives from VirtualHost files
 remove_include_directives() {
 	local vhost_file="$1"
@@ -204,6 +259,9 @@ remove_include_directives() {
 	
 	if [ "$modified" = true ]; then
 		log_action "Removed upgrade Include directives from: $vhost_file"
+		
+		# Try to restore original ErrorDocument 404 directives from backups
+		restore_original_errordocument_404 "$vhost_file"
 	fi
 }
 
