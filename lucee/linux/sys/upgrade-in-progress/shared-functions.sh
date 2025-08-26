@@ -260,11 +260,15 @@ discover_apache_configs() {
 			# RHEL/Rocky: VirtualHost files are often in conf.d
 			if [ -d "$apache_dir/conf.d" ]; then
 				while IFS= read -r -d '' vhost_file; do
+					# Skip our own config files
+					[[ "$vhost_file" == *"lucee-proxy"* ]] && continue
+					[[ "$vhost_file" == *"upgrade-in-progress"* ]] && continue
+					
 					if grep -q "Include.*upgrade-in-progress.*lucee-detect-upgrade\.conf" "$vhost_file" 2>/dev/null; then
 						vhost_files+=("$vhost_file")
 					fi
-				done < <(find "$apache_dir/conf.d" -maxdepth 1 -type f -name "*.conf" -print0 2>/dev/null | grep -v -E '(lucee-proxy|upgrade-in-progress)')
-				fi
+				done < <(find "$apache_dir/conf.d" -maxdepth 1 -type f -name "*.conf" -print0 2>/dev/null)
+			fi
 		fi
 		
 		# Find lucee-proxy.conf files (avoid duplicates with associative array)
