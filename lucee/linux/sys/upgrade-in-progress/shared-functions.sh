@@ -479,8 +479,11 @@ EOF
 			;;
 		"text")
 			{
+				echo ""
+				echo "======================================="
 				echo "Apache Configuration Discovery Report"
 				echo "Generated: $(date)"
+				echo "======================================="
 				echo ""
 				echo "Environment:"
 				echo "  Debian: $IS_DEBIAN"
