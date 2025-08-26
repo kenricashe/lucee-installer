@@ -231,6 +231,10 @@ discover_apache_configs() {
 	[ -n "$CONF_DIR" ] && apache_dirs+=("$CONF_DIR")
 	[ -n "$SITES_AVAILABLE_DIR" ] && apache_dirs+=("$(dirname "$SITES_AVAILABLE_DIR")")
 	
+	# Initialize associative arrays to avoid duplicates
+	local -A seen_proxy
+	local -A seen_upgrade
+	
 	# Search for configuration files
 	for apache_dir in "${apache_dirs[@]}"; do
 		[ -d "$apache_dir" ] || continue
@@ -240,27 +244,43 @@ discover_apache_configs() {
 		fi
 		
 		# Find VirtualHost files with upgrade-related Include directives
-		# Only check sites-available and sites-enabled directories for actual VirtualHost files
-		for vhost_dir in "$apache_dir/sites-available" "$apache_dir/sites-enabled"; do
-			if [ -d "$vhost_dir" ]; then
+		# Check sites-available/sites-enabled for Debian, conf.d for RHEL/Rocky
+		if [ "$IS_DEBIAN" = true ]; then
+			# Debian: check sites-available and sites-enabled
+			for vhost_dir in "$apache_dir/sites-available" "$apache_dir/sites-enabled"; do
+				if [ -d "$vhost_dir" ]; then
+					while IFS= read -r -d '' vhost_file; do
+						if grep -q "Include.*upgrade-in-progress.*lucee-detect-upgrade\.conf" "$vhost_file" 2>/dev/null; then
+							vhost_files+=("$vhost_file")
+						fi
+					done < <(find "$vhost_dir" -maxdepth 1 -type f -name "*.conf" -print0 2>/dev/null)
+				fi
+			done
+		else
+			# RHEL/Rocky: VirtualHost files are often in conf.d
+			if [ -d "$apache_dir/conf.d" ]; then
 				while IFS= read -r -d '' vhost_file; do
 					if grep -q "Include.*upgrade-in-progress.*lucee-detect-upgrade\.conf" "$vhost_file" 2>/dev/null; then
 						vhost_files+=("$vhost_file")
 					fi
-				done < <(find "$vhost_dir" -maxdepth 1 -type f -name "*.conf" -print0 2>/dev/null)
-			fi
-		done
+				done < <(find "$apache_dir/conf.d" -maxdepth 1 -type f -name "*.conf" -print0 2>/dev/null | grep -v -E '(lucee-proxy|upgrade-in-progress)')
+				fi
+		fi
 		
-		# Find lucee-proxy.conf files
+		# Find lucee-proxy.conf files (avoid duplicates with associative array)
 		while IFS= read -r -d '' proxy_file; do
-			proxy_configs+=("$proxy_file")
+			if [ -z "${seen_proxy["$proxy_file"]}" ]; then
+				proxy_configs+=("$proxy_file")
+				seen_proxy["$proxy_file"]=1
+			fi
 		done < <(find "$apache_dir" -type f -name "*lucee-proxy*" -print0 2>/dev/null)
 		
 		# Find upgrade-in-progress configuration files (exclude userdata - those are per-site includes)
 		while IFS= read -r -d '' upgrade_file; do
 			# Skip userdata files - they'll be categorized as per-site includes
-			if [[ "$upgrade_file" != */userdata/* ]]; then
+			if [[ "$upgrade_file" != */userdata/* ]] && [ -z "${seen_upgrade["$upgrade_file"]}" ]; then
 				upgrade_configs+=("$upgrade_file")
+				seen_upgrade["$upgrade_file"]=1
 			fi
 		done < <(find "$apache_dir" -type f -name "*upgrade-in-progress*" -print0 2>/dev/null)
 	done
@@ -328,9 +348,9 @@ discover_apache_configs() {
 			upgrade_html_files+=("$html_file")
 			seen_html["$html_file"]=1
 		fi
-	done < <(find /var/www /home -maxdepth 3 -name "*upgrade-in-progress.html" -type f 2>/dev/null | head -10)
+	done < <(find /var/www /home -maxdepth 4 -name "*upgrade-in-progress.html" -type f 2>/dev/null | head -20)
 	
-	# Search for per-site include directories (avoid duplicates)
+	# Search for per-site include directories and files (avoid duplicates)
 	local include_dirs=()
 	local -A seen_dirs
 	
@@ -351,6 +371,15 @@ discover_apache_configs() {
 			site_includes+=("$include_file")
 		done < <(find "$include_dir" -type f -name "*.conf" -print0 2>/dev/null)
 	done
+	
+	# Also check for main upgrade config files that act as per-site includes
+	if [ -n "$UPG_DIR" ] && [ -f "${UPG_DIR}/lucee-upgrade-in-progress.conf" ]; then
+		site_includes+=("${UPG_DIR}/lucee-upgrade-in-progress.conf")
+	fi
+	
+	if [ -f "/opt/lucee/sys/upgrade-in-progress/lucee-upgrade-in-progress.conf" ]; then
+		site_includes+=("/opt/lucee/sys/upgrade-in-progress/lucee-upgrade-in-progress.conf")
+	fi
 	
 	# Also find cPanel userdata upgrade-in-progress files (these are per-site includes)
 	for apache_dir in "${apache_dirs[@]}"; do
