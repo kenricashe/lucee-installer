@@ -214,6 +214,7 @@ discover_apache_configs() {
 	local -a modified_htaccess
 	local -a upgrade_html_files
 	local -a site_includes
+	local -a modified_primary_configs
 	
 	# Determine Apache configuration directories based on distribution
 	local apache_dirs=()
@@ -229,7 +230,7 @@ discover_apache_configs() {
 	[ -n "$CONF_DIR" ] && apache_dirs+=("$CONF_DIR")
 	[ -n "$SITES_AVAILABLE_DIR" ] && apache_dirs+=("$(dirname "$SITES_AVAILABLE_DIR")")
 	
-	# Search for VirtualHost files with upgrade-related modifications
+	# Search for configuration files
 	for apache_dir in "${apache_dirs[@]}"; do
 		[ -d "$apache_dir" ] || continue
 		
@@ -237,12 +238,17 @@ discover_apache_configs() {
 			echo "Scanning Apache directory: $apache_dir" >&2
 		fi
 		
-		# Find VirtualHost files with IfDefine LUCEE_UPGRADE_IN_PROGRESS blocks
-		while IFS= read -r -d '' vhost_file; do
-			if grep -q "LUCEE_UPGRADE_IN_PROGRESS" "$vhost_file" 2>/dev/null; then
-				vhost_files+=("$vhost_file")
+		# Find VirtualHost files with upgrade-related Include directives
+		# Only check sites-available and sites-enabled directories for actual VirtualHost files
+		for vhost_dir in "$apache_dir/sites-available" "$apache_dir/sites-enabled"; do
+			if [ -d "$vhost_dir" ]; then
+				while IFS= read -r -d '' vhost_file; do
+					if grep -q "Include.*upgrade-in-progress.*lucee-detect-upgrade\.conf" "$vhost_file" 2>/dev/null; then
+						vhost_files+=("$vhost_file")
+					fi
+				done < <(find "$vhost_dir" -maxdepth 1 -type f -name "*.conf" -print0 2>/dev/null)
 			fi
-		done < <(find "$apache_dir" -type f \( -name "*.conf" -o -name "*.vhost" \) -print0 2>/dev/null)
+		done
 		
 		# Find lucee-proxy.conf files
 		while IFS= read -r -d '' proxy_file; do
@@ -256,47 +262,126 @@ discover_apache_configs() {
 	done
 	
 	# Search for modified .htaccess files (containing commented ErrorDocument 404)
-	if [ -n "$SITES_AVAILABLE_DIR" ] && [ -d "$SITES_AVAILABLE_DIR" ]; then
-		if [ "$show_progress" = "true" ]; then
-			echo "Checking .htaccess files in DocumentRoots..." >&2
-		fi
-		for vhost_file in "$SITES_AVAILABLE_DIR"/*.conf; do
-			[ -f "$vhost_file" ] || continue
-			local docroot
-			docroot=$(grep -i '^[[:space:]]*DocumentRoot' "$vhost_file" | head -1 | awk '{print $2}' | tr -d '"')
-			if [ -n "$docroot" ] && [ -f "${docroot}/.htaccess" ]; then
-				if grep -q "# NOTE: ErrorDocument 404 moved\|# ErrorDocument.*404.*\.cfm" "${docroot}/.htaccess" 2>/dev/null; then
-					modified_htaccess+=("${docroot}/.htaccess")
-				fi
-			fi
-		done
+	if [ "$show_progress" = "true" ]; then
+		echo "Checking .htaccess files in DocumentRoots..." >&2
 	fi
 	
-	# Search for upgrade-in-progress.html files
+	# Use associative array to avoid duplicates
+	local -A seen_htaccess
+	
+	# Check all Apache directories for VirtualHost files to find DocumentRoots
+	for apache_dir in "${apache_dirs[@]}"; do
+		[ -d "$apache_dir" ] || continue
+		
+		# Look in sites-available directories
+		for sites_dir in "$apache_dir/sites-available" "$apache_dir/sites-enabled"; do
+			if [ -d "$sites_dir" ]; then
+				for vhost_file in "$sites_dir"/*.conf; do
+					[ -f "$vhost_file" ] || continue
+					local docroot
+					docroot=$(grep -i '^[[:space:]]*DocumentRoot' "$vhost_file" | head -1 | awk '{print $2}' | tr -d '"')
+					if [ -n "$docroot" ] && [ -f "${docroot}/.htaccess" ] && [ -z "${seen_htaccess["${docroot}/.htaccess"]}" ]; then
+						if grep -q "# NOTE: ErrorDocument 404 moved\|# ErrorDocument.*404.*\.cfm" "${docroot}/.htaccess" 2>/dev/null; then
+							modified_htaccess+=("${docroot}/.htaccess")
+							seen_htaccess["${docroot}/.htaccess"]=1
+						fi
+					fi
+				done
+			fi
+		done
+	done
+	
+	# Search for upgrade-in-progress.html files in DocumentRoots
 	if [ "$show_progress" = "true" ]; then
 		echo "Searching for upgrade HTML files..." >&2
 	fi
-	while IFS= read -r -d '' html_file; do
-		upgrade_html_files+=("$html_file")
-	done < <(find /var/www /home /opt -name "*upgrade-in-progress.html" -type f 2>/dev/null | head -20)
 	
-	# Search for per-site include directories
+	# Use associative array to avoid duplicates
+	local -A seen_html
+	
+	# First, search in known DocumentRoots from VirtualHost files
+	for apache_dir in "${apache_dirs[@]}"; do
+		[ -d "$apache_dir" ] || continue
+		
+		for sites_dir in "$apache_dir/sites-available" "$apache_dir/sites-enabled"; do
+			if [ -d "$sites_dir" ]; then
+				for vhost_file in "$sites_dir"/*.conf; do
+					[ -f "$vhost_file" ] || continue
+					local docroot
+					docroot=$(grep -i '^[[:space:]]*DocumentRoot' "$vhost_file" | head -1 | awk '{print $2}' | tr -d '"')
+					if [ -n "$docroot" ] && [ -f "${docroot}/lucee-upgrade-in-progress.html" ] && [ -z "${seen_html["${docroot}/lucee-upgrade-in-progress.html"]}" ]; then
+						upgrade_html_files+=("${docroot}/lucee-upgrade-in-progress.html")
+						seen_html["${docroot}/lucee-upgrade-in-progress.html"]=1
+					fi
+				done
+			fi
+		done
+	done
+	
+	# Also do a broader search in common web directories
+	while IFS= read -r -d '' html_file; do
+		if [ -z "${seen_html["$html_file"]}" ]; then
+			upgrade_html_files+=("$html_file")
+			seen_html["$html_file"]=1
+		fi
+	done < <(find /var/www /home -maxdepth 3 -name "*upgrade-in-progress.html" -type f 2>/dev/null | head -10)
+	
+	# Search for per-site include directories (avoid duplicates)
 	local include_dirs=()
-	if [ -n "$UPG_DIR" ]; then
+	local -A seen_dirs
+	
+	if [ -n "$UPG_DIR" ] && [ -d "${UPG_DIR}/site-includes-for-404" ]; then
 		include_dirs+=("${UPG_DIR}/site-includes-for-404")
+		seen_dirs["${UPG_DIR}/site-includes-for-404"]=1
 	fi
-	include_dirs+=("/opt/lucee/sys/upgrade-in-progress/site-includes-for-404")
+	
+	if [ -d "/opt/lucee/sys/upgrade-in-progress/site-includes-for-404" ] && [ -z "${seen_dirs['/opt/lucee/sys/upgrade-in-progress/site-includes-for-404']}" ]; then
+		include_dirs+=("/opt/lucee/sys/upgrade-in-progress/site-includes-for-404")
+	fi
 	
 	for include_dir in "${include_dirs[@]}"; do
-		if [ -d "$include_dir" ]; then
-			if [ "$show_progress" = "true" ]; then
-				echo "Checking per-site includes: $include_dir" >&2
-			fi
-			while IFS= read -r -d '' include_file; do
-				site_includes+=("$include_file")
-			done < <(find "$include_dir" -type f -name "*.conf" -print0 2>/dev/null)
+		if [ "$show_progress" = "true" ]; then
+			echo "Checking per-site includes: $include_dir" >&2
 		fi
+		while IFS= read -r -d '' include_file; do
+			site_includes+=("$include_file")
+		done < <(find "$include_dir" -type f -name "*.conf" -print0 2>/dev/null)
 	done
+	
+	# Check primary Apache configuration files for modifications
+	if [ "$show_progress" = "true" ]; then
+		echo "Checking primary Apache configuration files..." >&2
+	fi
+	
+	local primary_config
+	if primary_config=$(find_primary_apache_config); then
+		if has_lucee_proxy_config "$primary_config"; then
+			modified_primary_configs+=("$primary_config")
+		fi
+	fi
+	
+	# Sort all arrays alphabetically
+	if [ ${#vhost_files[@]} -gt 0 ]; then
+		IFS=$'\n' vhost_files=($(sort <<<"${vhost_files[*]}"))
+	fi
+	if [ ${#proxy_configs[@]} -gt 0 ]; then
+		IFS=$'\n' proxy_configs=($(sort <<<"${proxy_configs[*]}"))
+	fi
+	if [ ${#upgrade_configs[@]} -gt 0 ]; then
+		IFS=$'\n' upgrade_configs=($(sort <<<"${upgrade_configs[*]}"))
+	fi
+	if [ ${#modified_htaccess[@]} -gt 0 ]; then
+		IFS=$'\n' modified_htaccess=($(sort <<<"${modified_htaccess[*]}"))
+	fi
+	if [ ${#upgrade_html_files[@]} -gt 0 ]; then
+		IFS=$'\n' upgrade_html_files=($(sort <<<"${upgrade_html_files[*]}"))
+	fi
+	if [ ${#site_includes[@]} -gt 0 ]; then
+		IFS=$'\n' site_includes=($(sort <<<"${site_includes[*]}"))
+	fi
+	if [ ${#modified_primary_configs[@]} -gt 0 ]; then
+		IFS=$'\n' modified_primary_configs=($(sort <<<"${modified_primary_configs[*]}"))
+	fi
 	
 	# Generate output based on format
 	case "$output_format" in
@@ -327,6 +412,9 @@ $(printf '		"%s"' "${upgrade_html_files[@]}" | sed 's/$/,/' | sed '$s/,$//')
 	],
 	"site_includes": [
 $(printf '		"%s"' "${site_includes[@]}" | sed 's/$/,/' | sed '$s/,$//')
+	],
+	"modified_primary_configs": [
+$(printf '		"%s"' "${modified_primary_configs[@]}" | sed 's/$/,/' | sed '$s/,$//')
 	]
 }
 EOF
@@ -341,6 +429,9 @@ EOF
 				echo "  cPanel: $IS_CPANEL"
 				echo "  Lucee Root: $LUCEE_ROOT"
 				echo "  Upgrade Dir: $UPG_DIR"
+				echo ""
+				echo "Modified primary Apache configs (${#modified_primary_configs[@]}):"
+				printf "  %s\n" "${modified_primary_configs[@]}"
 				echo ""
 				echo "VirtualHost files with upgrade modifications (${#vhost_files[@]}):"
 				printf "  %s\n" "${vhost_files[@]}"
@@ -369,6 +460,7 @@ EOF
 				printf "%s\n" "${modified_htaccess[@]}"
 				printf "%s\n" "${upgrade_html_files[@]}"
 				printf "%s\n" "${site_includes[@]}"
+				printf "%s\n" "${modified_primary_configs[@]}"
 			} > "$temp_file"
 			;;
 	esac
