@@ -152,6 +152,11 @@ execute_or_simulate() {
 confirm_action() {
 	local message="$1"
 	
+	if [ "$DRY_RUN" = true ]; then
+		echo "[DRY-RUN] Would prompt: $message (y/N)"
+		return 0
+	fi
+	
 	if [ "$INTERACTIVE" = false ]; then
 		return 0
 	fi
