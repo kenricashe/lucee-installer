@@ -1771,7 +1771,208 @@ process_sites() {
 	done < $SITES_FILE
 }
 
+# Function to perform dry run and show specific files that will be affected
+perform_dry_run() {
+	echo ""
+	echo "=========================="
+	echo "PREVIEW OF PENDING CHANGES"
+	echo "=========================="
+	echo ""
+	
+	local changes_found=false
+	
+	# Check global configuration files
+	echo "GLOBAL CONFIGURATION FILES:"
+	
+	if [ "$IS_DEBIAN" = true ]; then
+		# Debian/Ubuntu files
+		local conf_avail="/etc/apache2/conf-available"
+		local opt_file="${UPG_DIR}/lucee-upgrade-in-progress.conf"
+		
+		if [ -f "$opt_file" ] && [ ! -f "${conf_avail}/lucee-upgrade-in-progress.conf" ]; then
+			echo "  CREATE: ${conf_avail}/lucee-upgrade-in-progress.conf"
+			changes_found=true
+		fi
+		
+		if [ ! -f "${conf_avail}/lucee-proxy.conf" ]; then
+			echo "  CREATE: ${conf_avail}/lucee-proxy.conf (if Lucee proxy config found)"
+			changes_found=true
+		fi
+		
+	elif [ -n "$CONF_DIR" ]; then
+		# RHEL/CentOS files
+		local opt_file="${UPG_DIR}/lucee-upgrade-in-progress.conf"
+		
+		if [ -f "$opt_file" ] && [ ! -f "${CONF_DIR}/lucee-upgrade-in-progress.disabled" ] && [ ! -f "${CONF_DIR}/lucee-upgrade-in-progress.conf" ]; then
+			echo "  CREATE: ${CONF_DIR}/lucee-upgrade-in-progress.disabled"
+			changes_found=true
+		fi
+		
+		if [ -f "${CONF_DIR}/lucee-upgrade-in-progress.conf" ]; then
+			echo "  RENAME: ${CONF_DIR}/lucee-upgrade-in-progress.conf -> ${CONF_DIR}/lucee-upgrade-in-progress.disabled"
+			changes_found=true
+		fi
+		
+		if [ ! -f "${CONF_DIR}/lucee-proxy.conf" ]; then
+			echo "  CREATE: ${CONF_DIR}/lucee-proxy.conf (if Lucee proxy config found)"
+			changes_found=true
+		fi
+	fi
+	
+	# Check for allowed IP proxy include
+	local allowed_ip_conf="${UPG_DIR}/lucee-proxy-for-allowed-ip.conf"
+	if [ ! -f "$allowed_ip_conf" ]; then
+		echo "  CREATE: $allowed_ip_conf"
+		changes_found=true
+	else
+		echo "  UPDATE: $allowed_ip_conf (regenerated from current proxy config)"
+		changes_found=true
+	fi
+	
+	echo ""
+	echo "PER-SITE FILES:"
+	
+	# Analyze each site
+	if [ -f "$SITES_FILE" ]; then
+		while IFS= read -r line; do
+			domain=$(echo "$line" | awk '{print $1}')
+			docroot=$(echo "$line" | awk '{print $2}')
+			vhost_file=$(echo "$line" | awk '{print $3}')
+			
+			echo "  Site: $domain"
+			
+			# DocumentRoot files
+			if [ ! -f "${docroot}/lucee-upgrade-in-progress.html" ]; then
+				echo "    CREATE: ${docroot}/lucee-upgrade-in-progress.html"
+				changes_found=true
+			else
+				echo "    UPDATE: ${docroot}/lucee-upgrade-in-progress.html"
+				changes_found=true
+			fi
+			
+			# Per-site include files
+			local ssl_include="${SITE_INCLUDES_404_DIR}/${domain}-443.conf"
+			local http_include="${SITE_INCLUDES_404_DIR}/${domain}-80.conf"
+			
+			# Check if site has CF 404 handlers that would generate includes
+			local has_cf_404=false
+			if [ -f "${docroot}/.htaccess" ] && last_404_is_cf "${docroot}/.htaccess"; then
+				has_cf_404=true
+			elif [ -f "$vhost_file" ] && last_404_is_cf "$vhost_file"; then
+				has_cf_404=true
+			fi
+			
+			if [ "$has_cf_404" = true ]; then
+				if [ ! -f "$ssl_include" ]; then
+					echo "    CREATE: $ssl_include"
+					changes_found=true
+				fi
+				if [ ! -f "$http_include" ]; then
+					echo "    CREATE: $http_include"
+					changes_found=true
+				fi
+			fi
+			
+			# VirtualHost modifications
+			if [ "$IS_DEBIAN" = true ]; then
+				# Check SSL vhost
+				local ssl_conf="/etc/apache2/sites-available/${domain}-ssl.conf"
+				if [ -f "$ssl_conf" ]; then
+					echo "    MODIFY: $ssl_conf (add Include directives)"
+					changes_found=true
+				fi
+				
+				# Check HTTP vhost
+				local http_conf="/etc/apache2/sites-available/${domain}.conf"
+				if [ -f "$http_conf" ]; then
+					echo "    MODIFY: $http_conf (add Include directives)"
+					changes_found=true
+				fi
+				
+			elif [ "$IS_CPANEL" = true ]; then
+				# cPanel userdata files
+				local user=$(echo "$docroot" | awk -F '/' '{print $3}')
+				local ssl_userdata="${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf"
+				local http_userdata="${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf"
+				
+				echo "    CREATE/UPDATE: $ssl_userdata"
+				echo "    CREATE/UPDATE: $http_userdata"
+				changes_found=true
+				
+			else
+				# RHEL/CentOS - modify vhost files directly
+				if [ -f "$vhost_file" ]; then
+					echo "    MODIFY: $vhost_file (add Include directives)"
+					changes_found=true
+				fi
+				fi
+				
+				# .htaccess modifications
+				if [ -f "${docroot}/.htaccess" ] && grep -qiE "$ANY404_REGEX" "${docroot}/.htaccess"; then
+					echo "    MODIFY: ${docroot}/.htaccess (comment out ErrorDocument 404 lines)"
+					changes_found=true
+				fi
+				
+			done < "$SITES_FILE"
+		else
+			echo "  (Sites file not found - will be generated first)"
+		fi
+		
+		echo ""
+		echo "BACKUP FILES:"
+		echo "  All modified files will be backed up to: ${BACKUP_ROOT}/${BACKUP_TS}/"
+		
+		echo ""
+		echo "APACHE CONFIGURATION:"
+		if [ "$IS_CPANEL" = true ]; then
+			echo "  EXECUTE: /scripts/rebuildhttpdconf"
+			echo "  EXECUTE: /scripts/restartsrv_httpd --graceful"
+		else
+			echo "  EXECUTE: Apache configuration test"
+			echo "  EXECUTE: systemctl reload apache2/httpd"
+		fi
+		
+		echo ""
+		echo "==============================================="
+		
+		if [ "$changes_found" = false ]; then
+			echo "No changes needed - system appears to already be configured."
+			return 1
+		fi
+		
+		return 0
+}
+
+# Function to get user confirmation
+get_user_confirmation() {
+	echo ""
+	echo "Do you want to proceed with these changes? [y/N]"
+	read -r response
+	case "$response" in
+		[yY]|[yY][eE][sS])
+			return 0
+			;;
+		*)
+			echo "Operation cancelled by user."
+			return 1
+			;;
+	esac
+}
+
 # MAIN SCRIPT EXECUTION
+
+# Perform dry run and get confirmation
+if perform_dry_run; then
+	if ! get_user_confirmation; then
+		exit 0
+	fi
+	echo ""
+	echo "Proceeding with Apache configuration changes..."
+	echo ""
+else
+	echo "No changes needed. Exiting."
+	exit 0
+fi
 
 # Debian, Ubuntu, Pop!_OS, etc
 if [ "$IS_DEBIAN" = true ]; then
