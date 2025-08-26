@@ -256,9 +256,12 @@ discover_apache_configs() {
 			proxy_configs+=("$proxy_file")
 		done < <(find "$apache_dir" -type f -name "*lucee-proxy*" -print0 2>/dev/null)
 		
-		# Find upgrade-in-progress configuration files
+		# Find upgrade-in-progress configuration files (exclude userdata - those are per-site includes)
 		while IFS= read -r -d '' upgrade_file; do
-			upgrade_configs+=("$upgrade_file")
+			# Skip userdata files - they'll be categorized as per-site includes
+			if [[ "$upgrade_file" != */userdata/* ]]; then
+				upgrade_configs+=("$upgrade_file")
+			fi
 		done < <(find "$apache_dir" -type f -name "*upgrade-in-progress*" -print0 2>/dev/null)
 	done
 	
@@ -349,6 +352,16 @@ discover_apache_configs() {
 		done < <(find "$include_dir" -type f -name "*.conf" -print0 2>/dev/null)
 	done
 	
+	# Also find cPanel userdata upgrade-in-progress files (these are per-site includes)
+	for apache_dir in "${apache_dirs[@]}"; do
+		[ -d "$apache_dir" ] || continue
+		if [ -d "$apache_dir/conf.d/userdata" ]; then
+			while IFS= read -r -d '' userdata_file; do
+				site_includes+=("$userdata_file")
+			done < <(find "$apache_dir/conf.d/userdata" -name "*upgrade-in-progress*" -type f -print0 2>/dev/null)
+		fi
+	done
+	
 	# Check primary Apache configuration files for modifications
 	if [ "$show_progress" = "true" ]; then
 		echo "Checking primary Apache configuration files..." >&2
@@ -398,18 +411,6 @@ discover_apache_configs() {
 			# Old lucee-ajp-and-mod_cfml.conf (now lucee-proxy.conf)
 			if [ -f "$apache_dir/conf.d/lucee-ajp-and-mod_cfml.conf" ]; then
 				legacy_files+=("$apache_dir/conf.d/lucee-ajp-and-mod_cfml.conf")
-			fi
-			
-			# Disabled upgrade config
-			if [ -f "$apache_dir/conf.d/lucee-upgrade-in-progress.disabled" ]; then
-				legacy_files+=("$apache_dir/conf.d/lucee-upgrade-in-progress.disabled")
-			fi
-			
-			# cPanel userdata upgrade configs
-			if [ -d "$apache_dir/conf.d/userdata" ]; then
-				while IFS= read -r -d '' userdata_file; do
-					legacy_files+=("$userdata_file")
-				done < <(find "$apache_dir/conf.d/userdata" -name "*upgrade-in-progress*" -type f -print0 2>/dev/null)
 			fi
 		fi
 	done
