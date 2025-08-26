@@ -22,7 +22,7 @@ show_usage() {
 	echo "  off    - Disable cPanel simulation (remove dummy files, restore originals)"
 	echo "  status - Show current simulation status"
 	echo ""
-	echo "This script creates dummy cPanel files for testing the toolkit in a non-cPanel environment."
+	echo "This script creates cPanel simulation files for testing the toolkit in a non-cPanel environment."
 }
 
 check_root() {
