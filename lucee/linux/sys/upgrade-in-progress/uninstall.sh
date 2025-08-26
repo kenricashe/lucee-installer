@@ -15,7 +15,7 @@ SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd
 . "${SCRIPT_DIR}/shared-functions.sh"
 
 # Default options
-DRY_RUN=false
+PREVIEW_MODE=true
 VERBOSE=false
 BACKUP_BEFORE_REMOVE=true
 FORCE=false
@@ -24,8 +24,8 @@ INTERACTIVE=true
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
 	case $1 in
-		--dry-run|-n)
-			DRY_RUN=true
+		--execute|-x)
+			PREVIEW_MODE=false
 			shift
 			;;
 		--verbose|-v)
@@ -39,10 +39,12 @@ while [[ $# -gt 0 ]]; do
 		--force|-f)
 			FORCE=true
 			INTERACTIVE=false
+			PREVIEW_MODE=false
 			shift
 			;;
 		--yes|-y)
 			INTERACTIVE=false
+			PREVIEW_MODE=false
 			shift
 			;;
 		--help|-h)
@@ -52,11 +54,11 @@ Usage: $0 [OPTIONS]
 Remove Lucee upgrade-in-progress system and restore original configurations.
 
 OPTIONS:
-    --dry-run, -n      Show what would be removed without making changes
+    --execute, -x      Execute changes immediately (default is preview mode)
     --verbose, -v      Enable verbose output
     --no-backup        Skip creating backups before removal
-    --force, -f        Force removal without prompts (implies --yes)
-    --yes, -y          Answer yes to all prompts
+    --force, -f        Force removal without prompts (implies --execute)
+    --yes, -y          Answer yes to all prompts (implies --execute)
     --help, -h         Show this help message
 
 DESCRIPTION:
@@ -69,13 +71,14 @@ DESCRIPTION:
     - Legacy upgrade files
     - Upgrade flag files
 
-    By default, backups are created before removal. Use --no-backup to skip.
+    By default, shows a preview of pending changes and prompts for confirmation.
+    Use --execute to skip preview. Backups are created before removal unless --no-backup is used.
 
 EXAMPLES:
-    $0                 # Interactive removal with backups
-    $0 --dry-run       # Show what would be removed
-    $0 --force         # Remove everything without prompts
-    $0 --verbose --yes # Remove with detailed output, no prompts
+    $0                 # Preview changes, then prompt for confirmation
+    $0 --execute       # Execute changes immediately with prompts
+    $0 --force         # Execute changes without prompts
+    $0 --verbose --yes # Execute with detailed output, no prompts
 
 EOF
 			exit 0
@@ -105,20 +108,20 @@ execute_or_simulate() {
 	local action="$1"
 	shift
 	
-	if [ "$DRY_RUN" = true ]; then
+	if [ "$PREVIEW_MODE" = true ]; then
 		if [ "$action" = "remove_include_directive" ]; then
 			local file="$1"
 			local pattern="$2"
 			local matching_lines
 			matching_lines=$(grep "$pattern" "$file" 2>/dev/null || true)
 			if [ -n "$matching_lines" ]; then
-				echo "[DRY-RUN] Would remove from $file:"
+				echo "[PREVIEW] Would remove from $file:"
 				echo "$matching_lines" | sed 's/^/  /'
 			else
-				echo "[DRY-RUN] No matching lines found in $file for pattern: $pattern"
+				echo "[PREVIEW] No matching lines found in $file for pattern: $pattern"
 			fi
 		else
-			echo "[DRY-RUN] Would execute: $action $*"
+			echo "[PREVIEW] Would execute: $action $*"
 		fi
 	else
 		log_action "$action $*"
@@ -152,8 +155,8 @@ execute_or_simulate() {
 confirm_action() {
 	local message="$1"
 	
-	if [ "$DRY_RUN" = true ]; then
-		echo "[DRY-RUN] Would prompt: $message (y/N)"
+	if [ "$PREVIEW_MODE" = true ]; then
+		echo "[PREVIEW] Would prompt: $message (y/N)"
 		return 0
 	fi
 	
@@ -201,8 +204,8 @@ restore_original_errordocument_404() {
 				
 				# Check if current file already has an ErrorDocument 404
 				if ! grep -q "^[[:space:]]*ErrorDocument[[:space:]]\+404[[:space:]]" "$vhost_file" 2>/dev/null; then
-					if [ "$DRY_RUN" = true ]; then
-						echo "[DRY-RUN] Would restore to $vhost_file:"
+					if [ "$PREVIEW_MODE" = true ]; then
+						echo "[PREVIEW] Would restore to $vhost_file:"
 						echo "  $original_errordoc"
 					else
 						# Find a good place to insert it (after DocumentRoot, before </VirtualHost>)
@@ -299,69 +302,16 @@ restore_htaccess_files() {
 	fi
 }
 
-# Main uninstall function
-main() {
-	echo "Lucee Upgrade-in-Progress System Uninstaller"
-	echo "============================================="
-	echo ""
-	
-	if [ "$DRY_RUN" = true ]; then
-		echo "DRY RUN MODE - No changes will be made"
-		echo ""
-	fi
-	
-	log_verbose "Environment: Debian=$IS_DEBIAN, cPanel=$IS_CPANEL"
-	log_verbose "Lucee Root: $LUCEE_ROOT"
-	log_verbose "Upgrade Dir: $UPG_DIR"
-	
-	# Discover current configurations
-	echo "Discovering current upgrade configurations..."
-	local discovery_output
-	discovery_output=$(discover_apache_configs "json" "false")
-	
-	if [ -z "$discovery_output" ]; then
-		echo "No upgrade configurations found."
-		exit 0
-	fi
-	
-	# Parse JSON output to get file lists
-	local vhost_files proxy_configs upgrade_configs modified_htaccess upgrade_html_files site_includes legacy_files
-	
-	# Extract file arrays from JSON (handle multi-line arrays)
-	vhost_files=$(echo "$discovery_output" | sed -n '/"vhost_files": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
-	proxy_configs=$(echo "$discovery_output" | sed -n '/"proxy_configs": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
-	upgrade_configs=$(echo "$discovery_output" | sed -n '/"upgrade_configs": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
-	modified_htaccess=$(echo "$discovery_output" | sed -n '/"modified_htaccess": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
-	upgrade_html_files=$(echo "$discovery_output" | sed -n '/"upgrade_html_files": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
-	site_includes=$(echo "$discovery_output" | sed -n '/"site_includes": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
-	legacy_files=$(echo "$discovery_output" | sed -n '/"legacy_files": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
-	
-	# Count total items to remove
-	local total_items=0
-	[ -n "$vhost_files" ] && total_items=$((total_items + $(echo "$vhost_files" | wc -l)))
-	[ -n "$proxy_configs" ] && total_items=$((total_items + $(echo "$proxy_configs" | wc -l)))
-	[ -n "$upgrade_configs" ] && total_items=$((total_items + $(echo "$upgrade_configs" | wc -l)))
-	[ -n "$modified_htaccess" ] && total_items=$((total_items + $(echo "$modified_htaccess" | wc -l)))
-	[ -n "$upgrade_html_files" ] && total_items=$((total_items + $(echo "$upgrade_html_files" | wc -l)))
-	[ -n "$site_includes" ] && total_items=$((total_items + $(echo "$site_includes" | wc -l)))
-	[ -n "$legacy_files" ] && total_items=$((total_items + $(echo "$legacy_files" | wc -l)))
-	
-	if [ "$total_items" -eq 0 ]; then
-		echo "No upgrade configurations found to remove."
-		exit 0
-	fi
-	
-	echo "Found $total_items upgrade-related items to process."
-	echo ""
-	
-	if [ "$DRY_RUN" = false ] && [ "$FORCE" = false ]; then
-		if ! confirm_action "Proceed with uninstall?"; then
-			echo "Uninstall cancelled."
-			exit 0
-		fi
-		echo ""
-	fi
-	
+# Function to process all uninstall operations
+process_uninstall_operations() {
+	local vhost_files="$1"
+	local proxy_configs="$2"
+	local upgrade_configs="$3"
+	local modified_htaccess="$4"
+	local upgrade_html_files="$5"
+	local site_includes="$6"
+	local legacy_files="$7"
+
 	# Remove VirtualHost Include directives
 	if [ -n "$vhost_files" ]; then
 		echo "Processing VirtualHost files with upgrade Include directives..."
@@ -389,8 +339,8 @@ main() {
 					if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
 						backup_file "$proxy_file"
 					fi
-					if [ "$DRY_RUN" = true ]; then
-						echo "[DRY-RUN] Would execute: disable_and_remove_conf $conf_name"
+					if [ "$PREVIEW_MODE" = true ]; then
+						echo "[PREVIEW] Would execute: disable_and_remove_conf $conf_name"
 					else
 						disable_and_remove_conf "$conf_name"
 					fi
@@ -418,8 +368,8 @@ main() {
 					if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
 						backup_file "$upgrade_file"
 					fi
-					if [ "$DRY_RUN" = true ]; then
-						echo "[DRY-RUN] Would execute: disable_and_remove_conf $conf_name"
+					if [ "$PREVIEW_MODE" = true ]; then
+						echo "[PREVIEW] Would execute: disable_and_remove_conf $conf_name"
 					else
 						disable_and_remove_conf "$conf_name"
 					fi
@@ -508,20 +458,118 @@ main() {
 	fi
 	
 	# Reload Apache configuration
-	if [ "$DRY_RUN" = false ]; then
+	if [ "$PREVIEW_MODE" = false ]; then
 		echo "Reloading Apache configuration..."
 		execute_or_simulate "reload_apache"
 		echo ""
 	fi
 	
 	# Summary
-	if [ "$DRY_RUN" = true ]; then
-		echo "Dry run complete. $total_items items would be processed."
+	if [ "$PREVIEW_MODE" = true ]; then
+		return  # Don't show summary in preview mode, handled by caller
 	else
+		local total_items=0
+		[ -n "$vhost_files" ] && total_items=$((total_items + $(echo "$vhost_files" | wc -l)))
+		[ -n "$proxy_configs" ] && total_items=$((total_items + $(echo "$proxy_configs" | wc -l)))
+		[ -n "$upgrade_configs" ] && total_items=$((total_items + $(echo "$upgrade_configs" | wc -l)))
+		[ -n "$modified_htaccess" ] && total_items=$((total_items + $(echo "$modified_htaccess" | wc -l)))
+		[ -n "$upgrade_html_files" ] && total_items=$((total_items + $(echo "$upgrade_html_files" | wc -l)))
+		[ -n "$site_includes" ] && total_items=$((total_items + $(echo "$site_includes" | wc -l)))
+		[ -n "$legacy_files" ] && total_items=$((total_items + $(echo "$legacy_files" | wc -l)))
+		
 		echo "Uninstall complete. $total_items items processed."
 		if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
 			echo "Backups created in: ${BACKUP_ROOT}/${BACKUP_TS}"
 		fi
+	fi
+}
+
+# Main uninstall function
+main() {
+	echo "Lucee Upgrade-in-Progress System Uninstaller"
+	echo "============================================="
+	echo ""
+	
+	log_verbose "Environment: Debian=$IS_DEBIAN, cPanel=$IS_CPANEL"
+	log_verbose "Lucee Root: $LUCEE_ROOT"
+	log_verbose "Upgrade Dir: $UPG_DIR"
+	
+	# Discover current configurations
+	echo "Discovering current upgrade configurations..."
+	local discovery_output
+	discovery_output=$(discover_apache_configs "json" "false")
+	
+	if [ -z "$discovery_output" ]; then
+		echo "No upgrade configurations found."
+		exit 0
+	fi
+	
+	# Parse JSON output to get file lists
+	local vhost_files proxy_configs upgrade_configs modified_htaccess upgrade_html_files site_includes legacy_files
+	
+	# Extract file arrays from JSON (handle multi-line arrays)
+	vhost_files=$(echo "$discovery_output" | sed -n '/"vhost_files": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	proxy_configs=$(echo "$discovery_output" | sed -n '/"proxy_configs": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	upgrade_configs=$(echo "$discovery_output" | sed -n '/"upgrade_configs": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	modified_htaccess=$(echo "$discovery_output" | sed -n '/"modified_htaccess": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	upgrade_html_files=$(echo "$discovery_output" | sed -n '/"upgrade_html_files": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	site_includes=$(echo "$discovery_output" | sed -n '/"site_includes": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	legacy_files=$(echo "$discovery_output" | sed -n '/"legacy_files": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	
+	# Count total items to remove
+	local total_items=0
+	[ -n "$vhost_files" ] && total_items=$((total_items + $(echo "$vhost_files" | wc -l)))
+	[ -n "$proxy_configs" ] && total_items=$((total_items + $(echo "$proxy_configs" | wc -l)))
+	[ -n "$upgrade_configs" ] && total_items=$((total_items + $(echo "$upgrade_configs" | wc -l)))
+	[ -n "$modified_htaccess" ] && total_items=$((total_items + $(echo "$modified_htaccess" | wc -l)))
+	[ -n "$upgrade_html_files" ] && total_items=$((total_items + $(echo "$upgrade_html_files" | wc -l)))
+	[ -n "$site_includes" ] && total_items=$((total_items + $(echo "$site_includes" | wc -l)))
+	[ -n "$legacy_files" ] && total_items=$((total_items + $(echo "$legacy_files" | wc -l)))
+	
+	if [ "$total_items" -eq 0 ]; then
+		echo "No upgrade configurations found to remove."
+		exit 0
+	fi
+	
+	echo "Found $total_items upgrade-related items to process."
+	echo ""
+	
+	# If in preview mode, show preview and prompt for confirmation
+	if [ "$PREVIEW_MODE" = true ]; then
+		echo "PREVIEW OF PENDING CHANGES:"
+		echo "============================"
+		echo ""
+		
+		# Run through all operations in preview mode
+		process_uninstall_operations "$vhost_files" "$proxy_configs" "$upgrade_configs" "$modified_htaccess" "$upgrade_html_files" "$site_includes" "$legacy_files"
+		
+		echo ""
+		echo "Preview complete. $total_items items would be processed."
+		echo ""
+		
+		if [ "$FORCE" = false ]; then
+			if confirm_action "Execute these changes now?"; then
+				PREVIEW_MODE=false
+				echo ""
+				echo "EXECUTING CHANGES:"
+				echo "=================="
+				echo ""
+				process_uninstall_operations "$vhost_files" "$proxy_configs" "$upgrade_configs" "$modified_htaccess" "$upgrade_html_files" "$site_includes" "$legacy_files"
+			else
+				echo "Uninstall cancelled."
+				exit 0
+			fi
+		fi
+	else
+		# Direct execution mode
+		if [ "$FORCE" = false ]; then
+			if ! confirm_action "Proceed with uninstall?"; then
+				echo "Uninstall cancelled."
+				exit 0
+			fi
+			echo ""
+		fi
+		process_uninstall_operations "$vhost_files" "$proxy_configs" "$upgrade_configs" "$modified_htaccess" "$upgrade_html_files" "$site_includes" "$legacy_files"
 	fi
 }
 
