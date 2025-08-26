@@ -16,6 +16,7 @@ SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd
 
 # Default options
 PREVIEW_MODE=true
+PREVIEW_PREFIX="[PREVIEW] "
 VERBOSE=false
 BACKUP_BEFORE_REMOVE=true
 FORCE=false
@@ -26,6 +27,7 @@ while [[ $# -gt 0 ]]; do
 	case $1 in
 		--execute|-x)
 			PREVIEW_MODE=false
+			PREVIEW_PREFIX=""
 			shift
 			;;
 		--verbose|-v)
@@ -40,6 +42,7 @@ while [[ $# -gt 0 ]]; do
 			FORCE=true
 			INTERACTIVE=false
 			PREVIEW_MODE=false
+			PREVIEW_PREFIX=""
 			shift
 			;;
 		--yes|-y)
@@ -318,7 +321,7 @@ process_uninstall_operations() {
 
 	# Remove VirtualHost Include directives
 	if [ -n "$vhost_files" ]; then
-		echo "Processing VirtualHost files with upgrade Include directives..."
+		echo "${PREVIEW_PREFIX}Processing VirtualHost files with upgrade Include directives..."
 		while IFS= read -r vhost_file; do
 			[ -n "$vhost_file" ] && remove_include_directives "$vhost_file"
 		done <<< "$vhost_files"
@@ -327,7 +330,7 @@ process_uninstall_operations() {
 	
 	# Remove proxy configuration files (except lucee-proxy.conf)
 	if [ -n "$proxy_configs" ]; then
-		echo "Removing upgrade-specific proxy configuration files..."
+		echo "${PREVIEW_PREFIX}Removing upgrade-specific proxy configuration files..."
 		while IFS= read -r proxy_file; do
 			if [ -n "$proxy_file" ] && [ -f "$proxy_file" ]; then
 				# Skip lucee-proxy.conf - it should remain for continued Lucee functionality
@@ -362,7 +365,7 @@ process_uninstall_operations() {
 	
 	# Remove upgrade configuration files
 	if [ -n "$upgrade_configs" ]; then
-		echo "Removing upgrade configuration files..."
+		echo "${PREVIEW_PREFIX}Removing upgrade configuration files..."
 		while IFS= read -r upgrade_file; do
 			if [ -n "$upgrade_file" ] && [ -f "$upgrade_file" ]; then
 				# Disable and remove Apache configuration (Debian/Ubuntu)
@@ -391,7 +394,7 @@ process_uninstall_operations() {
 	
 	# Process .htaccess files
 	if [ -n "$modified_htaccess" ]; then
-		echo "Processing modified .htaccess files..."
+		echo "${PREVIEW_PREFIX}Processing modified .htaccess files..."
 		while IFS= read -r htaccess_file; do
 			[ -n "$htaccess_file" ] && restore_htaccess_files "$htaccess_file"
 		done <<< "$modified_htaccess"
@@ -400,7 +403,7 @@ process_uninstall_operations() {
 	
 	# Remove upgrade HTML files
 	if [ -n "$upgrade_html_files" ]; then
-		echo "Removing upgrade HTML files..."
+		echo "${PREVIEW_PREFIX}Removing upgrade HTML files..."
 		while IFS= read -r html_file; do
 			if [ -n "$html_file" ] && [ -f "$html_file" ]; then
 				if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
@@ -414,7 +417,7 @@ process_uninstall_operations() {
 	
 	# Remove per-site include files
 	if [ -n "$site_includes" ]; then
-		echo "Removing per-site include files..."
+		echo "${PREVIEW_PREFIX}Removing per-site include files..."
 		while IFS= read -r include_file; do
 			if [ -n "$include_file" ] && [ -f "$include_file" ]; then
 				if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
@@ -428,7 +431,7 @@ process_uninstall_operations() {
 	
 	# Remove legacy files
 	if [ -n "$legacy_files" ]; then
-		echo "Removing legacy upgrade files..."
+		echo "${PREVIEW_PREFIX}Removing legacy upgrade files..."
 		while IFS= read -r legacy_file; do
 			if [ -n "$legacy_file" ] && [ -f "$legacy_file" ]; then
 				if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
@@ -442,7 +445,7 @@ process_uninstall_operations() {
 	
 	# Remove upgrade flag file
 	if [ -f "/var/lucee-upgrade-in-progress" ]; then
-		echo "Removing upgrade flag file..."
+		echo "${PREVIEW_PREFIX}Removing upgrade flag file..."
 		if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
 			backup_file "/var/lucee-upgrade-in-progress"
 		fi
@@ -452,7 +455,7 @@ process_uninstall_operations() {
 	
 	# Reload Apache configuration
 	if [ "$PREVIEW_MODE" = false ]; then
-		echo "Reloading Apache configuration..."
+		echo "${PREVIEW_PREFIX}Reloading Apache configuration..."
 		execute_or_simulate "reload_apache"
 		echo ""
 	fi
