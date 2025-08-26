@@ -39,6 +39,7 @@ FILES=(
 	"lucee-detect-upgrade.conf"
 	"lucee-upgrade-in-progress.conf"
 	"shared-functions.sh"
+	"get-current-configs.sh"
 	"tests/dev-reset.sh"
 	"tests/cpanel.sh"
 )

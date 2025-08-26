@@ -193,3 +193,276 @@ disable_conf() {
 		return 1
 	fi
 }
+
+# ============================================================================
+# Apache Configuration Discovery Functions
+# ============================================================================
+
+# Discover all Apache configuration files that contain Lucee upgrade-related content
+# Returns: JSON-formatted data about discovered configurations
+discover_apache_configs() {
+	local output_format="${1:-json}"  # json, text, or paths-only
+	local show_progress="${2:-false}"  # true to show progress messages
+	local temp_file
+	temp_file=$(mktemp)
+	
+	# Initialize discovery results
+	local -A discovered_configs
+	local -a vhost_files
+	local -a proxy_configs
+	local -a upgrade_configs
+	local -a modified_htaccess
+	local -a upgrade_html_files
+	local -a site_includes
+	
+	# Determine Apache configuration directories based on distribution
+	local apache_dirs=()
+	if [ "$IS_DEBIAN" = true ]; then
+		apache_dirs=("/etc/apache2")
+	elif [ "$IS_CPANEL" = true ]; then
+		apache_dirs=("/usr/local/apache/conf" "/etc/apache2" "/etc/httpd")
+	else
+		apache_dirs=("/etc/httpd" "/etc/apache2")
+	fi
+	
+	# Add any additional directories from ENVIRONMENT.sh
+	[ -n "$CONF_DIR" ] && apache_dirs+=("$CONF_DIR")
+	[ -n "$SITES_AVAILABLE_DIR" ] && apache_dirs+=("$(dirname "$SITES_AVAILABLE_DIR")")
+	
+	# Search for VirtualHost files with upgrade-related modifications
+	for apache_dir in "${apache_dirs[@]}"; do
+		[ -d "$apache_dir" ] || continue
+		
+		if [ "$show_progress" = "true" ]; then
+			echo "Scanning Apache directory: $apache_dir" >&2
+		fi
+		
+		# Find VirtualHost files with IfDefine LUCEE_UPGRADE_IN_PROGRESS blocks
+		while IFS= read -r -d '' vhost_file; do
+			if grep -q "LUCEE_UPGRADE_IN_PROGRESS" "$vhost_file" 2>/dev/null; then
+				vhost_files+=("$vhost_file")
+			fi
+		done < <(find "$apache_dir" -type f \( -name "*.conf" -o -name "*.vhost" \) -print0 2>/dev/null)
+		
+		# Find lucee-proxy.conf files
+		while IFS= read -r -d '' proxy_file; do
+			proxy_configs+=("$proxy_file")
+		done < <(find "$apache_dir" -type f -name "*lucee-proxy*" -print0 2>/dev/null)
+		
+		# Find upgrade-in-progress configuration files
+		while IFS= read -r -d '' upgrade_file; do
+			upgrade_configs+=("$upgrade_file")
+		done < <(find "$apache_dir" -type f -name "*upgrade-in-progress*" -print0 2>/dev/null)
+	done
+	
+	# Search for modified .htaccess files (containing commented ErrorDocument 404)
+	if [ -n "$SITES_AVAILABLE_DIR" ] && [ -d "$SITES_AVAILABLE_DIR" ]; then
+		if [ "$show_progress" = "true" ]; then
+			echo "Checking .htaccess files in DocumentRoots..." >&2
+		fi
+		for vhost_file in "$SITES_AVAILABLE_DIR"/*.conf; do
+			[ -f "$vhost_file" ] || continue
+			local docroot
+			docroot=$(grep -i '^[[:space:]]*DocumentRoot' "$vhost_file" | head -1 | awk '{print $2}' | tr -d '"')
+			if [ -n "$docroot" ] && [ -f "${docroot}/.htaccess" ]; then
+				if grep -q "# NOTE: ErrorDocument 404 moved\|# ErrorDocument.*404.*\.cfm" "${docroot}/.htaccess" 2>/dev/null; then
+					modified_htaccess+=("${docroot}/.htaccess")
+				fi
+			fi
+		done
+	fi
+	
+	# Search for upgrade-in-progress.html files
+	if [ "$show_progress" = "true" ]; then
+		echo "Searching for upgrade HTML files..." >&2
+	fi
+	while IFS= read -r -d '' html_file; do
+		upgrade_html_files+=("$html_file")
+	done < <(find /var/www /home /opt -name "*upgrade-in-progress.html" -type f 2>/dev/null | head -20)
+	
+	# Search for per-site include directories
+	local include_dirs=()
+	if [ -n "$UPG_DIR" ]; then
+		include_dirs+=("${UPG_DIR}/site-includes-for-404")
+	fi
+	include_dirs+=("/opt/lucee/sys/upgrade-in-progress/site-includes-for-404")
+	
+	for include_dir in "${include_dirs[@]}"; do
+		if [ -d "$include_dir" ]; then
+			if [ "$show_progress" = "true" ]; then
+				echo "Checking per-site includes: $include_dir" >&2
+			fi
+			while IFS= read -r -d '' include_file; do
+				site_includes+=("$include_file")
+			done < <(find "$include_dir" -type f -name "*.conf" -print0 2>/dev/null)
+		fi
+	done
+	
+	# Generate output based on format
+	case "$output_format" in
+		"json")
+			cat > "$temp_file" <<EOF
+{
+	"discovery_timestamp": "$(date -Iseconds)",
+	"environment": {
+		"is_debian": $IS_DEBIAN,
+		"is_cpanel": $IS_CPANEL,
+		"lucee_root": "$LUCEE_ROOT",
+		"upgrade_dir": "$UPG_DIR"
+	},
+	"vhost_files": [
+$(printf '		"%s"' "${vhost_files[@]}" | sed 's/$/,/' | sed '$s/,$//')
+	],
+	"proxy_configs": [
+$(printf '		"%s"' "${proxy_configs[@]}" | sed 's/$/,/' | sed '$s/,$//')
+	],
+	"upgrade_configs": [
+$(printf '		"%s"' "${upgrade_configs[@]}" | sed 's/$/,/' | sed '$s/,$//')
+	],
+	"modified_htaccess": [
+$(printf '		"%s"' "${modified_htaccess[@]}" | sed 's/$/,/' | sed '$s/,$//')
+	],
+	"upgrade_html_files": [
+$(printf '		"%s"' "${upgrade_html_files[@]}" | sed 's/$/,/' | sed '$s/,$//')
+	],
+	"site_includes": [
+$(printf '		"%s"' "${site_includes[@]}" | sed 's/$/,/' | sed '$s/,$//')
+	]
+}
+EOF
+			;;
+		"text")
+			{
+				echo "Apache Configuration Discovery Report"
+				echo "Generated: $(date)"
+				echo ""
+				echo "Environment:"
+				echo "  Debian: $IS_DEBIAN"
+				echo "  cPanel: $IS_CPANEL"
+				echo "  Lucee Root: $LUCEE_ROOT"
+				echo "  Upgrade Dir: $UPG_DIR"
+				echo ""
+				echo "VirtualHost files with upgrade modifications (${#vhost_files[@]}):"
+				printf "  %s\n" "${vhost_files[@]}"
+				echo ""
+				echo "Lucee proxy configuration files (${#proxy_configs[@]}):"
+				printf "  %s\n" "${proxy_configs[@]}"
+				echo ""
+				echo "Upgrade-in-progress configuration files (${#upgrade_configs[@]}):"
+				printf "  %s\n" "${upgrade_configs[@]}"
+				echo ""
+				echo "Modified .htaccess files (${#modified_htaccess[@]}):"
+				printf "  %s\n" "${modified_htaccess[@]}"
+				echo ""
+				echo "Upgrade HTML files (${#upgrade_html_files[@]}):"
+				printf "  %s\n" "${upgrade_html_files[@]}"
+				echo ""
+				echo "Per-site include files (${#site_includes[@]}):"
+				printf "  %s\n" "${site_includes[@]}"
+			} > "$temp_file"
+			;;
+		"paths-only")
+			{
+				printf "%s\n" "${vhost_files[@]}"
+				printf "%s\n" "${proxy_configs[@]}"
+				printf "%s\n" "${upgrade_configs[@]}"
+				printf "%s\n" "${modified_htaccess[@]}"
+				printf "%s\n" "${upgrade_html_files[@]}"
+				printf "%s\n" "${site_includes[@]}"
+			} > "$temp_file"
+			;;
+	esac
+	
+	cat "$temp_file"
+	rm -f "$temp_file"
+}
+
+# Get detailed information about a specific VirtualHost configuration
+# Usage: get_vhost_details /path/to/vhost.conf
+get_vhost_details() {
+	local vhost_file="$1"
+	[ -f "$vhost_file" ] || return 1
+	
+	local temp_file
+	temp_file=$(mktemp)
+	
+	# Extract key information from VirtualHost
+	local server_name
+	local server_alias
+	local document_root
+	local port
+	local has_upgrade_blocks=false
+	local has_includes=false
+	
+	server_name=$(grep -i '^[[:space:]]*ServerName' "$vhost_file" | head -1 | awk '{print $2}' | tr -d '"')
+	server_alias=$(grep -i '^[[:space:]]*ServerAlias' "$vhost_file" | awk '{for(i=2;i<=NF;i++) printf "%s ", $i}' | sed 's/ $//')
+	document_root=$(grep -i '^[[:space:]]*DocumentRoot' "$vhost_file" | head -1 | awk '{print $2}' | tr -d '"')
+	port=$(grep -oE ':[0-9]+>' "$vhost_file" | head -1 | tr -d ':>')
+	
+	if grep -q "LUCEE_UPGRADE_IN_PROGRESS" "$vhost_file" 2>/dev/null; then
+		has_upgrade_blocks=true
+	fi
+	
+	if grep -q "Include.*upgrade-in-progress" "$vhost_file" 2>/dev/null; then
+		has_includes=true
+	fi
+	
+	cat > "$temp_file" <<EOF
+{
+	"file_path": "$vhost_file",
+	"server_name": "$server_name",
+	"server_alias": "$server_alias",
+	"document_root": "$document_root",
+	"port": "${port:-80}",
+	"has_upgrade_blocks": $has_upgrade_blocks,
+	"has_upgrade_includes": $has_includes,
+	"file_size": $(stat -c%s "$vhost_file" 2>/dev/null || echo 0),
+	"last_modified": "$(stat -c%Y "$vhost_file" 2>/dev/null || echo 0)"
+}
+EOF
+	
+	cat "$temp_file"
+	rm -f "$temp_file"
+}
+
+# Find the primary Apache configuration file for the current system
+# Returns the path to httpd.conf, apache2.conf, etc.
+find_primary_apache_config() {
+	local primary_config=""
+	
+	if [ "$IS_DEBIAN" = true ]; then
+		primary_config="/etc/apache2/apache2.conf"
+	elif [ "$IS_CPANEL" = true ]; then
+		# cPanel typically uses httpd.conf
+		if [ -f "/usr/local/apache/conf/httpd.conf" ]; then
+			primary_config="/usr/local/apache/conf/httpd.conf"
+		elif [ -f "/etc/httpd/conf/httpd.conf" ]; then
+			primary_config="/etc/httpd/conf/httpd.conf"
+		fi
+	else
+		# RHEL/CentOS
+		primary_config="/etc/httpd/conf/httpd.conf"
+	fi
+	
+	# Verify the file exists
+	if [ -f "$primary_config" ]; then
+		echo "$primary_config"
+		return 0
+	else
+		return 1
+	fi
+}
+
+# Check if a file contains Lucee proxy configuration
+# Usage: has_lucee_proxy_config /path/to/config/file
+has_lucee_proxy_config() {
+	local config_file="$1"
+	[ -f "$config_file" ] || return 1
+	
+	# Look for common Lucee proxy patterns
+	if grep -qi 'ProxyPassMatch.*\.cf[mc]\|ProxyPassMatch.*\.lucee\|ProxyPass.*:8888\|ProxyPass.*ajp:' "$config_file" 2>/dev/null; then
+		return 0
+	else
+		return 1
+	fi
+}
