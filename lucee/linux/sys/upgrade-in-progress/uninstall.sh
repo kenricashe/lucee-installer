@@ -106,7 +106,20 @@ execute_or_simulate() {
 	shift
 	
 	if [ "$DRY_RUN" = true ]; then
-		echo "[DRY-RUN] Would execute: $action $*"
+		if [ "$action" = "remove_include_directive" ]; then
+			local file="$1"
+			local pattern="$2"
+			local matching_lines
+			matching_lines=$(grep "$pattern" "$file" 2>/dev/null || true)
+			if [ -n "$matching_lines" ]; then
+				echo "[DRY-RUN] Would remove from $file:"
+				echo "$matching_lines" | sed 's/^/  /'
+			else
+				echo "[DRY-RUN] No matching lines found in $file for pattern: $pattern"
+			fi
+		else
+			echo "[DRY-RUN] Would execute: $action $*"
+		fi
 	else
 		log_action "$action $*"
 		case "$action" in
@@ -172,8 +185,6 @@ remove_include_directives() {
 	
 	# Remove Include directives that reference upgrade-in-progress files
 	local patterns=(
-		"Include.*upgrade-in-progress"
-		"Include.*lucee-upgrade"
 		"Include.*${UPG_DIR}"
 	)
 	
@@ -301,10 +312,25 @@ main() {
 		echo "Removing proxy configuration files..."
 		while IFS= read -r proxy_file; do
 			if [ -n "$proxy_file" ] && [ -f "$proxy_file" ]; then
-				if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
-					backup_file "$proxy_file"
+				# Disable and remove Apache configuration (Debian/Ubuntu)
+				if [ "$IS_DEBIAN" = true ]; then
+					local conf_name
+					conf_name=$(basename "$proxy_file" .conf)
+					if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
+						backup_file "$proxy_file"
+					fi
+					if [ "$DRY_RUN" = true ]; then
+						echo "[DRY-RUN] Would execute: disable_and_remove_conf $conf_name"
+					else
+						disable_and_remove_conf "$conf_name"
+					fi
+				else
+					# Non-Debian systems: just remove the file
+					if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
+						backup_file "$proxy_file"
+					fi
+					execute_or_simulate "remove_file" "$proxy_file"
 				fi
-				execute_or_simulate "remove_file" "$proxy_file"
 			fi
 		done <<< "$proxy_configs"
 		echo ""
@@ -315,10 +341,25 @@ main() {
 		echo "Removing upgrade configuration files..."
 		while IFS= read -r upgrade_file; do
 			if [ -n "$upgrade_file" ] && [ -f "$upgrade_file" ]; then
-				if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
-					backup_file "$upgrade_file"
+				# Disable and remove Apache configuration (Debian/Ubuntu)
+				if [ "$IS_DEBIAN" = true ]; then
+					local conf_name
+					conf_name=$(basename "$upgrade_file" .conf)
+					if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
+						backup_file "$upgrade_file"
+					fi
+					if [ "$DRY_RUN" = true ]; then
+						echo "[DRY-RUN] Would execute: disable_and_remove_conf $conf_name"
+					else
+						disable_and_remove_conf "$conf_name"
+					fi
+				else
+					# Non-Debian systems: just remove the file
+					if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
+						backup_file "$upgrade_file"
+					fi
+					execute_or_simulate "remove_file" "$upgrade_file"
 				fi
-				execute_or_simulate "remove_file" "$upgrade_file"
 			fi
 		done <<< "$upgrade_configs"
 		echo ""
