@@ -244,7 +244,15 @@ discover_apache_configs() {
 		fi
 		
 		# Find VirtualHost files with upgrade-related Include directives
-		# Check sites-available/sites-enabled for Debian, conf.d for RHEL/Rocky
+		# Check primary config file first (critical for cPanel)
+		local primary_config
+		if primary_config=$(find_primary_apache_config); then
+			if grep -q "Include.*upgrade-in-progress.*lucee-detect-upgrade\.conf" "$primary_config" 2>/dev/null; then
+				vhost_files+=("$primary_config")
+			fi
+		fi
+		
+		# Check distribution-specific directories
 		if [ "$IS_DEBIAN" = true ]; then
 			# Debian: check sites-available and sites-enabled
 			for vhost_dir in "$apache_dir/sites-available" "$apache_dir/sites-enabled"; do
@@ -269,6 +277,68 @@ discover_apache_configs() {
 					fi
 				done < <(find "$apache_dir/conf.d" -maxdepth 1 -type f -name "*.conf" -print0 2>/dev/null)
 			fi
+		fi
+		
+		# Follow ALL Include directives comprehensively (exclude obvious non-vhost paths)
+		if [ -n "$primary_config" ] && [ -f "$primary_config" ]; then
+			local -A processed_includes
+			
+			# Function to check if path should be excluded from vhost search
+			is_non_vhost_path() {
+				local path="$1"
+				# Exclude obvious non-vhost paths
+				[[ "$path" == */modules.d/* ]] && return 0
+				[[ "$path" == */mods-*/* ]] && return 0
+				[[ "$path" == */conf.modules.d/* ]] && return 0
+				[[ "$path" == */security/* ]] && return 0
+				[[ "$path" == */auth/* ]] && return 0
+				[[ "$path" == */userdata/* ]] && return 0
+				[[ "$path" == */php*/* ]] && return 0
+				[[ "$path" == */python*/* ]] && return 0
+				[[ "$path" == */perl*/* ]] && return 0
+				[[ "$path" == */logs/* ]] && return 0
+				[[ "$path" == */log/* ]] && return 0
+				[[ "$path" == */status/* ]] && return 0
+				[[ "$path" == *"lucee-proxy"* ]] && return 0
+				[[ "$path" == *"upgrade-in-progress"* ]] && return 0
+				return 1
+			}
+			
+			while IFS= read -r include_line; do
+				# Extract path from Include/IncludeOptional directives
+				local include_path
+				include_path=$(echo "$include_line" | sed -E 's/^[[:space:]]*(Include|IncludeOptional)[[:space:]]+//i' | tr -d '"')
+				
+				# Skip if already processed
+				[ -n "${processed_includes["$include_path"]}" ] && continue
+				processed_includes["$include_path"]=1
+				
+				# If it's a directory pattern (ends with /*), check that directory
+				if [[ "$include_path" == *"/*" ]]; then
+					local include_dir="${include_path%/*}"
+					# Skip non-vhost directories
+					is_non_vhost_path "$include_dir" && continue
+					
+					if [ -d "$include_dir" ]; then
+						while IFS= read -r -d '' include_file; do
+							# Skip non-vhost files
+							is_non_vhost_path "$include_file" && continue
+							
+							if grep -q "Include.*upgrade-in-progress.*lucee-detect-upgrade\.conf" "$include_file" 2>/dev/null; then
+								vhost_files+=("$include_file")
+							fi
+						done < <(find "$include_dir" -maxdepth 1 -type f -name "*.conf" -print0 2>/dev/null)
+					fi
+				# If it's a specific file, check it directly
+				elif [ -f "$include_path" ]; then
+					# Skip non-vhost files
+					is_non_vhost_path "$include_path" && continue
+					
+					if grep -q "Include.*upgrade-in-progress.*lucee-detect-upgrade\.conf" "$include_path" 2>/dev/null; then
+						vhost_files+=("$include_path")
+					fi
+				fi
+			done < <(grep -i '^[[:space:]]*Include' "$primary_config" 2>/dev/null)
 		fi
 		
 		# Find lucee-proxy.conf files (avoid duplicates with associative array)
