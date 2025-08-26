@@ -802,8 +802,8 @@ has_lucee_proxy_config() {
 	local config_file="$1"
 	[ -f "$config_file" ] || return 1
 	
-	# Look for common Lucee proxy patterns
-	if grep -qi 'ProxyPassMatch.*\.cf[mc]\|ProxyPassMatch.*\.lucee\|ProxyPass.*:8888\|ProxyPass.*ajp:' "$config_file" 2>/dev/null; then
+	# Look for comment marker indicating Lucee proxy config was moved
+	if grep -qi '^[[:space:]]*#[[:space:]]*Lucee proxy configuration moved to' "$config_file" 2>/dev/null; then
 		return 0
 	else
 		return 1
