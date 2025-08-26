@@ -402,19 +402,6 @@ discover_apache_configs() {
 		echo "Searching for legacy upgrade files..." >&2
 	fi
 	
-	# Legacy files in Apache conf directories
-	for apache_dir in "${apache_dirs[@]}"; do
-		[ -d "$apache_dir" ] || continue
-		
-		# Legacy files in conf.d
-		if [ -d "$apache_dir/conf.d" ]; then
-			# Old lucee-ajp-and-mod_cfml.conf (now lucee-proxy.conf)
-			if [ -f "$apache_dir/conf.d/lucee-ajp-and-mod_cfml.conf" ]; then
-				legacy_files+=("$apache_dir/conf.d/lucee-ajp-and-mod_cfml.conf")
-			fi
-		fi
-	done
-	
 	# Legacy files in /opt/lucee/sys (pre-upgrade-in-progress subdirectory)
 	if [ -d "/opt/lucee/sys" ]; then
 		local legacy_patterns=(
