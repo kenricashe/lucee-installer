@@ -1923,16 +1923,6 @@ perform_dry_run() {
 		echo "  All modified files will be backed up to: ${BACKUP_ROOT}/${BACKUP_TS}/"
 		
 		echo ""
-		echo "APACHE CONFIGURATION:"
-		if [ "$IS_CPANEL" = true ]; then
-			echo "  EXECUTE: /scripts/rebuildhttpdconf"
-			echo "  EXECUTE: /scripts/restartsrv_httpd --graceful"
-		else
-			echo "  EXECUTE: Apache configuration test"
-			echo "  EXECUTE: systemctl reload apache2/httpd"
-		fi
-		
-		echo ""
 		echo "==============================================="
 		
 		if [ "$changes_found" = false ]; then
