@@ -605,6 +605,18 @@ discover_apache_configs() {
 		done
 	fi
 	
+	# upgrade-in-progress.html is legacy (was renamed to lucee-upgrade-in-progress.html)
+	local remaining_html_files=()
+	for html_file in "${upgrade_html_files[@]}"; do
+		if [[ "$html_file" == *"/upgrade-in-progress.html" ]]; then
+			legacy_files+=("$html_file")
+		else
+			remaining_html_files+=("$html_file")
+		fi
+	done
+	# Update upgrade_html_files to only contain non-legacy files
+	upgrade_html_files=("${remaining_html_files[@]}")
+	
 	# Sort legacy files
 	if [ ${#legacy_files[@]} -gt 0 ]; then
 		IFS=$'\n' legacy_files=($(sort <<<"${legacy_files[*]}"))
