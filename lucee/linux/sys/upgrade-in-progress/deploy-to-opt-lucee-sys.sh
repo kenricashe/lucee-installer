@@ -40,6 +40,7 @@ FILES=(
 	"lucee-upgrade-in-progress.conf"
 	"shared-functions.sh"
 	"get-current-configs.sh"
+	"uninstall.sh"
 	"tests/dev-reset.sh"
 	"tests/cpanel.sh"
 )
