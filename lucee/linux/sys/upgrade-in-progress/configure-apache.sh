@@ -201,6 +201,31 @@ has_site_include_file_for_404() {
 	[ -f "$include_file" ]
 }
 
+# Check if a specific include directive exists in a vhost file
+has_include_in_vhost() {
+	local vhost_file="$1"
+	local include_pattern="$2"
+	
+	[ -f "$vhost_file" ] || return 1
+	grep -q "$include_pattern" "$vhost_file"
+}
+
+# Check if vhost needs the lucee-detect-upgrade.conf include
+needs_detect_upgrade_include() {
+	local vhost_file="$1"
+	! has_include_in_vhost "$vhost_file" "Include.*lucee-detect-upgrade.conf"
+}
+
+# Check if vhost needs a site-specific 404 include
+needs_site_404_include() {
+	local vhost_file="$1"
+	local domain="$2"
+	local port="$3"
+	local include_file="${SITE_INCLUDES_404_DIR}/${domain}-${port}.conf"
+	
+	[ -f "$include_file" ] && ! has_include_in_vhost "$vhost_file" "Include ${include_file}"
+}
+
 # Add per-site include line to vhost if not already present
 add_include_404_to_vhost() {
 	local vhost_file="$1"
@@ -1878,15 +1903,39 @@ perform_dry_run() {
 				# Check SSL vhost
 				local ssl_conf="/etc/apache2/sites-available/${domain}-ssl.conf"
 				if [ -f "$ssl_conf" ]; then
-					echo "    MODIFY: $ssl_conf (add Include directives)"
-					changes_found=true
+					local needs_includes=false
+					
+					if needs_detect_upgrade_include "$ssl_conf"; then
+						needs_includes=true
+					fi
+					
+					if [ "$has_cf_404" = true ] && needs_site_404_include "$ssl_conf" "$domain" "443"; then
+						needs_includes=true
+					fi
+					
+					if [ "$needs_includes" = true ]; then
+						echo "    MODIFY: $ssl_conf (add missing Include directives)"
+						changes_found=true
+					fi
 				fi
 				
 				# Check HTTP vhost
 				local http_conf="/etc/apache2/sites-available/${domain}.conf"
 				if [ -f "$http_conf" ]; then
-					echo "    MODIFY: $http_conf (add Include directives)"
-					changes_found=true
+					local needs_includes=false
+					
+					if needs_detect_upgrade_include "$http_conf"; then
+						needs_includes=true
+					fi
+					
+					if [ "$has_cf_404" = true ] && needs_site_404_include "$http_conf" "$domain" "80"; then
+						needs_includes=true
+					fi
+					
+					if [ "$needs_includes" = true ]; then
+						echo "    MODIFY: $http_conf (add missing Include directives)"
+						changes_found=true
+					fi
 				fi
 				
 			elif [ "$IS_CPANEL" = true ]; then
@@ -1902,10 +1951,27 @@ perform_dry_run() {
 			else
 				# RHEL/CentOS - modify vhost files directly
 				if [ -f "$vhost_file" ]; then
-					echo "    MODIFY: $vhost_file (add Include directives)"
-					changes_found=true
+					local needs_includes=false
+					
+					if needs_detect_upgrade_include "$vhost_file"; then
+						needs_includes=true
+					fi
+					
+					if [ "$has_cf_404" = true ]; then
+						if needs_site_404_include "$vhost_file" "$domain" "443"; then
+							needs_includes=true
+						fi
+						if needs_site_404_include "$vhost_file" "$domain" "80"; then
+							needs_includes=true
+						fi
+					fi
+					
+					if [ "$needs_includes" = true ]; then
+						echo "    MODIFY: $vhost_file (add missing Include directives)"
+						changes_found=true
+					fi
 				fi
-				fi
+			fi
 				
 				# .htaccess modifications
 				if [ -f "${docroot}/.htaccess" ] && grep -qiE "$ANY404_REGEX" "${docroot}/.htaccess"; then
