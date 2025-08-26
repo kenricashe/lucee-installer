@@ -371,11 +371,17 @@ main() {
 		echo ""
 	fi
 	
-	# Remove proxy configuration files
+	# Remove proxy configuration files (except lucee-proxy.conf)
 	if [ -n "$proxy_configs" ]; then
-		echo "Removing proxy configuration files..."
+		echo "Removing upgrade-specific proxy configuration files..."
 		while IFS= read -r proxy_file; do
 			if [ -n "$proxy_file" ] && [ -f "$proxy_file" ]; then
+				# Skip lucee-proxy.conf - it should remain for continued Lucee functionality
+				if [[ "$proxy_file" == *"lucee-proxy.conf" ]]; then
+					log_verbose "Preserving lucee-proxy.conf: $proxy_file"
+					continue
+				fi
+				
 				# Disable and remove Apache configuration (Debian/Ubuntu)
 				if [ "$IS_DEBIAN" = true ]; then
 					local conf_name
