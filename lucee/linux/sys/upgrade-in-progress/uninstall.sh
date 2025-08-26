@@ -1,0 +1,418 @@
+#!/bin/bash
+
+# uninstall.sh - Remove Lucee upgrade-in-progress system and restore original configurations
+# This script discovers and removes all upgrade-related modifications from the system
+
+# Require root
+if [ "$(id -u)" != "0" ]; then
+	echo "This script must be run as root or with sudo."
+	exit 1
+fi
+
+# Source shared helper for LUCEE_ROOT, UPG_DIR, IS_CPANEL and shared functions
+SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd)"
+. "${SCRIPT_DIR}/ENVIRONMENT.sh"
+. "${SCRIPT_DIR}/shared-functions.sh"
+
+# Default options
+DRY_RUN=false
+VERBOSE=false
+BACKUP_BEFORE_REMOVE=true
+FORCE=false
+INTERACTIVE=true
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+	case $1 in
+		--dry-run|-n)
+			DRY_RUN=true
+			shift
+			;;
+		--verbose|-v)
+			VERBOSE=true
+			shift
+			;;
+		--no-backup)
+			BACKUP_BEFORE_REMOVE=false
+			shift
+			;;
+		--force|-f)
+			FORCE=true
+			INTERACTIVE=false
+			shift
+			;;
+		--yes|-y)
+			INTERACTIVE=false
+			shift
+			;;
+		--help|-h)
+			cat <<EOF
+Usage: $0 [OPTIONS]
+
+Remove Lucee upgrade-in-progress system and restore original configurations.
+
+OPTIONS:
+    --dry-run, -n      Show what would be removed without making changes
+    --verbose, -v      Enable verbose output
+    --no-backup        Skip creating backups before removal
+    --force, -f        Force removal without prompts (implies --yes)
+    --yes, -y          Answer yes to all prompts
+    --help, -h         Show this help message
+
+DESCRIPTION:
+    This script discovers all upgrade-related configurations and removes them:
+    - VirtualHost files with upgrade Include directives
+    - Per-site include files
+    - Upgrade HTML files (upgrade-in-progress.html)
+    - Modified .htaccess files
+    - Proxy configuration files
+    - Legacy upgrade files
+    - Upgrade flag files
+
+    By default, backups are created before removal. Use --no-backup to skip.
+
+EXAMPLES:
+    $0                 # Interactive removal with backups
+    $0 --dry-run       # Show what would be removed
+    $0 --force         # Remove everything without prompts
+    $0 --verbose --yes # Remove with detailed output, no prompts
+
+EOF
+			exit 0
+			;;
+		*)
+			echo "Unknown option: $1"
+			echo "Use --help for usage information."
+			exit 1
+			;;
+	esac
+done
+
+# Function to log verbose messages
+log_verbose() {
+	if [ "$VERBOSE" = true ]; then
+		echo "[VERBOSE] $*" >&2
+	fi
+}
+
+# Function to log actions
+log_action() {
+	echo "[ACTION] $*"
+}
+
+# Function to execute or simulate commands
+execute_or_simulate() {
+	local action="$1"
+	shift
+	
+	if [ "$DRY_RUN" = true ]; then
+		echo "[DRY-RUN] Would execute: $action $*"
+	else
+		log_action "$action $*"
+		case "$action" in
+			"remove_file")
+				rm -f "$1"
+				;;
+			"remove_dir")
+				rm -rf "$1"
+				;;
+			"restore_file")
+				cp "$1" "$2"
+				;;
+			"remove_include_directive")
+				local file="$1"
+				local pattern="$2"
+				sed -i "/$pattern/d" "$file"
+				;;
+			"reload_apache")
+				if command -v systemctl >/dev/null 2>&1; then
+					systemctl reload apache2 2>/dev/null || systemctl reload httpd 2>/dev/null || true
+				elif command -v service >/dev/null 2>&1; then
+					service apache2 reload 2>/dev/null || service httpd reload 2>/dev/null || true
+				fi
+				;;
+		esac
+	fi
+}
+
+# Function to prompt user for confirmation
+confirm_action() {
+	local message="$1"
+	
+	if [ "$INTERACTIVE" = false ]; then
+		return 0
+	fi
+	
+	echo -n "$message (y/N): "
+	read -r response
+	case "$response" in
+		[yY]|[yY][eE][sS])
+			return 0
+			;;
+		*)
+			return 1
+			;;
+	esac
+}
+
+# Function to remove Include directives from VirtualHost files
+remove_include_directives() {
+	local vhost_file="$1"
+	
+	if [ ! -f "$vhost_file" ]; then
+		return 0
+	fi
+	
+	log_verbose "Checking for upgrade Include directives in: $vhost_file"
+	
+	# Backup if requested
+	if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
+		backup_file "$vhost_file"
+	fi
+	
+	# Remove Include directives that reference upgrade-in-progress files
+	local patterns=(
+		"Include.*upgrade-in-progress"
+		"Include.*lucee-upgrade"
+		"Include.*${UPG_DIR}"
+	)
+	
+	local modified=false
+	for pattern in "${patterns[@]}"; do
+		if grep -q "$pattern" "$vhost_file" 2>/dev/null; then
+			execute_or_simulate "remove_include_directive" "$vhost_file" "$pattern"
+			modified=true
+		fi
+	done
+	
+	if [ "$modified" = true ]; then
+		log_action "Removed upgrade Include directives from: $vhost_file"
+	fi
+}
+
+# Function to restore .htaccess files from backups
+restore_htaccess_files() {
+	local htaccess_file="$1"
+	
+	if [ ! -f "$htaccess_file" ]; then
+		return 0
+	fi
+	
+	log_verbose "Checking .htaccess file: $htaccess_file"
+	
+	# Look for backup in the backup directory
+	local backup_pattern="${BACKUP_ROOT}/*${htaccess_file}"
+	local latest_backup
+	latest_backup=$(find ${BACKUP_ROOT} -path "*${htaccess_file}" 2>/dev/null | sort -r | head -1)
+	
+	if [ -n "$latest_backup" ] && [ -f "$latest_backup" ]; then
+		if confirm_action "Restore $htaccess_file from backup $latest_backup?"; then
+			execute_or_simulate "restore_file" "$latest_backup" "$htaccess_file"
+		fi
+	else
+		# Check if file contains upgrade-related content
+		if grep -q "upgrade-in-progress\|lucee-upgrade" "$htaccess_file" 2>/dev/null; then
+			if confirm_action "Remove upgrade content from $htaccess_file (no backup found)?"; then
+				if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
+					backup_file "$htaccess_file"
+				fi
+				# Remove upgrade-related lines
+				execute_or_simulate "remove_include_directive" "$htaccess_file" "upgrade-in-progress"
+				execute_or_simulate "remove_include_directive" "$htaccess_file" "lucee-upgrade"
+			fi
+		fi
+	fi
+}
+
+# Main uninstall function
+main() {
+	echo "Lucee Upgrade-in-Progress System Uninstaller"
+	echo "============================================="
+	echo ""
+	
+	if [ "$DRY_RUN" = true ]; then
+		echo "DRY RUN MODE - No changes will be made"
+		echo ""
+	fi
+	
+	log_verbose "Environment: Debian=$IS_DEBIAN, cPanel=$IS_CPANEL"
+	log_verbose "Lucee Root: $LUCEE_ROOT"
+	log_verbose "Upgrade Dir: $UPG_DIR"
+	
+	# Discover current configurations
+	echo "Discovering current upgrade configurations..."
+	local discovery_output
+	discovery_output=$(discover_apache_configs "json" "false")
+	
+	if [ -z "$discovery_output" ]; then
+		echo "No upgrade configurations found."
+		exit 0
+	fi
+	
+	# Parse JSON output to get file lists
+	local vhost_files proxy_configs upgrade_configs modified_htaccess upgrade_html_files site_includes legacy_files
+	
+	# Extract file arrays from JSON (simplified parsing)
+	vhost_files=$(echo "$discovery_output" | grep -o '"vhost_files":\[[^]]*\]' | sed 's/"vhost_files":\[//;s/\]$//;s/"//g' | tr ',' '\n' | grep -v '^$')
+	proxy_configs=$(echo "$discovery_output" | grep -o '"proxy_configs":\[[^]]*\]' | sed 's/"proxy_configs":\[//;s/\]$//;s/"//g' | tr ',' '\n' | grep -v '^$')
+	upgrade_configs=$(echo "$discovery_output" | grep -o '"upgrade_configs":\[[^]]*\]' | sed 's/"upgrade_configs":\[//;s/\]$//;s/"//g' | tr ',' '\n' | grep -v '^$')
+	modified_htaccess=$(echo "$discovery_output" | grep -o '"modified_htaccess":\[[^]]*\]' | sed 's/"modified_htaccess":\[//;s/\]$//;s/"//g' | tr ',' '\n' | grep -v '^$')
+	upgrade_html_files=$(echo "$discovery_output" | grep -o '"upgrade_html_files":\[[^]]*\]' | sed 's/"upgrade_html_files":\[//;s/\]$//;s/"//g' | tr ',' '\n' | grep -v '^$')
+	site_includes=$(echo "$discovery_output" | grep -o '"site_includes":\[[^]]*\]' | sed 's/"site_includes":\[//;s/\]$//;s/"//g' | tr ',' '\n' | grep -v '^$')
+	legacy_files=$(echo "$discovery_output" | grep -o '"legacy_files":\[[^]]*\]' | sed 's/"legacy_files":\[//;s/\]$//;s/"//g' | tr ',' '\n' | grep -v '^$')
+	
+	# Count total items to remove
+	local total_items=0
+	[ -n "$vhost_files" ] && total_items=$((total_items + $(echo "$vhost_files" | wc -l)))
+	[ -n "$proxy_configs" ] && total_items=$((total_items + $(echo "$proxy_configs" | wc -l)))
+	[ -n "$upgrade_configs" ] && total_items=$((total_items + $(echo "$upgrade_configs" | wc -l)))
+	[ -n "$modified_htaccess" ] && total_items=$((total_items + $(echo "$modified_htaccess" | wc -l)))
+	[ -n "$upgrade_html_files" ] && total_items=$((total_items + $(echo "$upgrade_html_files" | wc -l)))
+	[ -n "$site_includes" ] && total_items=$((total_items + $(echo "$site_includes" | wc -l)))
+	[ -n "$legacy_files" ] && total_items=$((total_items + $(echo "$legacy_files" | wc -l)))
+	
+	if [ "$total_items" -eq 0 ]; then
+		echo "No upgrade configurations found to remove."
+		exit 0
+	fi
+	
+	echo "Found $total_items upgrade-related items to process."
+	echo ""
+	
+	if [ "$DRY_RUN" = false ] && [ "$FORCE" = false ]; then
+		if ! confirm_action "Proceed with uninstall?"; then
+			echo "Uninstall cancelled."
+			exit 0
+		fi
+		echo ""
+	fi
+	
+	# Remove VirtualHost Include directives
+	if [ -n "$vhost_files" ]; then
+		echo "Processing VirtualHost files with upgrade Include directives..."
+		while IFS= read -r vhost_file; do
+			[ -n "$vhost_file" ] && remove_include_directives "$vhost_file"
+		done <<< "$vhost_files"
+		echo ""
+	fi
+	
+	# Remove proxy configuration files
+	if [ -n "$proxy_configs" ]; then
+		echo "Removing proxy configuration files..."
+		while IFS= read -r proxy_file; do
+			if [ -n "$proxy_file" ] && [ -f "$proxy_file" ]; then
+				if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
+					backup_file "$proxy_file"
+				fi
+				execute_or_simulate "remove_file" "$proxy_file"
+			fi
+		done <<< "$proxy_configs"
+		echo ""
+	fi
+	
+	# Remove upgrade configuration files
+	if [ -n "$upgrade_configs" ]; then
+		echo "Removing upgrade configuration files..."
+		while IFS= read -r upgrade_file; do
+			if [ -n "$upgrade_file" ] && [ -f "$upgrade_file" ]; then
+				if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
+					backup_file "$upgrade_file"
+				fi
+				execute_or_simulate "remove_file" "$upgrade_file"
+			fi
+		done <<< "$upgrade_configs"
+		echo ""
+	fi
+	
+	# Process .htaccess files
+	if [ -n "$modified_htaccess" ]; then
+		echo "Processing modified .htaccess files..."
+		while IFS= read -r htaccess_file; do
+			[ -n "$htaccess_file" ] && restore_htaccess_files "$htaccess_file"
+		done <<< "$modified_htaccess"
+		echo ""
+	fi
+	
+	# Remove upgrade HTML files
+	if [ -n "$upgrade_html_files" ]; then
+		echo "Removing upgrade HTML files..."
+		while IFS= read -r html_file; do
+			if [ -n "$html_file" ] && [ -f "$html_file" ]; then
+				if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
+					backup_file "$html_file"
+				fi
+				execute_or_simulate "remove_file" "$html_file"
+			fi
+		done <<< "$upgrade_html_files"
+		echo ""
+	fi
+	
+	# Remove per-site include files
+	if [ -n "$site_includes" ]; then
+		echo "Removing per-site include files..."
+		while IFS= read -r include_file; do
+			if [ -n "$include_file" ] && [ -f "$include_file" ]; then
+				if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
+					backup_file "$include_file"
+				fi
+				execute_or_simulate "remove_file" "$include_file"
+			fi
+		done <<< "$site_includes"
+		echo ""
+	fi
+	
+	# Remove legacy files
+	if [ -n "$legacy_files" ]; then
+		echo "Removing legacy upgrade files..."
+		while IFS= read -r legacy_file; do
+			if [ -n "$legacy_file" ] && [ -f "$legacy_file" ]; then
+				if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
+					backup_file "$legacy_file"
+				fi
+				execute_or_simulate "remove_file" "$legacy_file"
+			fi
+		done <<< "$legacy_files"
+		echo ""
+	fi
+	
+	# Remove upgrade flag file
+	if [ -f "/var/lucee-upgrade-in-progress" ]; then
+		echo "Removing upgrade flag file..."
+		if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
+			backup_file "/var/lucee-upgrade-in-progress"
+		fi
+		execute_or_simulate "remove_file" "/var/lucee-upgrade-in-progress"
+		echo ""
+	fi
+	
+	# Remove upgrade directory if empty or if forced
+	if [ -d "$UPG_DIR" ]; then
+		if [ "$FORCE" = true ] || confirm_action "Remove upgrade directory $UPG_DIR?"; then
+			if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
+				backup_folder "$UPG_DIR"
+			fi
+			execute_or_simulate "remove_dir" "$UPG_DIR"
+		fi
+		echo ""
+	fi
+	
+	# Reload Apache configuration
+	if [ "$DRY_RUN" = false ]; then
+		echo "Reloading Apache configuration..."
+		execute_or_simulate "reload_apache"
+		echo ""
+	fi
+	
+	# Summary
+	if [ "$DRY_RUN" = true ]; then
+		echo "Dry run complete. $total_items items would be processed."
+	else
+		echo "Uninstall complete. $total_items items processed."
+		if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
+			echo "Backups created in: ${BACKUP_ROOT}/${BACKUP_TS}"
+		fi
+	fi
+}
+
+# Run main function
+main
