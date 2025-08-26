@@ -45,6 +45,12 @@ backup_file() {
 	: ${BACKUP_ROOT:="${UPG_DIR}/backups"}
 	: ${BACKUP_TS:="$(date +%Y-%m-%d-%H%M%S)"}
 	
+	# Skip backing up files that are already in backup directories to prevent recursion
+	# Also skip if the source path would create a backup inside itself
+	if [[ "$src" == *"/backups/"* ]] || [[ "$src" == "$BACKUP_ROOT"* ]]; then
+		return 0
+	fi
+	
 	local dest="${BACKUP_ROOT}/${BACKUP_TS}${src}"
 	
 	# Skip if backup already exists for this timestamp
@@ -61,10 +67,17 @@ backup_file() {
 
 backup_folder() {
 	local src="$1"
+	[ -d "$src" ] || return 0
 	
 	# Set backup variables if not already set
 	: ${BACKUP_ROOT:="${UPG_DIR}/backups"}
 	: ${BACKUP_TS:="$(date +%Y-%m-%d-%H%M%S)"}
+	
+	# Skip backing up directories that are already in backup directories to prevent recursion
+	# Also skip if the source path would create a backup inside itself
+	if [[ "$src" == *"/backups/"* ]] || [[ "$src" == "$BACKUP_ROOT"* ]]; then
+		return 0
+	fi
 	
 	local dest_dir
 	dest_dir="${BACKUP_ROOT}/${BACKUP_TS}${src}"

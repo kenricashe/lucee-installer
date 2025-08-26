@@ -44,7 +44,6 @@ while [[ $# -gt 0 ]]; do
 			;;
 		--yes|-y)
 			INTERACTIVE=false
-			PREVIEW_MODE=false
 			shift
 			;;
 		--help|-h)
@@ -138,7 +137,7 @@ execute_or_simulate() {
 			"remove_include_directive")
 				local file="$1"
 				local pattern="$2"
-				sed -i "/$pattern/d" "$file"
+				sed -i "\|$pattern|d" "$file"
 				;;
 			"reload_apache")
 				if command -v systemctl >/dev/null 2>&1; then
@@ -181,11 +180,16 @@ confirm_action() {
 restore_original_errordocument_404() {
 	local vhost_file="$1"
 	
+	# Skip in preview mode
+	if [ "$PREVIEW_MODE" = true ]; then
+		return 0
+	fi
+	
 	log_verbose "Searching for original ErrorDocument 404 in backups for: $vhost_file"
 	
-	# Find all backup versions of this file, sorted by timestamp (newest first)
+	# Find backup versions, but limit to direct backup directories (not nested ones)
 	local backup_files
-	backup_files=$(find "${BACKUP_ROOT}" -path "*${vhost_file}" 2>/dev/null | sort -r)
+	backup_files=$(find "${BACKUP_ROOT}" -maxdepth 2 -path "*${vhost_file}" 2>/dev/null | sort -r)
 	
 	if [ -z "$backup_files" ]; then
 		log_verbose "No backups found for $vhost_file"
@@ -242,8 +246,8 @@ remove_include_directives() {
 	
 	log_verbose "Checking for upgrade Include directives in: $vhost_file"
 	
-	# Backup if requested
-	if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
+	# Backup if requested and not in preview mode
+	if [ "$BACKUP_BEFORE_REMOVE" = true ] && [ "$PREVIEW_MODE" = false ]; then
 		backup_file "$vhost_file"
 	fi
 	
@@ -260,7 +264,7 @@ remove_include_directives() {
 		fi
 	done
 	
-	if [ "$modified" = true ]; then
+	if [ "$modified" = true ] && [ "$PREVIEW_MODE" = false ]; then
 		log_action "Removed upgrade Include directives from: $vhost_file"
 		
 		# Try to restore original ErrorDocument 404 directives from backups
@@ -291,7 +295,7 @@ restore_htaccess_files() {
 		# Check if file contains upgrade-related content
 		if grep -q "upgrade-in-progress\|lucee-upgrade" "$htaccess_file" 2>/dev/null; then
 			if confirm_action "Remove upgrade content from $htaccess_file (no backup found)?"; then
-				if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
+				if [ "$BACKUP_BEFORE_REMOVE" = true ] && [ "$PREVIEW_MODE" = false ]; then
 					backup_file "$htaccess_file"
 				fi
 				# Remove upgrade-related lines
@@ -443,17 +447,6 @@ process_uninstall_operations() {
 			backup_file "/var/lucee-upgrade-in-progress"
 		fi
 		execute_or_simulate "remove_file" "/var/lucee-upgrade-in-progress"
-		echo ""
-	fi
-	
-	# Remove upgrade directory if empty or if forced
-	if [ -d "$UPG_DIR" ]; then
-		if [ "$FORCE" = true ] || confirm_action "Remove upgrade directory $UPG_DIR?"; then
-			if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
-				backup_folder "$UPG_DIR"
-			fi
-			execute_or_simulate "remove_dir" "$UPG_DIR"
-		fi
 		echo ""
 	fi
 	
