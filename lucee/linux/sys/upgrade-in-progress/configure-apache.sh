@@ -1,21 +1,135 @@
 #!/bin/bash
 
-# Deploy:
-# cd /path/to/this/script
-# cp ./configure-apache.sh /opt/lucee/sys/upgrade-in-progress/configure-apache.sh
-# chmod +x /opt/lucee/sys/upgrade-in-progress/configure-apache.sh
-
-# Update:
-# cat ./configure-apache.sh | sudo tee /opt/lucee/sys/upgrade-in-progress/configure-apache.sh
+# require root
+if [ "$(id -u)" != "0" ]; then
+	echo "This script must be run as root or with sudo."
+	exit 1
+fi
 
 # Source environment variables and functions
 SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "${SCRIPT_DIR}/ENVIRONMENT.sh"
 . "${SCRIPT_DIR}/shared-functions.sh"
 
+# Set backup timestamp for this run to keep all backups in the same directory
+BACKUP_TS="$(date +%Y-%m-%d-%H%M%S)"
+
 # Default options
 PREVIEW_MODE=true
 PREVIEW_PREFIX="Pending: "
+
+# preflight: check that required Apache modules are enabled
+# mod_proxy, mod_setenvif, mod_headers
+# Group by module; detect per environment; emit a single error per missing module
+
+report_missing_module() {
+	echo "Error: Required Apache module '$1' is not enabled. Please enable it and try again."
+}
+
+# Module check helper (return 0 if enabled, 1 if missing)
+check_module() {
+	DISPLAY_NAME="$1"   # e.g., mod_proxy
+	DEBIAN_NAME="$2"    # e.g., proxy
+
+	if [ "$IS_DEBIAN" = true ]; then
+		# Prefer a2query when available
+		if command -v a2query >/dev/null 2>&1; then
+			if a2query -m "$DEBIAN_NAME" 2>/dev/null | grep -qi "enabled"; then
+				return 0
+			else
+				return 1
+			fi
+		else
+			# Fallback to control command module list
+			if command -v apache2ctl >/dev/null 2>&1; then
+				CTL=apache2ctl
+			elif command -v apachectl >/dev/null 2>&1; then
+				CTL=apachectl
+			else
+				return 1
+			fi
+			if "$CTL" -M 2>/dev/null | grep -q "${DEBIAN_NAME}_module"; then
+				return 0
+			else
+				return 1
+			fi
+		fi
+	elif [ "$IS_CPANEL" = true ]; then
+		if /usr/local/cpanel/bin/check_cpanel_module_status --module="$DISPLAY_NAME" | grep -q "^${DISPLAY_NAME}: enabled"; then
+			return 0
+		else
+			return 1
+		fi
+	elif [ -n "$CONF_DIR" ]; then
+		# Fedora, Red Hat, AlmaLinux, Rocky Linux, etc.
+		# Prefer httpd -M; fall back to apachectl -t -D DUMP_MODULES; try apachectl -M last.
+		if command -v httpd >/dev/null 2>&1; then
+			if httpd -M 2>/dev/null | grep -q "${DEBIAN_NAME}_module"; then
+				return 0
+			else
+				return 1
+			fi
+		elif command -v apachectl >/dev/null 2>&1; then
+			# Use syntax-dump which works even if apachectl does not support -M
+			if apachectl -t -D DUMP_MODULES 2>/dev/null | grep -q "${DEBIAN_NAME}_module"; then
+				return 0
+			else
+				# Try legacy -M as a last resort
+				if apachectl -M 2>/dev/null | grep -q "${DEBIAN_NAME}_module"; then
+					return 0
+				fi
+				return 1
+			fi
+		else
+			return 1
+		fi
+	fi
+
+	# Unsupported / not detected
+	return 1
+}
+
+# Run checks, collect and report
+HAS_ERRORS=false
+
+if ! check_module "mod_proxy" "proxy"; then
+	report_missing_module "mod_proxy"
+	HAS_ERRORS=true
+fi
+
+if ! check_module "mod_setenvif" "setenvif"; then
+	report_missing_module "mod_setenvif"
+	HAS_ERRORS=true
+fi
+
+if ! check_module "mod_headers" "headers"; then
+	report_missing_module "mod_headers"
+	HAS_ERRORS=true
+fi
+
+# mod_rewrite is required for conditional proxying during upgrade for allowlisted IPs
+if ! check_module "mod_rewrite" "rewrite"; then
+	report_missing_module "mod_rewrite"
+	HAS_ERRORS=true
+fi
+
+if [ "$HAS_ERRORS" = true ]; then
+	exit 1
+fi
+
+# preflight: required files must exist at /opt path used by per-site Includes and docroot copy
+DETECT_CONF="${UPG_DIR}/lucee-detect-upgrade.conf"
+UPG_HTML="${UPG_DIR}/lucee-upgrade-in-progress.html"
+if [ ! -f "$DETECT_CONF" ]; then
+	echo "Error: Required include not found: $DETECT_CONF"
+	echo "Run deploy-to-opt-lucee-sys.sh to deploy the package, then retry."
+	exit 1
+fi
+if [ ! -f "$UPG_HTML" ]; then
+	echo "Error: Required HTML not found: $UPG_HTML"
+	echo "Run deploy-to-opt-lucee-sys.sh to deploy the package, then retry."
+	exit 1
+fi
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -166,23 +280,6 @@ set_apache_selinux_context() {
 		echo "Warning: SELinux is enabled but neither restorecon nor chcon commands are available."
 		echo "Apache may not be able to read config files due to SELinux restrictions."
 	fi
-}
-
-# Set backup timestamp for this run to keep all backups in the same directory
-BACKUP_TS="$(date +%Y-%m-%d-%H%M%S)"
-
-# require root
-if [ "$(id -u)" != "0" ]; then
-	echo "This script must be run as root or with sudo."
-	exit 1
-fi
-
-# preflight: check that required Apache modules are enabled
-# mod_proxy, mod_setenvif, mod_headers
-# Group by module; detect per environment; emit a single error per missing module
-
-report_missing_module() {
-	echo "Error: Required Apache module '$1' is not enabled. Please enable it and try again."
 }
 
 # If SELinux is active, restore proper context for Apache config files
@@ -377,111 +474,6 @@ add_include_404_to_vhost() {
 		return 1
 	fi
 }
-
-# Module check helper (return 0 if enabled, 1 if missing)
-check_module() {
-	DISPLAY_NAME="$1"   # e.g., mod_proxy
-	DEBIAN_NAME="$2"    # e.g., proxy
-
-	if [ "$IS_DEBIAN" = true ]; then
-		# Prefer a2query when available
-		if command -v a2query >/dev/null 2>&1; then
-			if a2query -m "$DEBIAN_NAME" 2>/dev/null | grep -qi "enabled"; then
-				return 0
-			else
-				return 1
-			fi
-		else
-			# Fallback to control command module list
-			if command -v apache2ctl >/dev/null 2>&1; then
-				CTL=apache2ctl
-			elif command -v apachectl >/dev/null 2>&1; then
-				CTL=apachectl
-			else
-				return 1
-			fi
-			if "$CTL" -M 2>/dev/null | grep -q "${DEBIAN_NAME}_module"; then
-				return 0
-			else
-				return 1
-			fi
-		fi
-	elif [ "$IS_CPANEL" = true ]; then
-		if /usr/local/cpanel/bin/check_cpanel_module_status --module="$DISPLAY_NAME" | grep -q "^${DISPLAY_NAME}: enabled"; then
-			return 0
-		else
-			return 1
-		fi
-	elif [ -n "$CONF_DIR" ]; then
-		# Fedora, Red Hat, AlmaLinux, Rocky Linux, etc.
-		# Prefer httpd -M; fall back to apachectl -t -D DUMP_MODULES; try apachectl -M last.
-		if command -v httpd >/dev/null 2>&1; then
-			if httpd -M 2>/dev/null | grep -q "${DEBIAN_NAME}_module"; then
-				return 0
-			else
-				return 1
-			fi
-		elif command -v apachectl >/dev/null 2>&1; then
-			# Use syntax-dump which works even if apachectl does not support -M
-			if apachectl -t -D DUMP_MODULES 2>/dev/null | grep -q "${DEBIAN_NAME}_module"; then
-				return 0
-			else
-				# Try legacy -M as a last resort
-				if apachectl -M 2>/dev/null | grep -q "${DEBIAN_NAME}_module"; then
-					return 0
-				fi
-				return 1
-			fi
-		else
-			return 1
-		fi
-	fi
-
-	# Unsupported / not detected
-	return 1
-}
-
-# Run checks, collect and report
-HAS_ERRORS=false
-
-if ! check_module "mod_proxy" "proxy"; then
-	report_missing_module "mod_proxy"
-	HAS_ERRORS=true
-fi
-
-if ! check_module "mod_setenvif" "setenvif"; then
-	report_missing_module "mod_setenvif"
-	HAS_ERRORS=true
-fi
-
-if ! check_module "mod_headers" "headers"; then
-	report_missing_module "mod_headers"
-	HAS_ERRORS=true
-fi
-
-# mod_rewrite is required for conditional proxying during upgrade for allowlisted IPs
-if ! check_module "mod_rewrite" "rewrite"; then
-	report_missing_module "mod_rewrite"
-	HAS_ERRORS=true
-fi
-
-if [ "$HAS_ERRORS" = true ]; then
-	exit 1
-fi
-
-# preflight: required files must exist at /opt path used by per-site Includes and docroot copy
-DETECT_CONF="${UPG_DIR}/lucee-detect-upgrade.conf"
-UPG_HTML="${UPG_DIR}/lucee-upgrade-in-progress.html"
-if [ ! -f "$DETECT_CONF" ]; then
-	echo "Error: Required include not found: $DETECT_CONF"
-	echo "Run deploy-to-opt-lucee-sys.sh to deploy the package, then retry."
-	exit 1
-fi
-if [ ! -f "$UPG_HTML" ]; then
-	echo "Error: Required HTML not found: $UPG_HTML"
-	echo "Run deploy-to-opt-lucee-sys.sh to deploy the package, then retry."
-	exit 1
-fi
 
 # Use [.] instead of \. to avoid awk treating "\." as an escape in string constants
 LUCEE404_REGEX='^[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+/[^[:space:]]*[.](cfm|cfml|cfc|cfs)([^[:alnum:]_]|$)'
