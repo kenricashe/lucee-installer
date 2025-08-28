@@ -1,5 +1,23 @@
 #!/bin/bash
 
+# This would normally go in ENVIRONMENT.sh,
+# but it's also used by deploy-to-opt-lucee-sys.sh,
+# which is run before Lucee root path is known.
+IS_SELINUX_ENABLED=false
+selinux_enabled() {
+	if [ "$IS_SELINUX_ENABLED" = true ]; then
+		return 0
+	fi
+	if command -v getenforce >/dev/null 2>&1; then
+		mode=$(getenforce 2>/dev/null)
+		if [ "$mode" != "Disabled" ]; then
+			IS_SELINUX_ENABLED=true
+			return 0
+		fi
+	fi
+	return 1
+}
+
 # Ensure the site exclusions file exists with sensible defaults.
 ensure_default_exclusions_file() {
 	if [ ! -f "$EXCLUSIONS_FILE" ] || [ ! -s "$EXCLUSIONS_FILE" ]; then

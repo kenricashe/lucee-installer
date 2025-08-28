@@ -8,17 +8,6 @@ SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "${SCRIPT_DIR}/ENVIRONMENT.sh"
 . "${SCRIPT_DIR}/shared-functions.sh"
 
-# Helper function to check if SELinux is enabled
-selinux_enabled() {
-	if command -v getenforce >/dev/null 2>&1; then
-		mode=$(getenforce 2>/dev/null)
-		if [ "$mode" != "Disabled" ]; then
-			return 0
-		fi
-	fi
-	return 1
-}
-
 # Helper function to set SELinux context for Apache config files
 set_apache_selinux_context() {
 	local file="$1"

@@ -14,17 +14,6 @@ THISPATH=$(dirname "$0")
 # Source helpers for newline handling
 . "${THISPATH}/shared-functions.sh"
 
-# Helper function to check if SELinux is enabled
-selinux_enabled() {
-	if command -v getenforce >/dev/null 2>&1; then
-		mode=$(getenforce 2>/dev/null)
-		if [ "$mode" != "Disabled" ]; then
-			return 0
-		fi
-	fi
-	return 1
-}
-
 # Check if quiet SELinux output is requested
 SELINUX_QUIET=${SELINUX_QUIET:-0}
 
