@@ -84,6 +84,12 @@ execute_or_simulate() {
 			"backup_file")
 				echo "Backup: $1"
 				;;
+			"enable_conf")
+				echo "Enable: $1"
+				;;
+			"disable_conf")
+				echo "Disable: $1"
+				;;
 			"apache_reload")
 				echo "Apache Reload"
 				return 0
@@ -110,6 +116,12 @@ execute_or_simulate() {
 				;;
 			"backup_file")
 				backup_file "$1"
+				;;
+			"enable_conf")
+				enable_conf "$1"
+				;;
+			"disable_conf")
+				disable_conf "$1"
 				;;
 			"apache_reload")
 				# apache_reload handles output of config test on error
@@ -1191,16 +1203,6 @@ migrate_lucee_proxy_config() {
 	fi
 }
 
-# Function to enable Apache configuration
-enable_conf() {
-	local conf_name="$1"
-	if [ "$IS_DEBIAN" = true ]; then
-		execute_or_simulate "a2enconf" "$conf_name"
-	else
-		echo "Note: enable_conf called on non-Debian system for: $conf_name"
-	fi
-}
-
 # Function to disable Apache configuration
 disable_conf() {
 	local conf_name="$1"
@@ -1244,7 +1246,7 @@ ensure_global_confs() {
 		disable_conf lucee-upgrade-in-progress
 		# Ensure lucee-proxy.conf is enabled if present in conf-available
 		if [ -f "${conf_avail}/lucee-proxy.conf" ]; then
-			enable_conf lucee-proxy
+			execute_or_simulate "enable_conf" "lucee-proxy"
 		fi
 		# Warn if no Lucee proxying detected in global config
 		proxy_detected=false
@@ -1885,41 +1887,29 @@ get_user_confirmation() {
 
 # Main execution logic function
 run_main_logic() {
+	local env_type
 	# Debian, Ubuntu, Pop!_OS, etc
 	if [ "$IS_DEBIAN" = true ]; then
-		ensure_global_confs
-		if [ "$PREVIEW_MODE" = false ]; then
-			press_enter_to_continue
-		fi
-		process_sites configure_site_debian
-		# apache_reload handles config testing and graceful restart
-		execute_or_simulate "apache_reload"
+		env_type="debian"
 	# has conf.d (Fedora, Red Hat, AlmaLinux, Rocky Linux, etc)
 	elif [ -n "$CONF_DIR" ]; then
 		# cPanel
 		if [ "$IS_CPANEL" = true ]; then
-			ensure_global_confs
-			if [ "$PREVIEW_MODE" = false ]; then
-				press_enter_to_continue
-			fi
-			process_sites configure_site_cpanel
-			
-			execute_or_simulate "apache_reload"
-		
+			env_type="cpanel"
 		# NOT cPanel
 		else
-			ensure_global_confs
-			if [ "$PREVIEW_MODE" = false ]; then
-				press_enter_to_continue
-			fi
-			process_sites configure_site_redhat
-			execute_or_simulate "apache_reload"
+			env_type="redhat"
 		fi
-
 	else
 		echo "Unsupported environment (Debian or RedHat family required)"
 		exit 1
 	fi
+	ensure_global_confs
+	if [ "$PREVIEW_MODE" = false ]; then
+		press_enter_to_continue
+	fi
+	process_sites "configure_site_${env_type}"
+	execute_or_simulate "apache_reload"
 }
 
 # MAIN SCRIPT EXECUTION
