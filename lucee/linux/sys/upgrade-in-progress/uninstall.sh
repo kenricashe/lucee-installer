@@ -142,12 +142,8 @@ execute_or_simulate() {
 				local pattern="$2"
 				sed -i "\|$pattern|d" "$file"
 				;;
-			"reload_apache")
-				if command -v systemctl >/dev/null 2>&1; then
-					systemctl reload apache2 2>/dev/null || systemctl reload httpd 2>/dev/null || true
-				elif command -v service >/dev/null 2>&1; then
-					service apache2 reload 2>/dev/null || service httpd reload 2>/dev/null || true
-				fi
+			"apache_reload")
+				apache_reload || exit 1
 				;;
 		esac
 	fi
@@ -456,7 +452,7 @@ process_uninstall_operations() {
 	# Reload Apache configuration
 	if [ "$PREVIEW_MODE" = false ]; then
 		echo "${PREVIEW_PREFIX}Reloading Apache configuration..."
-		execute_or_simulate "reload_apache"
+		execute_or_simulate "apache_reload"
 		echo ""
 	fi
 	

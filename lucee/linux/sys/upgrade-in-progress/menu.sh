@@ -181,7 +181,7 @@ while true; do
 	echo ""
 	echo "v) View/Edit Apache Site Data File"
 	echo ""
-	echo "c) Configure Apache"
+	echo "c) Configure Apache (previews changes and prompts for confirmation)"
 	echo ""
 	echo "r) Apache Configuration Discovery Report"
 	echo ""

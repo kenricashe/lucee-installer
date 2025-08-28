@@ -15,19 +15,13 @@ SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
 # Default options
 PREVIEW_MODE=true
-PREVIEW_PREFIX="[PREVIEW] "
-INTERACTIVE=true
+PREVIEW_PREFIX="Pending: "
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
 	case $1 in
 		--execute|-x)
 			PREVIEW_MODE=false
-			PREVIEW_PREFIX=""
-			shift
-			;;
-		--yes|-y)
-			INTERACTIVE=false
 			shift
 			;;
 		--help|-h)
@@ -38,7 +32,6 @@ Configure Apache for Lucee upgrade-in-progress system.
 
 OPTIONS:
     --execute, -x      Execute changes immediately (default is preview mode)
-    --yes, -y          Answer yes to all prompts
     --help, -h         Show this help message
 
 DESCRIPTION:
@@ -53,9 +46,8 @@ DESCRIPTION:
     Use --execute to skip preview.
 
 EXAMPLES:
-    $0                 # Preview changes, then prompt for confirmation
-    $0 --execute       # Execute changes immediately with prompts
-    $0 --execute --yes # Execute changes without prompts
+    $0                 # Preview changes, then single confirmation
+    $0 --execute       # Execute changes immediately (no preview)
 
 EOF
 			exit 0
@@ -74,21 +66,30 @@ execute_or_simulate() {
 	shift
 	
 	if [ "$PREVIEW_MODE" = true ]; then
+		echo ""
+		echo -n "Pending "
 		case "$action" in
 			"create_file")
-				echo "${PREVIEW_PREFIX}CREATE: $1"
+				echo "Create: $1"
 				;;
 			"modify_file")
-				echo "${PREVIEW_PREFIX}MODIFY: $1 ($2)"
+				echo "Modify: $1 ($2)"
+				;;
+			"move_file")
+				echo "Move: $1 -> $2"
+				;;
+			"delete_file")
+				echo "Delete: $1"
 				;;
 			"backup_file")
-				echo "${PREVIEW_PREFIX}BACKUP: $1 -> $2"
+				echo "Backup: $1"
 				;;
-			"reload_apache")
-				echo "${PREVIEW_PREFIX}RELOAD: Apache configuration"
+			"apache_reload")
+				echo "Apache Reload"
+				return 0
 				;;
 			*)
-				echo "${PREVIEW_PREFIX}$action $*"
+				echo "$action $*"
 				;;
 		esac
 	else
@@ -101,18 +102,18 @@ execute_or_simulate() {
 				# Actual file modification handled by calling functions
 				return 0
 				;;
-			"backup_file")
-				local src="$1"
-				local dest="$2"
-				mkdir -p "$(dirname "$dest")"
-				cp "$src" "$dest" 2>/dev/null || true
+			"move_file")
+				mv -f "$1" "$2"
 				;;
-			"reload_apache")
-				if command -v systemctl >/dev/null 2>&1; then
-					systemctl reload apache2 2>/dev/null || systemctl reload httpd 2>/dev/null || true
-				elif command -v service >/dev/null 2>&1; then
-					service apache2 reload 2>/dev/null || service httpd reload 2>/dev/null || true
-				fi
+			"delete_file")
+				rm -f "$1"
+				;;
+			"backup_file")
+				backup_file "$1"
+				;;
+			"apache_reload")
+				# apache_reload handles output of config test on error
+				apache_reload || exit 1
 				;;
 		esac
 	fi
@@ -163,9 +164,6 @@ if [ "$(id -u)" != "0" ]; then
 	echo "This script must be run as root or with sudo."
 	exit 1
 fi
-
-SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd)"
-. "${SCRIPT_DIR}/ENVIRONMENT.sh"
 
 # preflight: check that required Apache modules are enabled
 # mod_proxy, mod_setenvif, mod_headers
@@ -224,7 +222,9 @@ generate_site_404_include() {
 	local error_block="$3"
 	
 	# Create site includes directory if it doesn't exist
-	mkdir -p "$SITE_INCLUDES_404_DIR"
+	if [ "$PREVIEW_MODE" = false ]; then
+		mkdir -p "$SITE_INCLUDES_404_DIR"
+	fi
 	
 	# Generate include file path
 	local include_file="${SITE_INCLUDES_404_DIR}/${domain}-${port}.conf"
@@ -240,15 +240,15 @@ generate_site_404_include() {
 <IfDefine !LUCEE_UPGRADE_IN_PROGRESS>
 EOF
 
-		# Add ErrorDocument 404 line if it exists
-		local error_line
-		error_line=$(extract_404_line_from_block "$error_block" || true)
-		if [ -n "$error_line" ]; then
-			append_with_single_newline $'\t'"$error_line" "$include_file"
-		fi
+	# Add ErrorDocument 404 line if it exists
+	local error_line
+	error_line=$(extract_404_line_from_block "$error_block" || true)
+	if [ -n "$error_line" ]; then
+		append_with_single_newline $'\t'"$error_line" "$include_file"
+	fi
 	
-		# Add closing sections
-		cat >> "$include_file" << EOF
+	# Add closing sections
+	cat >> "$include_file" << EOF
 </IfDefine>
 
 <IfDefine LUCEE_UPGRADE_IN_PROGRESS>
@@ -259,10 +259,8 @@ EOF
 	
 		# Normalize whitespace in the generated files
 		normalize_conf_whitespace "$include_file"
-	fi
 	
-	# Fix permissions and SELinux context only in execute mode
-	if [ "$PREVIEW_MODE" = false ]; then
+		# Fix permissions and SELinux context only in execute mode
 		chmod 644 "$include_file" 2>/dev/null || true
 		set_apache_selinux_context "$include_file"
 	fi
@@ -285,11 +283,11 @@ configure_site_includes() {
 		generate_site_404_include "$domain" "$port" "$error_404_block"
 		
 		# Comment out original 404s
-		backup_file "$conf_file"
+		execute_or_simulate "backup_file" "$conf_file"
 		comment_all_404_lines "$conf_file"
 		
 		if [ "$from_htaccess" = "true" ] && ! grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
-			backup_file "$docroot/.htaccess"
+			execute_or_simulate "backup_file" "$docroot/.htaccess"
 			comment_all_404_lines "$docroot/.htaccess"
 		fi
 		
@@ -307,31 +305,6 @@ has_site_include_file_for_404() {
 	local port="$2"
 	local include_file="${SITE_INCLUDES_404_DIR}/${domain}-${port}.conf"
 	[ -f "$include_file" ]
-}
-
-# Check if a specific include directive exists in a vhost file
-has_include_in_vhost() {
-	local vhost_file="$1"
-	local include_pattern="$2"
-	
-	[ -f "$vhost_file" ] || return 1
-	grep -q "$include_pattern" "$vhost_file"
-}
-
-# Check if vhost needs the lucee-detect-upgrade.conf include
-needs_detect_upgrade_include() {
-	local vhost_file="$1"
-	! has_include_in_vhost "$vhost_file" "Include.*lucee-detect-upgrade.conf"
-}
-
-# Check if vhost needs a site-specific 404 include
-needs_site_404_include() {
-	local vhost_file="$1"
-	local domain="$2"
-	local port="$3"
-	local include_file="${SITE_INCLUDES_404_DIR}/${domain}-${port}.conf"
-	
-	[ -f "$include_file" ] && ! has_include_in_vhost "$vhost_file" "Include ${include_file}"
 }
 
 # Add per-site include line to vhost if not already present
@@ -523,30 +496,6 @@ if [ "$IS_CPANEL" = true ]; then
 	CPANEL_USERDATA_STD_PATH="${CONF_DIR}/userdata/std/2_4"
 fi
 
-# Apache config test helper: uses APACHE_CONTROLLER from ENVIRONMENT.sh
-apache_config_test() {
-	echo ""
-	echo "Testing Apache configuration ..."
-	echo ""
-	case "$APACHE_CONTROLLER" in
-		apache2)
-			apache2ctl -t
-			;;
-		httpd)
-			httpd -t
-			;;
-		apachectl)
-			apachectl -t
-			;;
-		apache2ctl)
-			apache2ctl -t
-			;;
-		*)
-			echo "Warning: No apache control binary found for config test; skipping syntax check."
-			;;
-	esac
-}
-
 # Extract the last matching ErrorDocument 404 *.cf* even if it is commented (e.g., from prior runs)
 # Strips leading '# ' from the extracted lines and excludes our NOTE lines
 extract_404_block_allow_commented() {
@@ -730,7 +679,7 @@ ensure_include_detect_upgrade_in_vhost() {
 	local tmp
 	
 	# Backup the file before making changes
-	backup_file "$vhost_file"
+	execute_or_simulate "backup_file" "$vhost_file"
 	
 	# Use the deployed upgrade directory path (absolute) for the Include line
 	local include_path="${UPG_DIR}/lucee-detect-upgrade.conf"
@@ -846,6 +795,13 @@ find_active_lucee_proxy_conf_path() {
 
 generate_allowed_ip_proxy_include() {
 
+	local filename="lucee-proxy-for-allowed-ip.conf"
+
+	if [ "$PREVIEW_MODE" = true ]; then
+		echo "${PREVIEW_PREFIX}Create $filename"
+		return 0
+	fi
+
 	# Generates internal mapping plus rewrite-gated access for allowlisted IPs
 	# Summary:
 	# - '/.lucee-upgrade-proxy/' is an internal URI used only as a bridge
@@ -858,16 +814,14 @@ generate_allowed_ip_proxy_include() {
 	# - For AJP backends, we extract and propagate 'secret=...' to keep
 	#   upgrade-mode proxying secure.
 	
-	local src
-	src=$(find_active_lucee_proxy_conf_path)
+	local src=$(find_active_lucee_proxy_conf_path)
 	if [ -z "$src" ]; then
 		echo "Error: Could not find active lucee-proxy.conf on this system."
 		echo "Ensure your Lucee proxy config exists (e.g., /etc/apache2/conf-available/lucee-proxy.conf or ${CONF_DIR}/lucee-proxy.conf)."
 		return 1
 	fi
 
-	local content
-	content=$(cat "$src")
+	local content=$(cat "$src")
 	if [ -z "$content" ]; then
 		echo "Error: Active lucee-proxy.conf at $src is empty."
 		return 1
@@ -879,12 +833,9 @@ generate_allowed_ip_proxy_include() {
 
 	# Derive backend target from the active lucee-proxy.conf
 	# Prefer balancer://, then ajp://, then http(s)://; fallback to http://127.0.0.1:8888
-	local backend_url
-	local backend_type
-	local ppm_line
-	backend_url=""
-	backend_type=""
-	ppm_line=""
+	local backend_url=""
+	local backend_type=""
+	local ppm_line=""
 	# balancer
 	if echo "$content" | grep -Eiq "^[[:space:]]*ProxyPassMatch[[:space:]].*balancer://"; then
 		backend_url=$(echo "$content" | awk '/^[\t ]*ProxyPassMatch[\t ]/ { for (i=1; i<=NF; i++) if ($i ~ /^balancer:\/\//) { print $i; exit } }')
@@ -918,13 +869,9 @@ generate_allowed_ip_proxy_include() {
 	# Normalize: strip any trailing '/$1$2' (with optional trailing '/') carried over from ProxyPassMatch
 	backend_url=$(echo "$backend_url" | sed -E 's#/\$1\$2/?$##')
 
-	# Default options
-	PREVIEW_MODE=true
-	PREVIEW_PREFIX="[PREVIEW] "
-
+	# Extract options that follow the backend URL in the selected ProxyPassMatch line
 	# Preserve all flags and key=value pairs (e.g., nocanon, keepalive=On, secret=...)
-	local ppm_opts
-	ppm_opts=""
+	local ppm_opts=""
 	if [ -n "$ppm_line" ]; then
 		ppm_opts=$(echo "$ppm_line" | awk '
 			BEGIN { idx=0 }
@@ -970,21 +917,22 @@ generate_allowed_ip_proxy_include() {
 			rm -f "$tmp"
 			return 0
 		fi
-		backup_file "$dest"
+		execute_or_simulate "backup_file" "$dest"
 	fi
 	cp -f "$tmp" "$dest"
 	chmod 644 "$dest"
 	rm -f "$tmp"
 	
 	# Normalize whitespace in the generated file
-	normalize_conf_whitespace "$dest"
-	
-	# Set SELinux context for Apache config file
-	set_apache_selinux_context "$dest"
+	if [ "$PREVIEW_MODE" = false ]; then
+		normalize_conf_whitespace "$dest"
+		
+		# Set SELinux context for Apache config file
+		set_apache_selinux_context "$dest"
+	fi
 	
 	return 0
 }
-
 
 # Detect manually delineated Lucee proxy block in Apache config
 # Returns 0 if found, 1 if not found
@@ -1220,10 +1168,10 @@ migrate_lucee_proxy_config() {
 	fi
 	
 	echo "Found Lucee proxy configuration in: $source_file"
-	echo "Migrating to: $proxy_conf_path"
+	echo "${PREVIEW_PREFIX}Migrating to: $proxy_conf_path"
 	
 	# Backup source file
-	backup_file "$source_file"
+	execute_or_simulate "backup_file" "$source_file"
 	
 	# Write proxy block to lucee-proxy.conf
 	{
@@ -1235,11 +1183,31 @@ migrate_lucee_proxy_config() {
 	
 	# Replace original block with comment indicating migration
 	if replace_proxy_with_comment "$source_file" "$proxy_conf_path"; then
-		echo "Successfully migrated Lucee proxy configuration"
+		echo "${PREVIEW_PREFIX}Successfully migrated Lucee proxy configuration"
 		return 0
 	else
 		echo "Error: Failed to replace proxy block with migration comment"
 		return 1
+	fi
+}
+
+# Function to enable Apache configuration
+enable_conf() {
+	local conf_name="$1"
+	if [ "$IS_DEBIAN" = true ]; then
+		execute_or_simulate "a2enconf" "$conf_name"
+	else
+		echo "Note: enable_conf called on non-Debian system for: $conf_name"
+	fi
+}
+
+# Function to disable Apache configuration
+disable_conf() {
+	local conf_name="$1"
+	if [ "$IS_DEBIAN" = true ]; then
+		execute_or_simulate "a2disconf" "$conf_name"
+	else
+		echo "Note: disable_conf called on non-Debian system for: $conf_name"
 	fi
 }
 
@@ -1263,9 +1231,13 @@ ensure_global_confs() {
 		conf_avail="/etc/apache2/conf-available"
 		opt_file="${UPG_DIR}/lucee-upgrade-in-progress.conf"
 		if [ -f "$opt_file" ] && [ ! -f "${conf_avail}/lucee-upgrade-in-progress.conf" ]; then
-			echo "Installing ${conf_avail}/lucee-upgrade-in-progress.conf ..."
-			cp -f "$opt_file" "${conf_avail}/lucee-upgrade-in-progress.conf"
-			normalize_conf_whitespace "${conf_avail}/lucee-upgrade-in-progress.conf"
+			echo "${PREVIEW_PREFIX}Installing ${conf_avail}/lucee-upgrade-in-progress.conf ..."
+			if [ "$PREVIEW_MODE" = false ]; then
+				cp -f "$opt_file" "${conf_avail}/lucee-upgrade-in-progress.conf"
+				normalize_conf_whitespace "${conf_avail}/lucee-upgrade-in-progress.conf"
+			else
+				echo "Pending Copy: $opt_file -> ${conf_avail}/lucee-upgrade-in-progress.conf"
+			fi
 		fi
 		# Proxy migration already handled in early check
 		# Ensure upgrade flag is disabled by default
@@ -1286,12 +1258,6 @@ ensure_global_confs() {
 		else
 			echo "Warning: Lucee proxy configuration not detected in global Apache config (Debian/Ubuntu). Normal operation expects mod_proxy enabled."
 		fi
-		# Warn if mod_headers isn't enabled (needed for HEAD-based polling via X-Lucee-Upgrade)
-		if ! headers_module_enabled; then
-			echo "Warning: Apache mod_headers does not appear to be enabled."
-			echo "The upgrade status page relies on X-Lucee-Upgrade header for HEAD polling."
-			echo "Enable with: a2enmod headers && systemctl reload apache2"
-		fi
 		return
 	fi
 
@@ -1307,165 +1273,129 @@ ensure_global_confs() {
 		opt_file="${UPG_DIR}/lucee-upgrade-in-progress.conf"
 		# Ensure a disabled copy exists if neither form exists
 		if [ -f "$opt_file" ] && [ ! -f "${CONF_DIR}/lucee-upgrade-in-progress.disabled" ] && [ ! -f "${CONF_DIR}/lucee-upgrade-in-progress.conf" ]; then
-			echo "Installing global lucee-upgrade-in-progress.disabled into ${CONF_DIR}/"
-			cp -f "$opt_file" "${CONF_DIR}/lucee-upgrade-in-progress.disabled"
-			normalize_conf_whitespace "${CONF_DIR}/lucee-upgrade-in-progress.disabled"
+			echo "${PREVIEW_PREFIX}Installing global lucee-upgrade-in-progress.disabled into ${CONF_DIR}/"
+			if [ "$PREVIEW_MODE" = false ]; then
+				cp -f "$opt_file" "${CONF_DIR}/lucee-upgrade-in-progress.disabled"
+				normalize_conf_whitespace "${CONF_DIR}/lucee-upgrade-in-progress.disabled"
+			else
+				echo "Pending Copy: $opt_file -> ${CONF_DIR}/lucee-upgrade-in-progress.disabled"
+			fi
 		fi
 		# Proxy migration already handled in early check
 		# Ensure normal state: upgrade flag disabled
 		if [ -f "${CONF_DIR}/lucee-upgrade-in-progress.conf" ]; then
 			# Backup existing .disabled if present to avoid clobbering (mirrored under BACKUP_ROOT)
 			if [ -f "${CONF_DIR}/lucee-upgrade-in-progress.disabled" ]; then
-				echo "Backing up existing ${CONF_DIR}/lucee-upgrade-in-progress.disabled"
-				backup_file "${CONF_DIR}/lucee-upgrade-in-progress.disabled"
+				echo "${PREVIEW_PREFIX}Backing up existing ${CONF_DIR}/lucee-upgrade-in-progress.disabled"
+				execute_or_simulate "backup_file" "${CONF_DIR}/lucee-upgrade-in-progress.disabled"
 			fi
-			echo "Disabling lucee-upgrade-in-progress.conf (normal state)"
-			mv -f "${CONF_DIR}/lucee-upgrade-in-progress.conf" "${CONF_DIR}/lucee-upgrade-in-progress.disabled"
-		fi
-		# Create lucee-proxy.conf in global conf.d (RHEL family)
-		if [ ! -f "${CONF_DIR}/lucee-proxy.conf" ]; then
-			echo "Creating lucee-proxy.conf ..."
-			# Try to extract Lucee proxy block from the main Apache config
-			local proxy_block=""
-			if [ -f "${CONF_DIR}/httpd.conf" ]; then
-				if proxy_block=$(find_lucee_proxy_block "${CONF_DIR}/httpd.conf" 2>/dev/null); then
-					:
-				fi
-			elif [ -f "/etc/httpd/conf/httpd.conf" ]; then
-				if proxy_block=$(find_lucee_proxy_block "/etc/httpd/conf/httpd.conf" 2>/dev/null); then
-					:
-				fi
-			fi
-			# Only write/normalize if we actually captured content
-			if [ -n "$proxy_block" ]; then
-				printf "%s\n" "$proxy_block" > "${CONF_DIR}/lucee-proxy.conf"
-				normalize_conf_whitespace "${CONF_DIR}/lucee-proxy.conf"
+			echo "${PREVIEW_PREFIX}Disabling lucee-upgrade-in-progress.conf (normal state)"
+			if [ "$PREVIEW_MODE" = false ]; then
+				mv -f "${CONF_DIR}/lucee-upgrade-in-progress.conf" "${CONF_DIR}/lucee-upgrade-in-progress.disabled"
 			else
-				echo "Warning: Could not auto-generate lucee-proxy.conf; no Lucee proxy block found."
+				echo "Pending Move: ${CONF_DIR}/lucee-upgrade-in-progress.conf -> ${CONF_DIR}/lucee-upgrade-in-progress.disabled"
 			fi
 		fi
-		# Ensure lucee-proxy.conf is enabled (rename from .disabled if needed)
-		if [ -f "${CONF_DIR}/lucee-proxy.conf.disabled" ] && [ ! -f "${CONF_DIR}/lucee-proxy.conf" ]; then
-			echo "Enabling lucee-proxy.conf (normal state)"
-			mv -f "${CONF_DIR}/lucee-proxy.conf.disabled" "${CONF_DIR}/lucee-proxy.conf"
-		fi
-		# Warn if no Lucee proxying detected in global config
-		proxy_detected=false
-		if [ -f "${CONF_DIR}/lucee-proxy.conf" ] || [ -f "${CONF_DIR}/lucee-proxy.conf.disabled" ]; then
-			proxy_detected=true
-		elif grep -Rqi 'ProxyPassMatch.*cf' "${CONF_DIR}" 2>/dev/null; then
-			proxy_detected=true
-		fi
-		if [ "$proxy_detected" == true ]; then
-			echo "Lucee proxy configuration confirmed"
-		else
-			echo "Warning: Lucee proxy configuration not detected in global Apache config (${CONF_DIR}). Normal operation expects mod_proxy enabled."
-		fi
-		# Warn if mod_headers isn't enabled (needed for HEAD-based polling via X-Lucee-Upgrade)
-		if ! headers_module_enabled; then
-			echo "Warning: Apache mod_headers does not appear to be enabled."
-			echo "The upgrade status page relies on X-Lucee-Upgrade header for HEAD polling."
-			echo "Ensure headers_module is loaded (usually enabled by default on RHEL/cPanel)."
+		# Ensure lucee-proxy.conf is enabled (rename from .disabled if needed or delete if both exist)
+		if [ -f "${CONF_DIR}/lucee-proxy.conf.disabled" ]; then
+			if [ -f "${CONF_DIR}/lucee-proxy.conf" ]; then
+				echo "${PREVIEW_PREFIX}Deleting duplicate lucee-proxy.conf.disabled"
+				execute_or_simulate "delete_file" "${CONF_DIR}/lucee-proxy.conf.disabled"
+			else
+				echo "${PREVIEW_PREFIX}Enabling lucee-proxy.conf (normal state)"
+				execute_or_simulate "move_file" "${CONF_DIR}/lucee-proxy.conf.disabled" "${CONF_DIR}/lucee-proxy.conf"
+			fi
 		fi
 		return
 	fi
+
+	generate_allowed_ip_proxy_include || exit 1
+
 }
 
 copy_upgrade_html() {
 	local docroot=$1
 	# Backup existing docroot file (mirrored under BACKUP_ROOT)
-	backup_file ${docroot}/lucee-upgrade-in-progress.html
-	cp -f "${UPG_DIR}/lucee-upgrade-in-progress.html" ${docroot}/lucee-upgrade-in-progress.html
-	
-	# Ensure proper ownership - try to match docroot ownership
-	if ! chown --reference=${docroot} ${docroot}/lucee-upgrade-in-progress.html 2>/dev/null; then
-		echo "Warning: Could not set ownership of ${docroot}/lucee-upgrade-in-progress.html to match docroot"
+	execute_or_simulate "backup_file" "${docroot}/lucee-upgrade-in-progress.html"
+	execute_or_simulate "create_file" "${docroot}/lucee-upgrade-in-progress.html"
+	if [ "$PREVIEW_MODE" = false ]; then
+		cp -f "${UPG_DIR}/lucee-upgrade-in-progress.html" "${docroot}/lucee-upgrade-in-progress.html"
 		
-		# Fallback: Try to use Apache user if we can detect it
-		local apache_user=""
-		if [ "$IS_DEBIAN" = true ]; then
-			apache_user="www-data"
-		elif [ "$IS_CPANEL" = true ]; then
-			apache_user="nobody"
-		else
-			# Try to detect Apache user on RHEL/CentOS systems
-			if [ -f "/etc/httpd/conf/httpd.conf" ]; then
-				apache_user=$(grep -i "^User" "/etc/httpd/conf/httpd.conf" 2>/dev/null | head -1 | awk '{print $2}' || echo "apache")
-			else
-				apache_user="apache"
-			fi
-		fi
-		
-		if [ -n "$apache_user" ]; then
-			echo "  Attempting to set ownership to Apache user: $apache_user"
-			chown $apache_user ${docroot}/lucee-upgrade-in-progress.html 2>/dev/null || echo "  Failed to set ownership to $apache_user"
-		fi
-		
-		# Ensure the file is at least world-readable as last resort
-		chmod 644 ${docroot}/lucee-upgrade-in-progress.html 2>/dev/null || echo "  Warning: Could not ensure ${docroot}/lucee-upgrade-in-progress.html is readable"
-	fi
-	
-	# Handle SELinux context if SELinux is enabled (common on RHEL/CentOS)
-	if command -v getenforce >/dev/null 2>&1; then
-		if [ "$(getenforce 2>/dev/null)" != "Disabled" ]; then
-			echo "  SELinux detected, setting appropriate context"
+		# Ensure proper ownership - try to match docroot ownership
+		if ! chown --reference="${docroot}" "${docroot}/lucee-upgrade-in-progress.html" 2>/dev/null; then
+			echo "Warning: Could not set ownership of ${docroot}/lucee-upgrade-in-progress.html to match docroot"
 			
-			# Try to match context of an existing HTML file in docroot
-			local reference_file
-			reference_file=$(find "$docroot" -type f -name "*.html" -o -name "*.htm" | head -1)
-			
-			if [ -n "$reference_file" ] && [ -f "$reference_file" ]; then
-				# Use reference file context
-				echo "  Using context from reference file: $reference_file"
-				chcon --reference="$reference_file" "${docroot}/lucee-upgrade-in-progress.html" 2>/dev/null || \
-					echo "  Failed to set SELinux context from reference file"
+			# Fallback: Try to use Apache user if we can detect it
+			local apache_user=""
+			if [ "$IS_DEBIAN" = true ]; then
+				apache_user="www-data"
+			elif [ "$IS_CPANEL" = true ]; then
+				apache_user="nobody"
 			else
-				# No reference file, use standard httpd_sys_content_t context
-				chcon -t httpd_sys_content_t "${docroot}/lucee-upgrade-in-progress.html" 2>/dev/null || \
-					echo "  Failed to set standard httpd_sys_content_t context"
-				
-				# If restorecon is available, try that as well
-				if command -v restorecon >/dev/null 2>&1; then
-					restorecon -v "${docroot}/lucee-upgrade-in-progress.html" 2>/dev/null || true
+				# Try to detect Apache user on RHEL/CentOS systems
+				if [ -f "/etc/httpd/conf/httpd.conf" ]; then
+					apache_user=$(grep -i "^User" "/etc/httpd/conf/httpd.conf" 2>/dev/null | head -1 | awk '{print $2}' || echo "apache")
+				else
+					apache_user="apache"
 				fi
 			fi
+		
+			if [ -n "$apache_user" ]; then
+				echo "  Attempting to set ownership to Apache user: $apache_user"
+				chown "$apache_user" "${docroot}/lucee-upgrade-in-progress.html" 2>/dev/null || echo "  Failed to set ownership to $apache_user"
+			fi
+		fi
+		
+		# Ensure the file is world-readable
+		chmod 644 "${docroot}/lucee-upgrade-in-progress.html" 2>/dev/null || echo "  Warning: Could not ensure ${docroot}/lucee-upgrade-in-progress.html is readable"
+		
+		# if SELinux is enabled, set the context (usually httpd_sys_content_t)
+		if selinux_enabled; then
+			# restorecon for persistent context
+			if ! restorecon -v "${docroot}/lucee-upgrade-in-progress.html" 2>/dev/null; then
+				# fallback to chcon if restorecon fails
+				chcon --reference="${docroot}" "${docroot}/lucee-upgrade-in-progress.html" 2>/dev/null || \
+					echo "  Warning: Could not set SELinux context for ${docroot}/lucee-upgrade-in-progress.html"
+			fi
+		fi
+		
+		# Verify the file is readable
+		if [ ! -r "${docroot}/lucee-upgrade-in-progress.html" ]; then
+			echo "Error: ${docroot}/lucee-upgrade-in-progress.html is not readable. This may cause issues during upgrades."
 		fi
 	fi
-	
-	# Verify the file is readable
-	if [ ! -r "${docroot}/lucee-upgrade-in-progress.html" ]; then
-		echo "Error: ${docroot}/lucee-upgrade-in-progress.html is not readable. This may cause issues during upgrades."
-	fi
-	
 }
 
+# Function to configure Debian sites
 configure_site_debian() {
-	local domain=$1
-	local docroot=$2
+	local domain="$1"
+	local docroot="$2"
 	
 	echo ""
-	echo "Processing $domain with DocumentRoot: $docroot"
+	echo "${PREVIEW_PREFIX}Processing site $domain with DocumentRoot: $docroot"
 	
-	# Copy lucee-upgrade-in-progress.html to DocumentRoot
+	# Copy lucee-upgrade-in-progress.html to docroot
 	copy_upgrade_html "$docroot"
 	
 	# Check if the SSL site in sites-enabled is a regular file (not a symlink)
 	# This would happen if a previous buggy version of the script replaced the symlink
 	enabled_ssl_conf="/etc/apache2/sites-enabled/${domain}-ssl.conf"
 	if [ -f "$enabled_ssl_conf" ] && [ ! -L "$enabled_ssl_conf" ]; then
-		echo "  Found regular file instead of symlink at $enabled_ssl_conf"
-		echo "  Restoring symlink structure ..."
+		echo "  ${PREVIEW_PREFIX}Found regular file instead of symlink at $enabled_ssl_conf"
+		echo "  ${PREVIEW_PREFIX}Restoring symlink structure ..."
 		# Backup the unexpected regular file before removal (mirrored under BACKUP_ROOT)
-		echo "  Backing up $enabled_ssl_conf"
-		backup_file "$enabled_ssl_conf"
-		# Get the site name without extension and remove the stray file
-		site_name="${domain}-ssl"
-		rm -f "$enabled_ssl_conf"
-		
-		# Enable the site (creates a proper symlink)
-		a2ensite "$site_name" > /dev/null 2>&1
-		
-		echo "  Symlink restored for $site_name"
+		echo "  ${PREVIEW_PREFIX}Backing up $enabled_ssl_conf"
+		execute_or_simulate "backup_file" "$enabled_ssl_conf"
+		if [ "$PREVIEW_MODE" = false ]; then
+			# Get the site name without extension and remove the stray file
+			site_name="${domain}-ssl"
+			rm -f "$enabled_ssl_conf"
+			
+			# Enable the site (creates a proper symlink)
+			a2ensite "$site_name" > /dev/null 2>&1
+			
+			echo "  ${PREVIEW_PREFIX}Symlink restored for $site_name"
+		fi
 	fi
 	
 	# Find the SSL site configuration file in sites-available directly
@@ -1477,11 +1407,11 @@ configure_site_debian() {
 	
 	local ssl_404_block=""
 	if [ -f "$ssl_conf_file" ]; then
-		echo "  Updating $ssl_conf_file"
+		echo "  ${PREVIEW_PREFIX}Updating $ssl_conf_file"
 		
 		# Check if per-site include already exists
 		if has_site_include_file_for_404 "$domain" "443"; then
-			echo "  Per-site include already exists for ${domain}:443; ensuring vhost includes it"
+			echo "  ${PREVIEW_PREFIX}Per-site include already exists for ${domain}:443; ensuring vhost includes it"
 			add_include_404_to_vhost "$ssl_conf_file" "$domain" "443"
 			ensure_include_detect_upgrade_in_vhost "$ssl_conf_file" "$domain" "443"
 		else
@@ -1492,7 +1422,7 @@ configure_site_debian() {
 			if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
 				ssl_404_block=$(extract_404_block "$docroot/.htaccess" || true)
 				if [ -n "$ssl_404_block" ]; then
-					echo "  Using 404 from .htaccess for SSL per-site include"
+					echo "  ${PREVIEW_PREFIX}Using 404 from .htaccess for SSL per-site include"
 					ssl_from_htaccess="true"
 				fi
 			fi
@@ -1501,7 +1431,7 @@ configure_site_debian() {
 			if [ -z "$ssl_404_block" ] && [ -f "$docroot/.htaccess" ] && grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
 				ssl_404_block=$(extract_404_block_allow_commented "$docroot/.htaccess" || true)
 				if [ -n "$ssl_404_block" ]; then
-					echo "  Recovered 404 from commented .htaccess for SSL per-site include"
+					echo "  ${PREVIEW_PREFIX}Recovered 404 from commented .htaccess for SSL per-site include"
 					ssl_from_htaccess="true"
 				fi
 			fi
@@ -1511,7 +1441,7 @@ configure_site_debian() {
 				if last_404_is_cf "$ssl_conf_file"; then
 					ssl_404_block=$(extract_404_block "$ssl_conf_file" || true)
 					if [ -n "$ssl_404_block" ]; then
-						echo "  Using local 404 from SSL vhost for per-site include"
+						echo "  ${PREVIEW_PREFIX}Using local 404 from SSL vhost for per-site include"
 					fi
 				fi
 			fi
@@ -1523,7 +1453,7 @@ configure_site_debian() {
 			ensure_include_detect_upgrade_in_vhost "$ssl_conf_file" "$domain" "443"
 		fi
 	else
-		echo "  Warning: Could not find SSL configuration file for $domain"
+		echo "  ${PREVIEW_PREFIX}No SSL VirtualHost found for $domain"
 	fi
 
 	# Also update the HTTP (port 80) VirtualHost if present
@@ -1535,11 +1465,11 @@ configure_site_debian() {
 	fi
 
 	if [ -f "$http_conf_file" ]; then
-		echo "  Updating $http_conf_file"
+		echo "  ${PREVIEW_PREFIX}Updating $http_conf_file"
 		
 		# Check if per-site include already exists
 		if has_site_include_file_for_404 "$domain" "80"; then
-			echo "  Per-site include already exists for ${domain}:80; ensuring vhost includes it"
+			echo "  ${PREVIEW_PREFIX}Per-site include already exists for ${domain}:80; ensuring vhost includes it"
 			add_include_404_to_vhost "$http_conf_file" "$domain" "80"
 			ensure_include_detect_upgrade_in_vhost "$http_conf_file" "$domain" "80"
 		else
@@ -1549,14 +1479,14 @@ configure_site_debian() {
 			
 			# If we already have SSL 404 block, reuse it for HTTP
 			if [ -n "$ssl_404_block" ]; then
-				echo "  Reusing 404 from SSL vhost for HTTP per-site include"
+				echo "  ${PREVIEW_PREFIX}Reusing 404 from SSL vhost for HTTP per-site include"
 				http_404_block="$ssl_404_block"
 			else
 				# Extract from .htaccess or vhost as fallback
 				if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
 					http_404_block=$(extract_404_block "$docroot/.htaccess" || true)
 					if [ -n "$http_404_block" ]; then
-						echo "  Using 404 from .htaccess for HTTP per-site include"
+						echo "  ${PREVIEW_PREFIX}Using 404 from .htaccess for HTTP per-site include"
 						http_from_htaccess="true"
 					fi
 				fi
@@ -1565,7 +1495,7 @@ configure_site_debian() {
 				if [ -z "$http_404_block" ] && [ -f "$docroot/.htaccess" ] && grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
 					http_404_block=$(extract_404_block_allow_commented "$docroot/.htaccess" || true)
 					if [ -n "$http_404_block" ]; then
-						echo "  Recovered 404 from commented .htaccess for HTTP per-site include"
+						echo "  ${PREVIEW_PREFIX}Recovered 404 from commented .htaccess for HTTP per-site include"
 						http_from_htaccess="true"
 					fi
 				fi
@@ -1575,7 +1505,7 @@ configure_site_debian() {
 					if last_404_is_cf "$http_conf_file"; then
 						http_404_block=$(extract_404_block "$http_conf_file" || true)
 						if [ -n "$http_404_block" ]; then
-							echo "  Using local 404 from HTTP vhost for per-site include"
+							echo "  ${PREVIEW_PREFIX}Using local 404 from HTTP vhost for per-site include"
 						fi
 					fi
 				fi
@@ -1589,42 +1519,49 @@ configure_site_debian() {
 		fi
 		# Best-effort warning if HTTP VirtualHost may not redirect to HTTPS
 		if ! grep -Eiq '(Redirect(\s+(permanent|temp|301|302))?\s+/?\s+https?://|RewriteRule\s+.*https://)' "$http_conf_file"; then
-			echo "  Warning: HTTP vhost for $domain may not redirect to HTTPS. Ensure a proper 80->443 redirect is configured to avoid exposure over HTTP."
+			echo "  ${PREVIEW_PREFIX}Warning: HTTP vhost for $domain may not redirect to HTTPS. Ensure a proper 80->443 redirect is configured to avoid exposure over HTTP."
 		fi
 	else
-		echo "  Info: No HTTP configuration file found for $domain"
+		echo "  ${PREVIEW_PREFIX}Info: No HTTP configuration file found for $domain"
 	fi
 
 	# Final normalization: if per-site includes exist and .htaccess still has any 404s, comment them out
 	if [ -f "$docroot/.htaccess" ] && grep -qiE "$ANY404_REGEX" "$docroot/.htaccess"; then
 		if has_site_include_file_for_404 "$domain" "443" || has_site_include_file_for_404 "$domain" "80"; then
-			echo "  Commenting out 404 ErrorDocument in $docroot/.htaccess and adding note"
-			backup_file "$docroot/.htaccess"
-			comment_all_404_lines "$docroot/.htaccess"
+			echo "  ${PREVIEW_PREFIX}Commenting out 404 ErrorDocument in $docroot/.htaccess and adding note"
+			execute_or_simulate "backup_file" "$docroot/.htaccess"
+			if [ "$PREVIEW_MODE" = false ]; then
+				comment_all_404_lines "$docroot/.htaccess"
+			fi
 		fi
 	fi
 }
 
 # Function to configure cPanel sites
 configure_site_cpanel() {
-	local domain=$1
-	local docroot=$2
+	local domain="$1"
+	local docroot="$2"
 	
-	echo "Processing cPanel site: $domain with DocumentRoot: $docroot"
+	echo "${PREVIEW_PREFIX}Processing site $domain with DocumentRoot: $docroot"
 	
-	# expected cPanel docroot: /home/user/public_html
-	user=$(echo "$docroot" | awk -F '/' '{print $3}')
+	# assuming cPanel docroot: /home/user/public_html
+	local user="${docroot#/home/}" # strip /home/
+	user="${user%%/*}"             # strip everything after first /
 	
-	# Copy lucee-upgrade-in-progress.html to DocumentRoot
+	# Copy lucee-upgrade-in-progress.html to docroot
 	copy_upgrade_html "$docroot"
 	
 	# Create userdata directory
-	mkdir -p ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}
-	mkdir -p ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}
+	if [ "$PREVIEW_MODE" = false ]; then
+		mkdir -p ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}
+		mkdir -p ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}
+	else
+		echo "${PREVIEW_PREFIX}CREATE: userdata directories for ${user}/${domain}"
+	fi
 
 	# Check if per-site includes already exist
 	if has_site_include_file_for_404 "$domain" "443" && has_site_include_file_for_404 "$domain" "80"; then
-		echo "  Per-site includes already exist for ${domain}; updating userdata files"
+		echo "  ${PREVIEW_PREFIX}Per-site includes already exist for ${domain}; updating userdata files"
 	else
 		# Extract 404 block from existing userdata or .htaccess if site had one previously
 		local cp_404_block=""
@@ -1634,7 +1571,7 @@ configure_site_cpanel() {
 		if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
 			cp_404_block=$(extract_404_block "$docroot/.htaccess" || true)
 			if [ -n "$cp_404_block" ]; then
-				echo "  Using 404 from .htaccess for cPanel per-site includes"
+				echo "  ${PREVIEW_PREFIX}Using 404 from .htaccess for cPanel per-site includes"
 				cp_from_htaccess="true"
 			fi
 		fi
@@ -1649,7 +1586,7 @@ configure_site_cpanel() {
 					if last_404_is_cf "$f"; then
 						cp_404_block=$(extract_404_block "$f" || true)
 						if [ -n "$cp_404_block" ]; then
-							echo "  Using 404 from userdata file: $f"
+							echo "  ${PREVIEW_PREFIX}Using 404 from userdata file: $f"
 							break
 						fi
 					fi
@@ -1667,8 +1604,10 @@ configure_site_cpanel() {
 			
 			# Comment out original 404s after successful include generation
 			if [ "$cp_from_htaccess" = "true" ]; then
-				backup_file "$docroot/.htaccess"
-				comment_all_404_lines "$docroot/.htaccess"
+				execute_or_simulate "backup_file" "$docroot/.htaccess"
+				if [ "$PREVIEW_MODE" = false ]; then
+					comment_all_404_lines "$docroot/.htaccess"
+				fi
 			fi
 			
 			# Comment out any pre-existing 404s in existing userdata files
@@ -1677,9 +1616,11 @@ configure_site_cpanel() {
 				while IFS= read -r f; do
 					[ -f "$f" ] || continue
 					if grep -qiE "$ANY404_REGEX" "$f"; then
-						echo "  Commenting out pre-existing 404s in userdata file: $f"
-						backup_file "$f"
-						comment_all_404_lines "$f"
+						echo "  ${PREVIEW_PREFIX}Commenting out pre-existing 404s in userdata file: $f"
+						execute_or_simulate "backup_file" "$f"
+						if [ "$PREVIEW_MODE" = false ]; then
+							comment_all_404_lines "$f"
+						fi
 					fi
 				done < <(find "$d" -type f -maxdepth 1 2>/dev/null)
 			done
@@ -1691,9 +1632,8 @@ configure_site_cpanel() {
 	local http_include="${SITE_INCLUDES_404_DIR}/${domain}-80.conf"
 	
 	# SSL userdata file
-	execute_or_simulate "create_file" "${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf"
+	execute_or_simulate "backup_file" "${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf"
 	if [ "$PREVIEW_MODE" = false ]; then
-		backup_file ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf
 		cat > ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf << EOF
 # This file is automatically generated and managed by
 # ${UPG_DIR}/configure-apache.sh
@@ -1702,7 +1642,7 @@ configure_site_cpanel() {
 Include /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf
 
 EOF
-	
+		
 		# Add per-site include if it exists
 		if [ -f "$ssl_include" ]; then
 			append_with_single_newline "Include $ssl_include" ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf
@@ -1710,12 +1650,13 @@ EOF
 		
 		# Normalize whitespace
 		normalize_conf_whitespace "${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf"
+	else
+		echo "${PREVIEW_PREFIX}CREATE: ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf"
 	fi
 	
 	# HTTP userdata file
-	execute_or_simulate "create_file" "${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf"
+	execute_or_simulate "backup_file" "${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf"
 	if [ "$PREVIEW_MODE" = false ]; then
-		backup_file ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf
 		cat > ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf << EOF
 # This file is automatically generated and managed by
 # ${UPG_DIR}/configure-apache.sh
@@ -1724,7 +1665,7 @@ EOF
 Include /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf
 
 EOF
-	
+		
 		# Add per-site include if it exists
 		if [ -f "$http_include" ]; then
 			append_with_single_newline "Include $http_include" ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf
@@ -1732,15 +1673,24 @@ EOF
 		
 		# Normalize whitespace
 		normalize_conf_whitespace "${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf"
+	else
+		echo "${PREVIEW_PREFIX}CREATE: ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf"
 	fi
+}
+
+# Function to pause for user input
+press_enter_to_continue() {
+	echo
+	echo "Press Enter to continue..."
+	read -r
 }
 
 # Function to configure RHEL sites
 configure_site_redhat() {
-	local domain=$1
-	local docroot=$2
+	local domain="$1"
+	local docroot="$2"
 
-	echo "Processing site $domain with DocumentRoot: $docroot"
+	echo "${PREVIEW_PREFIX}Processing site $domain with DocumentRoot: $docroot"
 
 	# Copy lucee-upgrade-in-progress.html to DocumentRoot
 	copy_upgrade_html "$docroot"
@@ -1763,11 +1713,11 @@ configure_site_redhat() {
 
 	local ssl_404_block=""
 	if [ -n "$ssl_conf_file" ]; then
-		echo "  Updating $ssl_conf_file (SSL vhost)"
+		echo "  ${PREVIEW_PREFIX}Updating $ssl_conf_file (SSL vhost)"
 		
 		# Check if per-site include already exists
 		if has_site_include_file_for_404 "$domain" "443"; then
-			echo "  Per-site include already exists for ${domain}:443; ensuring vhost includes it"
+			echo "  ${PREVIEW_PREFIX}Per-site include already exists for ${domain}:443; ensuring vhost includes it"
 			add_include_404_to_vhost "$ssl_conf_file" "$domain" "443"
 			ensure_include_detect_upgrade_in_vhost "$ssl_conf_file" "$domain" "443"
 		else
@@ -1778,7 +1728,7 @@ configure_site_redhat() {
 			if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
 				ssl_404_block=$(extract_404_block "$docroot/.htaccess" || true)
 				if [ -n "$ssl_404_block" ]; then
-					echo "  Using 404 from .htaccess for SSL per-site include"
+					echo "  ${PREVIEW_PREFIX}Using 404 from .htaccess for SSL per-site include"
 					ssl_from_htaccess="true"
 				fi
 			fi
@@ -1787,7 +1737,7 @@ configure_site_redhat() {
 			if [ -z "$ssl_404_block" ] && [ -f "$docroot/.htaccess" ] && grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
 				ssl_404_block=$(extract_404_block_allow_commented "$docroot/.htaccess" || true)
 				if [ -n "$ssl_404_block" ]; then
-					echo "  Recovered 404 from commented .htaccess for SSL per-site include"
+					echo "  ${PREVIEW_PREFIX}Recovered 404 from commented .htaccess for SSL per-site include"
 					ssl_from_htaccess="true"
 				fi
 			fi
@@ -1797,7 +1747,7 @@ configure_site_redhat() {
 				if last_404_is_cf "$ssl_conf_file"; then
 					ssl_404_block=$(extract_404_block "$ssl_conf_file" || true)
 					if [ -n "$ssl_404_block" ]; then
-						echo "  Using local 404 from SSL vhost for per-site include"
+						echo "  ${PREVIEW_PREFIX}Using local 404 from SSL vhost for per-site include"
 					fi
 				fi
 			fi
@@ -1829,11 +1779,11 @@ configure_site_redhat() {
 	done < "$SITES_FILE"
 
 	if [ -n "$http_conf_file" ]; then
-		echo "  Updating $http_conf_file (HTTP vhost)"
+		echo "  ${PREVIEW_PREFIX}Updating $http_conf_file (HTTP vhost)"
 		
 		# Check if per-site include already exists
 		if has_site_include_file_for_404 "$domain" "80"; then
-			echo "  Per-site include already exists for ${domain}:80; ensuring vhost includes it"
+			echo "  ${PREVIEW_PREFIX}Per-site include already exists for ${domain}:80; ensuring vhost includes it"
 			add_include_404_to_vhost "$http_conf_file" "$domain" "80"
 			ensure_include_detect_upgrade_in_vhost "$http_conf_file" "$domain" "80"
 		else
@@ -1843,14 +1793,14 @@ configure_site_redhat() {
 			
 			# If we already have SSL 404 block, reuse it for HTTP
 			if [ -n "$ssl_404_block" ]; then
-				echo "  Reusing 404 from SSL vhost for HTTP per-site include"
+				echo "  ${PREVIEW_PREFIX}Reusing 404 from SSL vhost for HTTP per-site include"
 				http_404_block="$ssl_404_block"
 			else
 				# Extract from .htaccess or vhost as fallback
 				if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
 					http_404_block=$(extract_404_block "$docroot/.htaccess" || true)
 					if [ -n "$http_404_block" ]; then
-						echo "  Using 404 from .htaccess for HTTP per-site include"
+						echo "  ${PREVIEW_PREFIX}Using 404 from .htaccess for HTTP per-site include"
 						http_from_htaccess="true"
 					fi
 				fi
@@ -1859,7 +1809,7 @@ configure_site_redhat() {
 				if [ -z "$http_404_block" ] && [ -f "$docroot/.htaccess" ] && grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
 					http_404_block=$(extract_404_block_allow_commented "$docroot/.htaccess" || true)
 					if [ -n "$http_404_block" ]; then
-						echo "  Recovered 404 from commented .htaccess for HTTP per-site include"
+						echo "  ${PREVIEW_PREFIX}Recovered 404 from commented .htaccess for HTTP per-site include"
 						http_from_htaccess="true"
 					fi
 				fi
@@ -1869,7 +1819,7 @@ configure_site_redhat() {
 					if last_404_is_cf "$http_conf_file"; then
 						http_404_block=$(extract_404_block "$http_conf_file" || true)
 						if [ -n "$http_404_block" ]; then
-							echo "  Using local 404 from HTTP vhost for per-site include"
+							echo "  ${PREVIEW_PREFIX}Using local 404 from HTTP vhost for per-site include"
 						fi
 					fi
 				fi
@@ -1888,8 +1838,8 @@ configure_site_redhat() {
 	# Final normalization: if per-site includes exist and .htaccess still has any 404s, comment them out
 	if [ -f "$docroot/.htaccess" ] && grep -qiE "$ANY404_REGEX" "$docroot/.htaccess"; then
 		if has_site_include_file_for_404 "$domain" "443" || has_site_include_file_for_404 "$domain" "80"; then
-			echo "  Commenting out 404 ErrorDocument in $docroot/.htaccess and adding note"
-			backup_file "$docroot/.htaccess"
+			echo "  ${PREVIEW_PREFIX}Commenting out 404 ErrorDocument in $docroot/.htaccess and adding note"
+			execute_or_simulate "backup_file" "$docroot/.htaccess"
 			comment_all_404_lines "$docroot/.htaccess"
 		fi
 	fi
@@ -1899,43 +1849,26 @@ configure_site_redhat() {
 process_sites() {
 	
 	echo ""
-	echo "Configuring Lucee sites for scripted 'Upgrade in Progress' notifications ..."
+	echo "${PREVIEW_PREFIX}Configuring Lucee sites for scripted 'Upgrade in Progress' notifications ..."
 
-	local configure_func=$1
+	local configure_func="$1"
 	
 	# Get data from txt file
 	while IFS= read -r line; do
-		domain=$(echo "$line" | awk '{print $1}')
-		docroot=$(echo "$line" | awk '{print $2}')
+		local domain=$(echo "$line" | awk '{print $1}')
+		local docroot=$(echo "$line" | awk '{print $2}')
 		# vhost_file=$(echo "$line" | awk '{print $3}') # Available but not used in this context
 		$configure_func "$domain" "$docroot"
 		
-	done < $SITES_FILE
+	done < "$SITES_FILE"
 }
 
-
-# Function to get user confirmation
-get_user_confirmation() {
-	echo ""
-	echo "Do you want to proceed with these changes? [y/N]"
-	read -r response
-	case "$response" in
-		[yY]|[yY][eE][sS])
-			return 0
-			;;
-		*)
-			echo "Operation cancelled by user."
-			return 1
-			;;
-	esac
-}
 
 # Function to get user confirmation (only in preview mode)
 get_user_confirmation() {
-	if [ "$PREVIEW_MODE" = false ] || [ "$INTERACTIVE" = false ]; then
+	if [ "$PREVIEW_MODE" = false ]; then
 		return 0
 	fi
-	
 	echo ""
 	echo "Do you want to proceed with these changes? [y/N]"
 	read -r response
@@ -1948,6 +1881,45 @@ get_user_confirmation() {
 			return 1
 			;;
 	esac
+}
+
+# Main execution logic function
+run_main_logic() {
+	# Debian, Ubuntu, Pop!_OS, etc
+	if [ "$IS_DEBIAN" = true ]; then
+		ensure_global_confs
+		if [ "$PREVIEW_MODE" = false ]; then
+			press_enter_to_continue
+		fi
+		process_sites configure_site_debian
+		# apache_reload handles config testing and graceful restart
+		execute_or_simulate "apache_reload"
+	# has conf.d (Fedora, Red Hat, AlmaLinux, Rocky Linux, etc)
+	elif [ -n "$CONF_DIR" ]; then
+		# cPanel
+		if [ "$IS_CPANEL" = true ]; then
+			ensure_global_confs
+			if [ "$PREVIEW_MODE" = false ]; then
+				press_enter_to_continue
+			fi
+			process_sites configure_site_cpanel
+			
+			execute_or_simulate "apache_reload"
+		
+		# NOT cPanel
+		else
+			ensure_global_confs
+			if [ "$PREVIEW_MODE" = false ]; then
+				press_enter_to_continue
+			fi
+			process_sites configure_site_redhat
+			execute_or_simulate "apache_reload"
+		fi
+
+	else
+		echo "Unsupported environment (Debian or RedHat family required)"
+		exit 1
+	fi
 }
 
 # MAIN SCRIPT EXECUTION
@@ -1957,78 +1929,14 @@ if [ "$PREVIEW_MODE" = true ]; then
 	echo "=========================="
 	echo "PREVIEW OF PENDING CHANGES"
 	echo "=========================="
-	echo ""
 else
 	echo "Executing Apache configuration changes..."
-	echo ""
 fi
 
-# Debian, Ubuntu, Pop!_OS, etc
-if [ "$IS_DEBIAN" = true ]; then
-	ensure_global_confs
-	generate_allowed_ip_proxy_include || exit 1
-	if [ "$PREVIEW_MODE" = false ]; then
-		press_enter_to_continue
-	fi
-	process_sites configure_site_debian
-	
-	if [ "$PREVIEW_MODE" = false ]; then
-		if ! apache_config_test; then
-			echo "Apache test FAILED. Aborting reload. Please check configuration files."
-			exit 1
-		fi
-		execute_or_simulate "reload_apache"
-	fi
-	
-# has conf.d (Fedora, Red Hat, AlmaLinux, Rocky Linux, etc)
-elif [ -n "$CONF_DIR" ]; then
-	# cPanel
-	if [ "$IS_CPANEL" = true ]; then
-		ensure_global_confs
-		generate_allowed_ip_proxy_include || exit 1
-		if [ "$PREVIEW_MODE" = false ]; then
-			press_enter_to_continue
-		fi
-		process_sites configure_site_cpanel
-		
-		if [ "$PREVIEW_MODE" = false ]; then
-			echo "Rebuilding Apache configuration ..."
-			/scripts/rebuildhttpdconf
-			if ! apache_config_test; then
-				echo "Apache test FAILED. Aborting restart. Please check configuration files."
-				exit 1
-			fi
-			echo "Gracefully restarting httpd ..."
-			/scripts/restartsrv_httpd --graceful
-		else
-			execute_or_simulate "rebuild_apache_config"
-			execute_or_simulate "restart_apache"
-		fi
-	
-	# NOT cPanel
-	else
-		ensure_global_confs
-		generate_allowed_ip_proxy_include || exit 1
-		if [ "$PREVIEW_MODE" = false ]; then
-			press_enter_to_continue
-		fi
-		process_sites configure_site_redhat
-		
-		if [ "$PREVIEW_MODE" = false ]; then
-			if ! apache_config_test; then
-				echo "Apache test FAILED. Aborting reload. Please check configuration files."
-				exit 1
-			fi
-			execute_or_simulate "reload_apache"
-		fi
-	fi
+# Run main logic
+run_main_logic
 
-else
-	echo "Unsupported environment (Debian or RedHat family required)"
-	exit 1
-fi
-
-# Show completion message and get confirmation in preview mode
+# Handle preview mode confirmation and execution
 if [ "$PREVIEW_MODE" = true ]; then
 	echo ""
 	echo "==============================================="
@@ -2037,11 +1945,14 @@ if [ "$PREVIEW_MODE" = true ]; then
 		exit 0
 	fi
 	
-	# Switch to execute mode and re-run
+	# Switch to execute mode and re-run main logic directly
 	PREVIEW_MODE=false
-	PREVIEW_PREFIX=""
-	exec "$0" --execute "$@"
-else
+	echo "Executing Apache configuration changes..."
 	echo ""
-	echo "DONE!"
+	
+	# Run the same logic again in execute mode
+	run_main_logic
 fi
+
+echo ""
+echo "DONE!"
