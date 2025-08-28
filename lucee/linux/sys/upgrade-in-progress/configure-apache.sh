@@ -1203,16 +1203,6 @@ migrate_lucee_proxy_config() {
 	fi
 }
 
-# Function to disable Apache configuration
-disable_conf() {
-	local conf_name="$1"
-	if [ "$IS_DEBIAN" = true ]; then
-		execute_or_simulate "a2disconf" "$conf_name"
-	else
-		echo "Note: disable_conf called on non-Debian system for: $conf_name"
-	fi
-}
-
 # Ensure global Apache confs exist and are set to normal-state defaults
 # Normal state: lucee-proxy enabled; upgrade flag disabled
 ensure_global_confs() {
@@ -1243,7 +1233,7 @@ ensure_global_confs() {
 		fi
 		# Proxy migration already handled in early check
 		# Ensure upgrade flag is disabled by default
-		disable_conf lucee-upgrade-in-progress
+		execute_or_simulate "disable_conf" "lucee-upgrade-in-progress"
 		# Ensure lucee-proxy.conf is enabled if present in conf-available
 		if [ -f "${conf_avail}/lucee-proxy.conf" ]; then
 			execute_or_simulate "enable_conf" "lucee-proxy"
