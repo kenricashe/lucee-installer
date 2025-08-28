@@ -282,16 +282,12 @@ restorecon_if_selinux() {
 			return 0
 			;;
 	esac
-	if command -v getenforce >/dev/null 2>&1; then
-		local mode
-		mode=$(getenforce 2>/dev/null)
-		if [ "$mode" != "Disabled" ]; then
-			if command -v restorecon >/dev/null 2>&1; then
-				restorecon -v "$file" >/dev/null 2>&1 || true
-			else
-				# Best-effort fallback for RHEL-like systems
-				chcon -t httpd_config_t "$file" 2>/dev/null || true
-			fi
+	if selinux_enabled; then
+		if command -v restorecon >/dev/null 2>&1; then
+			restorecon -v "$file" >/dev/null 2>&1 || true
+		else
+			# Best-effort fallback for RHEL-like systems
+			chcon -t httpd_config_t "$file" 2>/dev/null || true
 		fi
 	fi
 }
