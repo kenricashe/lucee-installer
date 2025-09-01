@@ -832,7 +832,6 @@ generate_allowed_ip_proxy_include() {
 	fi
 	cp -f --no-preserve=all "$tmp" "$dest"
 	rm -f "$tmp"
-	fi
 	
 	return 0
 }
@@ -1117,14 +1116,13 @@ ensure_global_confs() {
 		if [ -f "/etc/apache2/conf-enabled/lucee-proxy.conf" ]; then
 			proxy_enabled=true
 		fi
-		if [ "$proxy_enabled" == true ]; then
+		if [ "$proxy_enabled" = true ]; then
 			echo "lucee-proxy.conf enabled"
-		elif [ "$proxy_available" == true ]; then
+		elif [ "$proxy_available" = true ]; then
 			echo "lucee-proxy.conf available but not enabled"
 		else
 			echo "Warning: Lucee proxy configuration not detected in global Apache config (Debian/Ubuntu). Normal operation expects mod_proxy enabled."
 		fi
-	fi
 
 	# has conf.d (Fedora, Red Hat, AlmaLinux, Rocky Linux, etc)
 	elif [ -n "$CONF_DIR" ]; then
