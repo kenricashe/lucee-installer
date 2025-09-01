@@ -310,52 +310,19 @@ EOF
 	echo "$include_file"
 }
 
-# Configure site includes for sites with CF 404 handlers
-configure_site_includes() {
-	local domain="$1"
-	local port="$2"
-	local conf_file="$3"
-	local docroot="$4"
-	local error_404_block="$5"
-	local from_htaccess="$6"
-	
-	# Only generate per-site include file if we have a CF 404 block
-	if [ -n "$error_404_block" ]; then
-		# Generate the include file with the 404 block
-		generate_site_404_include "$domain" "$port" "$error_404_block"
-		
-		# Comment out original 404s
-		execute_or_simulate "backup_file" "$conf_file"
-		comment_all_404_lines "$conf_file"
-		
-		if [ "$from_htaccess" = "true" ] && ! grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
-			execute_or_simulate "backup_file" "$docroot/.htaccess"
-			comment_all_404_lines "$docroot/.htaccess"
-		fi
-		
-		# Add per-site include to vhost
-		add_include_404_to_vhost "$conf_file" "$domain" "$port"
-	fi
-	
-	# Ensure detection include is present for all sites
-	ensure_include_detect_upgrade_in_vhost "$conf_file" "$domain" "$port"
-}
-
-# Check if a per-site include already exists for the given domain and port
-has_site_include_file_for_404() {
-	local domain="$1"
-	local port="$2"
-	local include_file="${SITE_INCLUDES_404_DIR}/${domain}-${port}.conf"
-	[ -f "$include_file" ]
-}
-
 # Add per-site include line to vhost if not already present
 add_include_404_to_vhost() {
+
 	local vhost_file="$1"
 	local domain_match="$2"
 	local port_filter="$3"
 	local include_file="${SITE_INCLUDES_404_DIR}/${domain_match}-${port_filter}.conf"
 	local include_line="Include ${include_file}"
+	
+	if [ "$PREVIEW_MODE" = true ]; then
+		echo "Preview Create: $include_file"
+		return 0
+	fi
 	
 	[ -f "$vhost_file" ] || return 1
 	
@@ -401,6 +368,45 @@ add_include_404_to_vhost() {
 		rm -f "$tmp"
 		return 1
 	fi
+}
+
+# Configure site includes for sites with CF 404 handlers
+configure_site_includes() {
+	local domain="$1"
+	local port="$2"
+	local conf_file="$3"
+	local docroot="$4"
+	local error_404_block="$5"
+	local from_htaccess="$6"
+	
+	# Only generate per-site include file if we have a CF 404 block
+	if [ -n "$error_404_block" ]; then
+		# Generate the include file with the 404 block
+		generate_site_404_include "$domain" "$port" "$error_404_block"
+		
+		# Comment out original 404s
+		execute_or_simulate "backup_file" "$conf_file"
+		comment_all_404_lines "$conf_file"
+		
+		if [ "$from_htaccess" = "true" ] && ! grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
+			execute_or_simulate "backup_file" "$docroot/.htaccess"
+			comment_all_404_lines "$docroot/.htaccess"
+		fi
+		
+		# Add per-site include to vhost
+		add_include_404_to_vhost "$conf_file" "$domain" "$port"
+	fi
+	
+	# Ensure detection include is present for all sites
+	ensure_include_detect_upgrade_in_vhost "$conf_file" "$domain" "$port"
+}
+
+# Check if a per-site include already exists for the given domain and port
+has_site_include_file_for_404() {
+	local domain="$1"
+	local port="$2"
+	local include_file="${SITE_INCLUDES_404_DIR}/${domain}-${port}.conf"
+	[ -f "$include_file" ]
 }
 
 # Use [.] instead of \. to avoid awk treating "\." as an escape in string constants
@@ -602,12 +608,18 @@ ensure_include_detect_upgrade_in_vhost() {
 	local port_filter="$3"
 	local tmp
 	
+	local include_line="Include ${DETECT_CONF}"
+	
+	[ -f "$vhost_file" ] || return 1
+	
 	# Backup the file before making changes
 	execute_or_simulate "backup_file" "$vhost_file"
 	
-	# Use the deployed upgrade directory path (absolute) for the Include line
-	local include_line="Include ${DETECT_CONF}"
-	[ -f "$vhost_file" ] || return 1
+	echo "${PREVIEW_PREFIX}Ensuring ${DETECT_CONF} is included in $vhost_file"
+	if [ "$PREVIEW_MODE" = true ]; then
+		return 0
+	fi
+
 	tmp=$(mktemp)
 	awk -v dom="$domain_match" -v port="$port_filter" -v inc_line="$include_line" -v inc_path="$DETECT_CONF" '
 		BEGIN { inblk=0; match_this=0; blk_port=""; inserted=0; had_inc=0 }
