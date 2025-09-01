@@ -2,14 +2,7 @@
 
 # sudo /opt/lucee/sys/upgrade-in-progress/get-lucee-sites.sh
 
-# require root
-if [ "$(id -u)" != "0" ]; then
-	echo "This script must be run as root"
-	exit 1
-fi
-
-# Source shared helper for LUCEE_ROOT, UPG_DIR, IS_CPANEL
-SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd)"
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "${SCRIPT_DIR}/ENVIRONMENT.sh"
 . "${SCRIPT_DIR}/shared-functions.sh"
 

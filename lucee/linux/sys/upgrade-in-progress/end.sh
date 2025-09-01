@@ -1,21 +1,12 @@
 #!/bin/bash
 
-# Source shared helper for IS_CPANEL (LUCEE_ROOT/UPG_DIR not needed here)
-SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd)"
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "${SCRIPT_DIR}/ENVIRONMENT.sh"
 . "${SCRIPT_DIR}/shared-functions.sh"
 
-# require root
-if [ "$(id -u)" != "0" ]; then
-	echo "This script must be run as root"
-	exit 1
-fi
-
-# check_apache_configured function is now in ENVIRONMENT.sh
-
-# preflight: check if Apache has been configured for upgrade-in-progress
-if ! check_apache_configured; then
-	echo "Error: Apache has not been configured for upgrade-in-progress."
+# preflight: check if Apache has been configured for lucee-upgrade-in-progress
+if ! is_apache_configured; then
+	echo "Error: Apache has not been configured for lucee-upgrade-in-progress."
 	echo "Please run the 'Configure Apache' option from the menu first."
 	exit 1
 fi
@@ -35,7 +26,7 @@ elif [ -n "$CONF_DIR" ]; then
 	echo "Enabling lucee-proxy configuration..."
 	mv -f lucee-proxy.conf.disabled lucee-proxy.conf
 	echo "Disabling lucee-upgrade-in-progress configuration..."
-	mv -f lucee-upgrade-in-progress.conf lucee-upgrade-in-progress.disabled
+	mv -f lucee-upgrade-in-progress.conf lucee-upgrade-in-progress.conf.disabled
 	if ! apache_reload; then
 		exit 1
 	fi

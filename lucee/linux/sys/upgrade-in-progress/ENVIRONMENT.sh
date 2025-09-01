@@ -1,19 +1,37 @@
 #!/bin/bash
 
 # Shared environment for upgrade-in-progress scripts
-# Sets LUCEE_ROOT, UPG_DIR (relative to this file), and IS_CPANEL.
+# Sets HTTPD_ROOT, HTTPD_LUCEE_ROOT, SITE_INCLUDES_404_DIR, CONF_DIR,
+# IS_DEBIAN, IS_CPANEL, LUCEE_ROOT, UPG_DIR (relative to this file).
 
+# require root
+if [ "$(id -u)" != "0" ]; then
+	echo "This script must be run as root or with sudo."
+	exit 1
+fi
+
+# IS_DEBIAN
 if command -v a2enconf >/dev/null 2>&1; then
 	IS_DEBIAN=true
 else
 	IS_DEBIAN=false
 fi
 
-# Detect conf.d if any
-if [ -d /etc/httpd/conf.d ]; then
-	CONF_DIR="/etc/httpd/conf.d"
-elif [ -d /etc/apache2/conf.d ]; then
-	CONF_DIR="/etc/apache2/conf.d"
+# HTTPD_ROOT
+cmd=$(command -v apache2 || command -v httpd)
+if [ -n "$cmd" ]; then
+  HTTPD_ROOT=$($cmd -V | awk -F'"' '/HTTPD_ROOT/ {print $2}')
+else
+	printf "\nERROR: No Apache controller found. Verify that Apache is installed and try again.\n"
+  exit 1
+fi
+
+HTTPD_LUCEE_ROOT="${HTTPD_ROOT}/lucee-upgrade-in-progress"
+SITE_INCLUDES_404_DIR="${HTTPD_LUCEE_ROOT}/site-includes-for-404"
+
+# CONF_DIR (if any) e.g. /etc/httpd/conf.d or /etc/apache2/conf.d
+if [ -d "${HTTPD_ROOT}/conf.d" ]; then
+	CONF_DIR="${HTTPD_ROOT}/conf.d"
 else
 	CONF_DIR=""
 fi
@@ -27,10 +45,21 @@ if [ "$IS_DEBIAN" = false ] && [ -z "$CONF_DIR" ]; then
 	exit 1
 fi
 
+# if this is deploy.sh, exit 0
+if [ -f "${BASH_SOURCE[0]:-$0}" ]; then
+	exit 0
+fi
+
+# IS_CPANEL
 if [ -f "/usr/local/cpanel/cpanel" ]; then
 	IS_CPANEL=true
 else
 	IS_CPANEL=false
+fi
+
+SCRIPT_FILENAME=$(basename "$0")
+if [ "$SCRIPT_FILENAME" = "deploy.sh" ]; then
+	exit 0
 fi
 
 # Determine library directory, resolving symlinks where available
@@ -45,17 +74,10 @@ fi
 LIB_DIR="$(cd -P "$(dirname "$LIB_PATH")" && pwd)"
 
 LUCEE_ROOT="$(cd "$LIB_DIR/../.." && pwd)"
-LUCEE_ROOT="${LUCEE_ROOT%/}"
+LUCEE_ROOT="${LUCEE_ROOT%/}" # usually /opt/lucee
 UPG_DIR="${LUCEE_ROOT}/sys/upgrade-in-progress"
-SITE_INCLUDES_404_DIR="${UPG_DIR}/site-includes-for-404"
 SITES_FILE="${UPG_DIR}/sites-configured.txt"
 EXCLUSIONS_FILE="${UPG_DIR}/site-exclusions.txt"
-
-# Determine sudo prefix for privileged actions
-SUDO=""
-if [ "$(id -u)" != "0" ]; then
-	SUDO="sudo"
-fi
 
 press_enter_to_continue() {
 	printf "\nPress Enter to continue..."
@@ -95,23 +117,12 @@ detect_apache_controller() {
 APACHE_CONTROLLER=$(detect_apache_controller)
 
 # Check if Apache has been configured for upgrade-in-progress
-check_apache_configured() {
-	# Debian, Ubuntu, Pop!_OS, etc
-	if [ "$IS_DEBIAN" = true ]; then
-		if [ ! -f "/etc/apache2/conf-available/lucee-upgrade-in-progress.conf" ]; then
-			return 1
-		fi
+is_apache_configured() {
+	if [ -f "${HTTPD_LUCEE_ROOT}/lucee-detect-upgrade.conf" ]; then
 		return 0
-	# Fedora, Red Hat, AlmaLinux, Rocky Linux, etc
-	elif [ -n "$CONF_DIR" ]; then
-		if [ ! -f "${CONF_DIR}/lucee-upgrade-in-progress.conf" ] && [ ! -f "${CONF_DIR}/lucee-upgrade-in-progress.disabled" ]; then
-			return 1
-		fi
-		return 0
+	else
+		return 1
 	fi
-	
-	# Unsupported environment
-	return 1
 }
 
 echo_apache_status() {
@@ -139,7 +150,7 @@ echo_apache_reload_failed() {
 		httpd)
 			if command -v httpd >/dev/null 2>&1; then
 				CONFIG_TEST_RAN=true
-				if ${SUDO} httpd -t; then
+				if httpd -t; then
 					CONFIG_TEST_RC=0
 				else
 					CONFIG_TEST_RC=$?
@@ -149,7 +160,7 @@ echo_apache_reload_failed() {
 		apache2|apache2ctl)
 			if command -v apache2ctl >/dev/null 2>&1; then
 				CONFIG_TEST_RAN=true
-				if ${SUDO} apache2ctl -t; then
+				if apache2ctl -t; then
 					CONFIG_TEST_RC=0
 				else
 					CONFIG_TEST_RC=$?
@@ -159,7 +170,7 @@ echo_apache_reload_failed() {
 		apachectl)
 			if command -v apachectl >/dev/null 2>&1; then
 				CONFIG_TEST_RAN=true
-				if ${SUDO} apachectl -t; then
+				if apachectl -t; then
 					CONFIG_TEST_RC=0
 				else
 					CONFIG_TEST_RC=$?
@@ -192,7 +203,7 @@ apache_graceful_reload() {
 			# Try systemd first if available
 			if command -v systemctl >/dev/null 2>&1 && systemctl list-units --type=service | grep -q '^[[:space:]]*apache2\.service'; then
 				echo "Reloading Apache via systemctl reload apache2..."
-				if ! ${SUDO} systemctl reload apache2; then
+				if ! systemctl reload apache2; then
 					echo_apache_reload_failed
 					return 1
 				fi
@@ -200,7 +211,7 @@ apache_graceful_reload() {
 			# Fallback to apache2ctl if systemd not available
 			elif command -v apache2ctl >/dev/null 2>&1; then
 				echo "Reloading Apache via apache2ctl -k graceful..."
-				if ! ${SUDO} apache2ctl -k graceful; then
+				if ! apache2ctl -k graceful; then
 					echo_apache_reload_failed
 					return 1
 				fi
@@ -212,7 +223,7 @@ apache_graceful_reload() {
 			;;
 		apachectl)
 			echo "Reloading Apache via apachectl -k graceful..."
-			if ! ${SUDO} apachectl -k graceful; then
+			if ! apachectl -k graceful; then
 				echo_apache_reload_failed
 				return 1
 			fi
@@ -220,7 +231,7 @@ apache_graceful_reload() {
 			;;
 		apache2ctl)
 			echo "Reloading Apache via apache2ctl -k graceful..."
-			if ! ${SUDO} apache2ctl -k graceful; then
+			if ! apache2ctl -k graceful; then
 				echo_apache_reload_failed
 				return 1
 			fi
@@ -230,7 +241,7 @@ apache_graceful_reload() {
 			# Try systemd first if available
 			if command -v systemctl >/dev/null 2>&1 && systemctl list-units --type=service | grep -q '^[[:space:]]*httpd\.service'; then
 				echo "Reloading Apache via systemctl reload httpd..."
-				if ! ${SUDO} systemctl reload httpd; then
+				if ! systemctl reload httpd; then
 					echo_apache_reload_failed
 					return 1
 				fi
@@ -238,7 +249,7 @@ apache_graceful_reload() {
 			# Fallback to direct httpd command if systemd not available
 			elif command -v httpd >/dev/null 2>&1; then
 				echo "Reloading Apache via httpd -k graceful..."
-				if ! ${SUDO} httpd -k graceful; then
+				if ! httpd -k graceful; then
 					echo_apache_reload_failed
 					return 1
 				fi
@@ -246,7 +257,7 @@ apache_graceful_reload() {
 			# Try apachectl as last resort
 			elif command -v apachectl >/dev/null 2>&1; then
 				echo "Reloading Apache via apachectl -k graceful..."
-				if ! ${SUDO} apachectl -k graceful; then
+				if ! apachectl -k graceful; then
 					echo_apache_reload_failed
 					return 1
 				fi
@@ -279,13 +290,13 @@ apache_cpanel_graceful_restart() {
 	fi
 
 	echo "Running /scripts/rebuildhttpdconf..."
-	if ! ${SUDO} /scripts/rebuildhttpdconf; then
+	if ! /scripts/rebuildhttpdconf; then
 		echo "ERROR: Rebuild failed. Check your Apache or cPanel logs."
 		return 1
 	fi
 
 	echo "Running /scripts/restartsrv_httpd --graceful..."
-	if ! ${SUDO} /scripts/restartsrv_httpd --graceful; then
+	if ! /scripts/restartsrv_httpd --graceful; then
 		echo "ERROR: Restart failed. Check your Apache or cPanel logs."
 		return 1
 	fi

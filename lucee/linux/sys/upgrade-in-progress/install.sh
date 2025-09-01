@@ -145,8 +145,8 @@ echo ""
 echo "Found upgrade-in-progress directory at: $SUBDIR"
 
 # Run the deployment script from the extracted directory
-if [ ! -x "$SUBDIR/deploy-to-opt-lucee-sys.sh" ]; then
-	chmod +x "$SUBDIR/deploy-to-opt-lucee-sys.sh" 2>/dev/null || true
+if [ ! -x "$SUBDIR/deploy.sh" ]; then
+	chmod +x "$SUBDIR/deploy.sh" 2>/dev/null || true
 fi
 
 # Check for Lucee root path from environment variable first
@@ -166,7 +166,7 @@ else
 fi
 
 # Execute the deployment script and capture its exit status
-SELINUX_QUIET=1 "$SUBDIR/deploy-to-opt-lucee-sys.sh" "$LUCEE_ROOT"
+"$SUBDIR/deploy.sh" "$LUCEE_ROOT"
 if [ $? -eq 0 ]; then
 	# Deployment was successful
 	echo ""

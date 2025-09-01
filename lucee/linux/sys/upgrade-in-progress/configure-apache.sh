@@ -1,11 +1,5 @@
 #!/bin/bash
 
-# require root
-if [ "$(id -u)" != "0" ]; then
-	echo "This script must be run as root or with sudo."
-	exit 1
-fi
-
 # Source environment variables and functions
 SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "${SCRIPT_DIR}/ENVIRONMENT.sh"
@@ -117,19 +111,19 @@ if [ "$HAS_ERRORS" = true ]; then
 	exit 1
 fi
 
-# preflight: required files must exist at /opt path used by per-site Includes and docroot copy
-DETECT_CONF="${UPG_DIR}/lucee-detect-upgrade.conf"
+error_if_include_not_found() {
+	local file="$1"
+	echo "Error: Required include not found: $file"
+	echo "Run deploy.sh, then retry."
+	exit 1
+}
+
+DETECT_CONF="${HTTPD_LUCEE_ROOT}/lucee-detect-upgrade.conf"
 UPG_HTML="${UPG_DIR}/lucee-upgrade-in-progress.html"
-if [ ! -f "$DETECT_CONF" ]; then
-	echo "Error: Required include not found: $DETECT_CONF"
-	echo "Run deploy-to-opt-lucee-sys.sh to deploy the package, then retry."
-	exit 1
-fi
-if [ ! -f "$UPG_HTML" ]; then
-	echo "Error: Required HTML not found: $UPG_HTML"
-	echo "Run deploy-to-opt-lucee-sys.sh to deploy the package, then retry."
-	exit 1
-fi
+
+# preflight: required files must exist at path used by per-site Includes and docroot copy
+error_if_include_not_found "${DETECT_CONF}"
+error_if_include_not_found "${UPG_HTML}"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -180,49 +174,57 @@ execute_or_simulate() {
 	shift
 	
 	if [ "$PREVIEW_MODE" = true ]; then
-		echo ""
-		echo -n "Pending "
+		printf "\nPending "
+	fi
+	case "$action" in
+		"create_dir")
+			echo "Create Directory (if not exists): $1"
+			;;
+		"create_file")
+			echo "Create File: $1"
+			;;
+		"copy_file")
+			echo "Copy: $1 -> $2"
+			;;
+		"rename_file")
+			echo "Rename: $1 -> $2"
+			;;
+		"delete_file")
+			echo "Delete: $1"
+			;;
+		"backup_file")
+			if [ -f "$1" ]; then
+				return 0
+			fi
+			echo "Backup: $1"
+			;;
+		"enable_conf")
+			echo "Enable: $1"
+			;;
+		"disable_conf")
+			echo "Disable: $1"
+			;;
+		"apache_reload")
+			echo "Apache Reload"
+			return 0
+			;;
+		*)
+			echo "$action $*"
+			;;
+	esac
+	if [ "$PREVIEW_MODE" = false ]; then
+		# create and modify are handled by calling functions
 		case "$action" in
+			"create_dir")
+				mkdir -p "$1"
+				;;
 			"create_file")
-				echo "Create: $1"
+				touch "$1"
 				;;
-			"modify_file")
-				echo "Modify: $1 ($2)"
+			"copy_file")
+				cp -f --no-preserve=all "$1" "$2"
 				;;
-			"move_file")
-				echo "Move: $1 -> $2"
-				;;
-			"delete_file")
-				echo "Delete: $1"
-				;;
-			"backup_file")
-				echo "Backup: $1"
-				;;
-			"enable_conf")
-				echo "Enable: $1"
-				;;
-			"disable_conf")
-				echo "Disable: $1"
-				;;
-			"apache_reload")
-				echo "Apache Reload"
-				return 0
-				;;
-			*)
-				echo "$action $*"
-				;;
-		esac
-	else
-		case "$action" in
-			"create_file")
-				# Actual file creation handled by calling functions
-				return 0
-				;;
-			"modify_file")
-				# Actual file modification handled by calling functions
-				return 0
-				;;
-			"move_file")
+			"rename_file")
 				mv -f "$1" "$2"
 				;;
 			"delete_file")
@@ -242,53 +244,6 @@ execute_or_simulate() {
 				apache_reload || exit 1
 				;;
 		esac
-	fi
-}
-
-# Helper function to set SELinux context for Apache config files
-set_apache_selinux_context() {
-	local file="$1"
-	
-	if ! selinux_enabled; then
-		return 0
-	fi
-	
-	if command -v restorecon >/dev/null 2>&1; then
-		# Suppress verbose output
-		restorecon "$file" >/dev/null 2>&1 || {
-			echo "Warning: restorecon failed, trying chcon fallback"
-			if command -v chcon >/dev/null 2>&1; then
-				chcon -t httpd_config_t "$file" >/dev/null 2>&1 || \
-				echo "Warning: Failed to set SELinux context on $file"
-			fi
-		}
-	elif command -v chcon >/dev/null 2>&1; then
-		chcon -t httpd_config_t "$file" >/dev/null 2>&1 || \
-		echo "Warning: Failed to set SELinux context on $file"
-	else
-		echo "Warning: SELinux is enabled but neither restorecon nor chcon commands are available."
-		echo "Apache may not be able to read config files due to SELinux restrictions."
-	fi
-}
-
-# If SELinux is active, restore proper context for Apache config files
-restorecon_if_selinux() {
-	local file="$1"
-	# Only attempt on Apache config paths
-	case "$file" in
-		/etc/httpd/*|/etc/apache2/*)
-			;;
-		*)
-			return 0
-			;;
-	esac
-	if selinux_enabled; then
-		if command -v restorecon >/dev/null 2>&1; then
-			restorecon -v "$file" >/dev/null 2>&1 || true
-		else
-			# Best-effort fallback for RHEL-like systems
-			chcon -t httpd_config_t "$file" 2>/dev/null || true
-		fi
 	fi
 }
 
@@ -350,14 +305,7 @@ EOF
 	Define LUCEE_SITE_HAS_CF_404
 </IfDefine>
 EOF
-	
-		# Normalize whitespace in the generated files
-		normalize_conf_whitespace "$include_file"
-	
-		# Fix permissions and SELinux context only in execute mode
-		chmod 644 "$include_file" 2>/dev/null || true
-		set_apache_selinux_context "$include_file"
-	fi
+	fi # end execute mode
 	
 	echo "$include_file"
 }
@@ -446,13 +394,8 @@ add_include_404_to_vhost() {
 		}
 	' "$vhost_file" > "$tmp"
 	if [ $? -eq 0 ]; then
-		# Overwrite in place to preserve SELinux context
-		local orig_perms
-		orig_perms=$(stat -c %a "$vhost_file" 2>/dev/null || echo "644")
-		cat "$tmp" > "$vhost_file"
+		cp -f --no-preserve=all "$tmp" "$vhost_file"
 		rm -f "$tmp"
-		chmod "$orig_perms" "$vhost_file" 2>/dev/null || chmod 644 "$vhost_file"
-		restorecon_if_selinux "$vhost_file"
 		return 0
 	else
 		rm -f "$tmp"
@@ -470,7 +413,7 @@ if [ ! -f "$SITES_FILE" ]; then
 	echo ""
 	echo "Press Enter to get data ..."
 	read -r _
-	${SUDO} "${UPG_DIR}/get-lucee-sites.sh"
+	"${UPG_DIR}/get-lucee-sites.sh"
 	# Re-check for generated file
 	if [ ! -f "$SITES_FILE" ]; then
 		echo "Error: Failed to generate sites data file. Aborting now."
@@ -540,7 +483,7 @@ comment_all_404_lines() {
 	tmp=$(mktemp)
 	base=$(basename "$file")
 	if [ "$base" = ".htaccess" ]; then
-		awk -v IGNORECASE=1 -v pat="$ANY404_REGEX" -v note="# NOTE: ErrorDocument 404 moved by /opt/lucee/sys/upgrade-in-progress/configure-apache.sh into Apache vhost/userdata and disabled during upgrades. See per-site Include to /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf" '
+		awk -v IGNORECASE=1 -v pat="$ANY404_REGEX" -v note="# NOTE: ErrorDocument 404 moved by /opt/lucee/sys/upgrade-in-progress/configure-apache.sh into Apache vhost/userdata and disabled during upgrades. See per-site Include directives." '
 			{ lines[++n]=$0 }
 			END {
 				for (i=1;i<=n;i++) {
@@ -571,13 +514,6 @@ comment_all_404_lines() {
 	# Write back in place to preserve existing mode/ownership
 	cat "$tmp" > "$file"
 	rm -f "$tmp"
-	# Restore ownership/mode if we could read them (chown/chmod may fail for non-root; ignore errors)
-	if [ -n "$_uid" ] && [ -n "$_gid" ]; then
-		chown "$_uid:$_gid" "$file" 2>/dev/null || true
-	fi
-	if [ -n "$_mode" ]; then
-		chmod "$_mode" "$file" 2>/dev/null || true
-	fi
 }
 
 # Extract the first matching ErrorDocument 404 *.cf* line and its contiguous preceding comments
@@ -608,7 +544,7 @@ remove_404_block() {
 	base=$(basename "$file")
 	if [ "$base" = ".htaccess" ]; then
 		# In .htaccess: comment out ALL ErrorDocument 404 lines with a note; migration uses the last via extract_404_block()
-		awk -v IGNORECASE=1 -v pat="$LUCEE404_REGEX" -v note="# NOTE: ErrorDocument 404 moved by /opt/lucee/sys/upgrade-in-progress/configure-apache.sh into Apache vhost/userdata and disabled during upgrades. See per-site Include to /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf" '
+		awk -v IGNORECASE=1 -v pat="$LUCEE404_REGEX" -v note="# NOTE: ErrorDocument 404 moved by /opt/lucee/sys/upgrade-in-progress/configure-apache.sh into Apache vhost/userdata and disabled during upgrades. See per-site Include directives." '
 			{ lines[++n]=$0 }
 			END {
 				for (i=1;i<=n;i++) {
@@ -650,9 +586,8 @@ remove_404_block() {
 		' "$file" > "$tmp"
 	fi
 	if [ $? -eq 0 ]; then
-		cat "$tmp" > "$file"
+		cp -f --no-preserve=all "$tmp" "$file"
 		rm -f "$tmp"
-		restorecon_if_selinux "$file"
 		return 0
 	else
 		rm -f "$tmp"
@@ -671,11 +606,10 @@ ensure_include_detect_upgrade_in_vhost() {
 	execute_or_simulate "backup_file" "$vhost_file"
 	
 	# Use the deployed upgrade directory path (absolute) for the Include line
-	local include_path="${UPG_DIR}/lucee-detect-upgrade.conf"
-	local include_line="Include ${include_path}"
+	local include_line="Include ${DETECT_CONF}"
 	[ -f "$vhost_file" ] || return 1
 	tmp=$(mktemp)
-	awk -v dom="$domain_match" -v port="$port_filter" -v inc_line="$include_line" -v inc_path="$include_path" '
+	awk -v dom="$domain_match" -v port="$port_filter" -v inc_line="$include_line" -v inc_path="$DETECT_CONF" '
 		BEGIN { inblk=0; match_this=0; blk_port=""; inserted=0; had_inc=0 }
 		{ line=$0; lines[++n]=$0 }
 		/<VirtualHost[> \t]/ { inblk=1; match_this=0; blk_port=""; had_inc=0; if (match($0, /<VirtualHost[^>]*:([0-9]+)/, m)) { blk_port=m[1] } }
@@ -707,13 +641,8 @@ ensure_include_detect_upgrade_in_vhost() {
 		}
 	' "$vhost_file" > "$tmp"
 	if [ $? -eq 0 ]; then
-		# Overwrite in place to preserve SELinux context
-		local orig_perms
-		orig_perms=$(stat -c %a "$vhost_file" 2>/dev/null || echo "644")
-		cat "$tmp" > "$vhost_file"
+		cp -f --no-preserve=all "$tmp" "$vhost_file"
 		rm -f "$tmp"
-		chmod "$orig_perms" "$vhost_file" 2>/dev/null || chmod 644 "$vhost_file"
-		restorecon_if_selinux "$vhost_file"
 		return 0
 	else
 		rm -f "$tmp"
@@ -762,17 +691,9 @@ headers_module_enabled() {
 find_active_lucee_proxy_conf_path() {
 	local path=""
 	if [ "$IS_DEBIAN" = true ]; then
-		if [ -f "/etc/apache2/conf-available/lucee-proxy.conf" ]; then
-			path="/etc/apache2/conf-available/lucee-proxy.conf"
-		else
-			path=$(find /etc/apache2 -maxdepth 2 -type f -name "lucee-proxy.conf" 2>/dev/null | head -1)
-		fi
+		path="/etc/apache2/conf-available/lucee-proxy.conf"
 	elif [ -n "$CONF_DIR" ]; then
-		if [ -f "${CONF_DIR}/lucee-proxy.conf" ]; then
-			path="${CONF_DIR}/lucee-proxy.conf"
-		else
-			path=$(find "$CONF_DIR" -maxdepth 1 -type f -name "lucee-proxy*.conf" 2>/dev/null | head -1)
-		fi
+		path="${CONF_DIR}/lucee-proxy.conf"
 	fi
 	if [ -n "$path" ] && [ -f "$path" ]; then
 		echo "$path"
@@ -784,6 +705,20 @@ find_active_lucee_proxy_conf_path() {
 
 generate_allowed_ip_proxy_include() {
 
+	# Generates internal mapping plus rewrite-gated access for allowlisted IPs
+	#
+	# '/.lucee-upgrade-proxy/' is an internal URI used only as a bridge between mod_rewrite and mod_proxy.
+	#
+	# Apache forbids ProxyPass/ProxyPassMatch inside conditional blocks, 
+	# so we always define a ProxyPassMatch for that internal path,
+	# then rewrite allowed client requests to it when LUCEE_UPGRADE_BYPASS=1.
+	#
+	# This allows allowlisted IPs to reach Lucee normally while non-allowed
+	#
+	# IPs are served lucee-upgrade-in-progress.html.
+	#
+	# For AJP backends, we extract and propagate 'secret=...' to keep upgrade-mode proxying secure.
+	
 	local filename="lucee-proxy-for-allowed-ip.conf"
 
 	if [ "$PREVIEW_MODE" = true ]; then
@@ -791,32 +726,19 @@ generate_allowed_ip_proxy_include() {
 		return 0
 	fi
 
-	# Generates internal mapping plus rewrite-gated access for allowlisted IPs
-	# Summary:
-	# - '/.lucee-upgrade-proxy/' is an internal URI used only as a bridge
-	#   between mod_rewrite and mod_proxy.
-	# - Apache forbids ProxyPass/ProxyPassMatch inside conditional blocks,
-	#   so we always define a ProxyPassMatch for that internal path,
-	#   then rewrite allowed client requests to it when LUCEE_UPGRADE_BYPASS=1.
-	# - This allows allowlisted IPs to reach Lucee normally while non-allowed
-	#   IPs are served lucee-upgrade-in-progress.html.
-	# - For AJP backends, we extract and propagate 'secret=...' to keep
-	#   upgrade-mode proxying secure.
-	
 	local src=$(find_active_lucee_proxy_conf_path)
 	if [ -z "$src" ]; then
 		echo "Error: Could not find active lucee-proxy.conf on this system."
-		echo "Ensure your Lucee proxy config exists (e.g., /etc/apache2/conf-available/lucee-proxy.conf or ${CONF_DIR}/lucee-proxy.conf)."
 		return 1
 	fi
 
 	local content=$(cat "$src")
 	if [ -z "$content" ]; then
-		echo "Error: Active lucee-proxy.conf at $src is empty."
+		echo "Error: $src is empty."
 		return 1
 	fi
 
-	local dest="${UPG_DIR}/lucee-proxy-for-allowed-ip.conf"
+	local dest="${HTTPD_LUCEE_ROOT}/${filename}"
 	local tmp
 	tmp=$(mktemp)
 
@@ -888,7 +810,7 @@ generate_allowed_ip_proxy_include() {
 		echo "# Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 		echo "# Conditional proxy for allowlisted IPs only"
 		echo ""
-		echo "# Internal upgrade proxy mapping (not directly reachable unless rewritten)"
+		echo "# Internal upgrade proxy mapping (only reachable via RewriteRule)"
 		# Use printf to correctly emit literal $1 and $2 backrefs without stray escapes
 		printf 'ProxyPassMatch ^/\\.lucee-upgrade-proxy/(.+\\.(?:cfm|cfml|cfc|cfs))(.*)$ %s/$1$2%s\n' "${backend_url}" "${ppm_opts}"
 		printf 'ProxyPassReverse /.lucee-upgrade-proxy/ %s/\n' "${backend_url}"
@@ -908,16 +830,8 @@ generate_allowed_ip_proxy_include() {
 		fi
 		execute_or_simulate "backup_file" "$dest"
 	fi
-	cp -f "$tmp" "$dest"
-	chmod 644 "$dest"
+	cp -f --no-preserve=all "$tmp" "$dest"
 	rm -f "$tmp"
-	
-	# Normalize whitespace in the generated file
-	if [ "$PREVIEW_MODE" = false ]; then
-		normalize_conf_whitespace "$dest"
-		
-		# Set SELinux context for Apache config file
-		set_apache_selinux_context "$dest"
 	fi
 	
 	return 0
@@ -1028,17 +942,10 @@ replace_proxy_with_comment() {
 		comment_mode { print "# " $0; next }
 		{ print }
 	' "$config_file" > "$tmp"; then
-		# Check if replacement actually happened
+		normalize_conf_whitespace "$tmp"
 		if ! cmp -s "$config_file" "$tmp"; then
-			# Overwrite in place to preserve SELinux context
-			local orig_perms
-			orig_perms=$(stat -c %a "$config_file" 2>/dev/null || echo "644")
-			cat "$tmp" > "$config_file"
+			cp -f --no-preserve=all "$tmp" "$config_file"
 			rm -f "$tmp"
-			chmod "$orig_perms" "$config_file" 2>/dev/null || chmod 644 "$config_file"
-			restorecon_if_selinux "$config_file"
-			# Normalize whitespace to prevent multiple empty lines
-			normalize_conf_whitespace "$config_file"
 			return 0
 		fi
 	fi
@@ -1095,15 +1002,9 @@ replace_proxy_with_comment() {
 	' "$config_file" > "$tmp"
 	
 	if [ $? -eq 0 ]; then
-		# Overwrite in place to preserve SELinux context
-		local orig_perms
-		orig_perms=$(stat -c %a "$config_file" 2>/dev/null || echo "644")
-		cat "$tmp" > "$config_file"
+		normalize_conf_whitespace "$tmp"
+		cp -f --no-preserve=all "$tmp" "$config_file"
 		rm -f "$tmp"
-		chmod "$orig_perms" "$config_file" 2>/dev/null || chmod 644 "$config_file"
-		restorecon_if_selinux "$config_file"
-		# Normalize whitespace to prevent multiple empty lines
-		normalize_conf_whitespace "$config_file"
 		return 0
 	else
 		rm -f "$tmp"
@@ -1129,11 +1030,11 @@ migrate_lucee_proxy_config() {
 	
 	# Check common global config files
 	for config_file in \
-		"$global_config_dir"/includes/*.conf \
-		"$global_config_dir"/*.conf \
 		"$(dirname "$global_config_dir")"/httpd.conf \
 		"$(dirname "$global_config_dir")"/conf/httpd.conf \
-		"$(dirname "$global_config_dir")"/apache2.conf
+		"$(dirname "$global_config_dir")"/apache2.conf \
+		"$global_config_dir"/includes/*.conf \
+		"$global_config_dir"/*.conf
 	do
 		[ -f "$config_file" ] || continue
 		proxy_block=$(find_lucee_proxy_block "$config_file" 2>/dev/null)
@@ -1163,9 +1064,7 @@ migrate_lucee_proxy_config() {
 	execute_or_simulate "backup_file" "$source_file"
 	
 	# Write proxy block to lucee-proxy.conf
-	{
-		echo "$proxy_block"
-	} > "$proxy_conf_path"
+	echo "$proxy_block" > "$proxy_conf_path"
 	
 	# Normalize whitespace in the generated file
 	normalize_conf_whitespace "$proxy_conf_path"
@@ -1183,7 +1082,12 @@ migrate_lucee_proxy_config() {
 # Ensure global Apache confs exist and are set to normal-state defaults
 # Normal state: lucee-proxy enabled; upgrade flag disabled
 ensure_global_confs() {
-	
+
+	local opt_file="${UPG_DIR}/lucee-upgrade-in-progress.conf"
+	local luip_conf
+
+	execute_or_simulate "create_dir" "${HTTPD_LUCEE_ROOT}"
+
 	echo ""
 	echo "Checking for existing Lucee proxy configuration ..."
 
@@ -1191,91 +1095,63 @@ ensure_global_confs() {
 	if [ "$IS_DEBIAN" = true ]; then
 
 		# Debian/Ubuntu - check if proxy migration is needed
-		conf_avail="/etc/apache2/conf-available"
+		local proxy_available=false
+		local conf_avail="/etc/apache2/conf-available"
 		if [ ! -f "${conf_avail}/lucee-proxy.conf" ]; then
-			# Try to migrate existing proxy config
 			migrate_lucee_proxy_config "$conf_avail" "${conf_avail}/lucee-proxy.conf"
 		fi
-
-		conf_avail="/etc/apache2/conf-available"
-		opt_file="${UPG_DIR}/lucee-upgrade-in-progress.conf"
-		if [ -f "$opt_file" ] && [ ! -f "${conf_avail}/lucee-upgrade-in-progress.conf" ]; then
-			echo "${PREVIEW_PREFIX}Installing ${conf_avail}/lucee-upgrade-in-progress.conf ..."
-			if [ "$PREVIEW_MODE" = false ]; then
-				cp -f "$opt_file" "${conf_avail}/lucee-upgrade-in-progress.conf"
-				normalize_conf_whitespace "${conf_avail}/lucee-upgrade-in-progress.conf"
-			else
-				echo "Pending Copy: $opt_file -> ${conf_avail}/lucee-upgrade-in-progress.conf"
-			fi
+		luip_conf="${conf_avail}/lucee-upgrade-in-progress.conf"
+		if [ ! -f "$luip_conf" ]; then
+			execute_or_simulate "copy_file" "$opt_file" "$luip_conf"
 		fi
 		# Proxy migration already handled in early check
 		# Ensure upgrade flag is disabled by default
 		execute_or_simulate "disable_conf" "lucee-upgrade-in-progress"
 		# Ensure lucee-proxy.conf is enabled if present in conf-available
 		if [ -f "${conf_avail}/lucee-proxy.conf" ]; then
+			proxy_available=true
 			execute_or_simulate "enable_conf" "lucee-proxy"
 		fi
 		# Warn if no Lucee proxying detected in global config
-		proxy_detected=false
-		if [ -f "${conf_avail}/lucee-proxy.conf" ] || [ -f "/etc/apache2/conf-enabled/lucee-proxy.conf" ]; then
-			proxy_detected=true
-		elif grep -Rqi 'ProxyPassMatch.*cf' /etc/apache2/ 2>/dev/null; then
-			proxy_detected=true
+		local proxy_enabled=false
+		if [ -f "/etc/apache2/conf-enabled/lucee-proxy.conf" ]; then
+			proxy_enabled=true
 		fi
-		if [ "$proxy_detected" == true ]; then
-			echo "Lucee proxy configuration confirmed"
+		if [ "$proxy_enabled" == true ]; then
+			echo "lucee-proxy.conf enabled"
+		elif [ "$proxy_available" == true ]; then
+			echo "lucee-proxy.conf available but not enabled"
 		else
 			echo "Warning: Lucee proxy configuration not detected in global Apache config (Debian/Ubuntu). Normal operation expects mod_proxy enabled."
 		fi
-		return
 	fi
 
 	# has conf.d (Fedora, Red Hat, AlmaLinux, Rocky Linux, etc)
-	if [ -n "$CONF_DIR" ]; then
+	elif [ -n "$CONF_DIR" ]; then
 
-		# RedHat/CentOS - check if proxy migration is needed
-		if [ ! -f "${CONF_DIR}/lucee-proxy.conf" ]; then
-			# Try to migrate existing proxy config
-			migrate_lucee_proxy_config "$CONF_DIR" "${CONF_DIR}/lucee-proxy.conf"
+		local proxy_conf="${CONF_DIR}/lucee-proxy.conf"
+		if [ -f "${proxy_conf}.disabled" ]; then
+			if [ -f "$proxy_conf" ]; then
+				execute_or_simulate "delete_file" "${proxy_conf}.disabled"
+			else
+				execute_or_simulate "rename_file" "${proxy_conf}.disabled" "$proxy_conf"
+			fi
+		fi
+		if [ ! -f "${proxy_conf}" ]; then
+			migrate_lucee_proxy_config "$CONF_DIR" "${proxy_conf}"
 		fi
 
-		opt_file="${UPG_DIR}/lucee-upgrade-in-progress.conf"
-		# Ensure a disabled copy exists if neither form exists
-		if [ -f "$opt_file" ] && [ ! -f "${CONF_DIR}/lucee-upgrade-in-progress.disabled" ] && [ ! -f "${CONF_DIR}/lucee-upgrade-in-progress.conf" ]; then
-			echo "${PREVIEW_PREFIX}Installing global lucee-upgrade-in-progress.disabled into ${CONF_DIR}/"
-			if [ "$PREVIEW_MODE" = false ]; then
-				cp -f "$opt_file" "${CONF_DIR}/lucee-upgrade-in-progress.disabled"
-				normalize_conf_whitespace "${CONF_DIR}/lucee-upgrade-in-progress.disabled"
+		luip_conf="${CONF_DIR}/lucee-upgrade-in-progress.conf"
+		if [ -f "$luip_conf" ] && [ -f "${luip_conf}.disabled" ]; then
+			execute_or_simulate "delete_file" "${luip_conf}"
+		fi
+		if [ ! -f "${luip_conf}.disabled" ]; then
+			if [ -f "$luip_conf" ]; then
+				execute_or_simulate "rename_file" "$luip_conf" "${luip_conf}.disabled"
 			else
-				echo "Pending Copy: $opt_file -> ${CONF_DIR}/lucee-upgrade-in-progress.disabled"
+				execute_or_simulate "copy_file" "$opt_file" "${luip_conf}.disabled"
 			fi
 		fi
-		# Proxy migration already handled in early check
-		# Ensure normal state: upgrade flag disabled
-		if [ -f "${CONF_DIR}/lucee-upgrade-in-progress.conf" ]; then
-			# Backup existing .disabled if present to avoid clobbering (mirrored under BACKUP_ROOT)
-			if [ -f "${CONF_DIR}/lucee-upgrade-in-progress.disabled" ]; then
-				echo "${PREVIEW_PREFIX}Backing up existing ${CONF_DIR}/lucee-upgrade-in-progress.disabled"
-				execute_or_simulate "backup_file" "${CONF_DIR}/lucee-upgrade-in-progress.disabled"
-			fi
-			echo "${PREVIEW_PREFIX}Disabling lucee-upgrade-in-progress.conf (normal state)"
-			if [ "$PREVIEW_MODE" = false ]; then
-				mv -f "${CONF_DIR}/lucee-upgrade-in-progress.conf" "${CONF_DIR}/lucee-upgrade-in-progress.disabled"
-			else
-				echo "Pending Move: ${CONF_DIR}/lucee-upgrade-in-progress.conf -> ${CONF_DIR}/lucee-upgrade-in-progress.disabled"
-			fi
-		fi
-		# Ensure lucee-proxy.conf is enabled (rename from .disabled if needed or delete if both exist)
-		if [ -f "${CONF_DIR}/lucee-proxy.conf.disabled" ]; then
-			if [ -f "${CONF_DIR}/lucee-proxy.conf" ]; then
-				echo "${PREVIEW_PREFIX}Deleting duplicate lucee-proxy.conf.disabled"
-				execute_or_simulate "delete_file" "${CONF_DIR}/lucee-proxy.conf.disabled"
-			else
-				echo "${PREVIEW_PREFIX}Enabling lucee-proxy.conf (normal state)"
-				execute_or_simulate "move_file" "${CONF_DIR}/lucee-proxy.conf.disabled" "${CONF_DIR}/lucee-proxy.conf"
-			fi
-		fi
-		return
 	fi
 
 	generate_allowed_ip_proxy_include || exit 1
@@ -1284,55 +1160,8 @@ ensure_global_confs() {
 
 copy_upgrade_html() {
 	local docroot=$1
-	# Backup existing docroot file (mirrored under BACKUP_ROOT)
 	execute_or_simulate "backup_file" "${docroot}/lucee-upgrade-in-progress.html"
-	execute_or_simulate "create_file" "${docroot}/lucee-upgrade-in-progress.html"
-	if [ "$PREVIEW_MODE" = false ]; then
-		cp -f "${UPG_DIR}/lucee-upgrade-in-progress.html" "${docroot}/lucee-upgrade-in-progress.html"
-		
-		# Ensure proper ownership - try to match docroot ownership
-		if ! chown --reference="${docroot}" "${docroot}/lucee-upgrade-in-progress.html" 2>/dev/null; then
-			echo "Warning: Could not set ownership of ${docroot}/lucee-upgrade-in-progress.html to match docroot"
-			
-			# Fallback: Try to use Apache user if we can detect it
-			local apache_user=""
-			if [ "$IS_DEBIAN" = true ]; then
-				apache_user="www-data"
-			elif [ "$IS_CPANEL" = true ]; then
-				apache_user="nobody"
-			else
-				# Try to detect Apache user on RHEL/CentOS systems
-				if [ -f "/etc/httpd/conf/httpd.conf" ]; then
-					apache_user=$(grep -i "^User" "/etc/httpd/conf/httpd.conf" 2>/dev/null | head -1 | awk '{print $2}' || echo "apache")
-				else
-					apache_user="apache"
-				fi
-			fi
-		
-			if [ -n "$apache_user" ]; then
-				echo "  Attempting to set ownership to Apache user: $apache_user"
-				chown "$apache_user" "${docroot}/lucee-upgrade-in-progress.html" 2>/dev/null || echo "  Failed to set ownership to $apache_user"
-			fi
-		fi
-		
-		# Ensure the file is world-readable
-		chmod 644 "${docroot}/lucee-upgrade-in-progress.html" 2>/dev/null || echo "  Warning: Could not ensure ${docroot}/lucee-upgrade-in-progress.html is readable"
-		
-		# if SELinux is enabled, set the context (usually httpd_sys_content_t)
-		if selinux_enabled; then
-			# restorecon for persistent context
-			if ! restorecon -v "${docroot}/lucee-upgrade-in-progress.html" 2>/dev/null; then
-				# fallback to chcon if restorecon fails
-				chcon --reference="${docroot}" "${docroot}/lucee-upgrade-in-progress.html" 2>/dev/null || \
-					echo "  Warning: Could not set SELinux context for ${docroot}/lucee-upgrade-in-progress.html"
-			fi
-		fi
-		
-		# Verify the file is readable
-		if [ ! -r "${docroot}/lucee-upgrade-in-progress.html" ]; then
-			echo "Error: ${docroot}/lucee-upgrade-in-progress.html is not readable. This may cause issues during upgrades."
-		fi
-	fi
+	execute_or_simulate "copy_file" "${UPG_DIR}/lucee-upgrade-in-progress.html" "${docroot}/lucee-upgrade-in-progress.html"
 }
 
 # Function to configure Debian sites
@@ -1343,29 +1172,7 @@ configure_site_debian() {
 	echo ""
 	echo "${PREVIEW_PREFIX}Processing site $domain with DocumentRoot: $docroot"
 	
-	# Copy lucee-upgrade-in-progress.html to docroot
 	copy_upgrade_html "$docroot"
-	
-	# Check if the SSL site in sites-enabled is a regular file (not a symlink)
-	# This would happen if a previous buggy version of the script replaced the symlink
-	enabled_ssl_conf="/etc/apache2/sites-enabled/${domain}-ssl.conf"
-	if [ -f "$enabled_ssl_conf" ] && [ ! -L "$enabled_ssl_conf" ]; then
-		echo "  ${PREVIEW_PREFIX}Found regular file instead of symlink at $enabled_ssl_conf"
-		echo "  ${PREVIEW_PREFIX}Restoring symlink structure ..."
-		# Backup the unexpected regular file before removal (mirrored under BACKUP_ROOT)
-		echo "  ${PREVIEW_PREFIX}Backing up $enabled_ssl_conf"
-		execute_or_simulate "backup_file" "$enabled_ssl_conf"
-		if [ "$PREVIEW_MODE" = false ]; then
-			# Get the site name without extension and remove the stray file
-			site_name="${domain}-ssl"
-			rm -f "$enabled_ssl_conf"
-			
-			# Enable the site (creates a proper symlink)
-			a2ensite "$site_name" > /dev/null 2>&1
-			
-			echo "  ${PREVIEW_PREFIX}Symlink restored for $site_name"
-		fi
-	fi
 	
 	# Find the SSL site configuration file in sites-available directly
 	ssl_conf_file="/etc/apache2/sites-available/${domain}-ssl.conf"
@@ -1608,7 +1415,7 @@ configure_site_cpanel() {
 # ${UPG_DIR}/configure-apache.sh
 # Any manual changes will be overwritten when the script runs
 
-Include /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf
+Include ${DETECT_CONF}
 
 EOF
 		
@@ -1616,9 +1423,6 @@ EOF
 		if [ -f "$ssl_include" ]; then
 			append_with_single_newline "Include $ssl_include" ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf
 		fi
-		
-		# Normalize whitespace
-		normalize_conf_whitespace "${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf"
 	else
 		echo "${PREVIEW_PREFIX}CREATE: ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf"
 	fi
@@ -1631,7 +1435,7 @@ EOF
 # ${UPG_DIR}/configure-apache.sh
 # Any manual changes will be overwritten when the script runs
 
-Include /opt/lucee/sys/upgrade-in-progress/lucee-detect-upgrade.conf
+Include ${DETECT_CONF}
 
 EOF
 		
@@ -1639,9 +1443,6 @@ EOF
 		if [ -f "$http_include" ]; then
 			append_with_single_newline "Include $http_include" ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf
 		fi
-		
-		# Normalize whitespace
-		normalize_conf_whitespace "${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf"
 	else
 		echo "${PREVIEW_PREFIX}CREATE: ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf"
 	fi

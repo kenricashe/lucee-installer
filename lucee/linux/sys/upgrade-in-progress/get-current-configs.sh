@@ -4,17 +4,8 @@
 # This script identifies all upgrade-related modifications on the current system
 # for use by uninstall.sh and other management scripts.
 
-# Require root
-if [ "$(id -u)" != "0" ]; then
-	echo "This script must be run as root or with sudo."
-	exit 1
-fi
-
-# Source shared helper for LUCEE_ROOT, UPG_DIR, IS_CPANEL
-SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd)"
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "${SCRIPT_DIR}/ENVIRONMENT.sh"
-
-# Source shared functions
 . "${SCRIPT_DIR}/shared-functions.sh"
 
 # Default output format and file

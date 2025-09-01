@@ -1,13 +1,6 @@
 #!/bin/bash
 
-# require root
-if [ "$(id -u)" != "0" ]; then
-	echo "This script must be run as root or with sudo."
-	exit 1
-fi
-
-# Source shared helper for LUCEE_ROOT, UPG_DIR, IS_CPANEL
-SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")/.." && pwd)"
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "${SCRIPT_DIR}/ENVIRONMENT.sh"
 . "${SCRIPT_DIR}/shared-functions.sh"
 
@@ -321,7 +314,7 @@ remove_site_includes() {
 		}
 		
 		# Check for Include lines for per-site includes
-		/^[[:space:]]*Include[[:space:]]+\/opt\/lucee\/sys\/upgrade-in-progress\/site-includes-for-404\/.*\.conf/ {
+		/^[[:space:]]*Include[[:space:]]+\/etc\/apache2\/lucee-upgrade-in-progress\/site-includes-for-404\/.*\.conf/ {
 			# Skip this line and mark to skip the next blank line
 			skip_next_blank = 1
 			next
@@ -529,15 +522,14 @@ if [ -d "/etc/apache2/sites-available" ]; then
 	done
 fi
 
-# Remove per-site include files directories if they exist
-for include_dir in "/opt/lucee/sys/upgrade-in-progress/site-includes-for-404"; do
-	if [ -d "$include_dir" ]; then
-		echo ""
-		echo "Backing up then removing per-site include files from $include_dir..."
-		backup_folder "$include_dir"
-		rm -rf "$include_dir"
-	fi
-done
+# Remove per-site 404 include files if they exist
+include_404_dir="/etc/apache2/lucee-upgrade-in-progress/site-includes-for-404"
+if [ -d "$include_404_dir" ]; then
+	echo ""
+	echo "Backing up then removing per-site include files from $include_404_dir..."
+	backup_folder "$include_404_dir"
+	rm -rf "$include_404_dir"
+fi
 
 # Process all .conf files in sites-available
 echo ""

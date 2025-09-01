@@ -3,14 +3,7 @@
 # uninstall.sh - Remove Lucee upgrade-in-progress system and restore original configurations
 # This script discovers and removes all upgrade-related modifications from the system
 
-# Require root
-if [ "$(id -u)" != "0" ]; then
-	echo "This script must be run as root or with sudo."
-	exit 1
-fi
-
-# Source shared helper for LUCEE_ROOT, UPG_DIR, IS_CPANEL and shared functions
-SCRIPT_DIR="$(cd -P "$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")" && pwd)"
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "${SCRIPT_DIR}/ENVIRONMENT.sh"
 . "${SCRIPT_DIR}/shared-functions.sh"
 
@@ -135,12 +128,12 @@ execute_or_simulate() {
 				rm -rf "$1"
 				;;
 			"restore_file")
-				cp "$1" "$2"
+				cp --no-preserve=all "$1" "$2"
 				;;
 			"remove_include_directive")
 				local file="$1"
 				local pattern="$2"
-				sed -i "\|$pattern|d" "$file"
+				sed_i_nopreserve "\|$pattern|d" "$file"
 				;;
 			"apache_reload")
 				apache_reload || exit 1
@@ -216,11 +209,11 @@ restore_original_errordocument_404() {
 						insert_line=$(grep -n "DocumentRoot\|</VirtualHost>" "$vhost_file" | grep "DocumentRoot" | tail -1 | cut -d: -f1)
 						if [ -n "$insert_line" ]; then
 							# Insert after DocumentRoot line
-							sed -i "${insert_line}a\\	${original_errordoc}" "$vhost_file"
+							sed_i_nopreserve "${insert_line}a\\\t${original_errordoc}" "$vhost_file"
 							log_action "Restored original ErrorDocument 404 to: $vhost_file"
 						else
 							# Fallback: insert before </VirtualHost>
-							sed -i "/<\/VirtualHost>/i\\	${original_errordoc}" "$vhost_file"
+							sed_i_nopreserve "/<\/VirtualHost>/i\\\t${original_errordoc}" "$vhost_file"
 							log_action "Restored original ErrorDocument 404 to: $vhost_file"
 						fi
 					fi
@@ -252,7 +245,7 @@ remove_include_directives() {
 	
 	# Remove Include directives that reference upgrade-in-progress files
 	local patterns=(
-		"Include.*${UPG_DIR}"
+		"Include.*${HTTPD_LUCEE_ROOT}"
 	)
 	
 	local modified=false

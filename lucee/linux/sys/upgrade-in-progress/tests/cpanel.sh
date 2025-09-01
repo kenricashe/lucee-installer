@@ -3,6 +3,12 @@
 # cPanel Simulation Toggle Script
 # Usage: ./tests/cpanel.sh [on|off|status]
 
+# require root
+if [ "$(id -u)" != "0" ]; then
+	echo "This script must be run as root or with sudo."
+	exit 1
+fi
+
 set -euo pipefail
 
 CPANEL_FILES=(
@@ -23,13 +29,6 @@ show_usage() {
 	echo "  status - Show current simulation status"
 	echo ""
 	echo "This script creates cPanel simulation files for testing the toolkit in a non-cPanel environment."
-}
-
-check_root() {
-	if [ "$(id -u)" != "0" ]; then
-		echo "ERROR: This script must be run as root (sudo)"
-		exit 1
-	fi
 }
 
 detect_real_cpanel() {
@@ -323,7 +322,6 @@ show_status() {
 # Main script logic
 case "${1:-}" in
 	"on")
-		check_root
 		abort_if_real_cpanel
 		backup_existing_files
 		create_dummy_files
@@ -334,7 +332,6 @@ case "${1:-}" in
 		echo "Use '$0 off' to disable simulation and restore original files."
 		;;
 	"off")
-		check_root
 		abort_if_real_cpanel
 		remove_dummy_files
 		restore_files

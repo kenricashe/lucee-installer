@@ -1,28 +1,28 @@
 #!/bin/bash
 
-# This would normally go in ENVIRONMENT.sh,
-# but it's also used by deploy-to-opt-lucee-sys.sh,
-# which is run before Lucee root path is known.
-IS_SELINUX_ENABLED=false
-selinux_enabled() {
-	if [ "$IS_SELINUX_ENABLED" = true ]; then
-		return 0
+# Detect Apache configuration directories and main config file
+if [ -d /etc/httpd/conf ]; then
+	APACHE_CONF_DIR="/etc/httpd/conf"
+	APACHE_CONF_FILE="${APACHE_CONF_DIR}/httpd.conf"
+elif [ -d /etc/apache2 ]; then
+	APACHE_CONF_DIR="/etc/apache2"
+	APACHE_CONF_FILE="${APACHE_CONF_DIR}/apache2.conf"
+	if [ ! -f "$APACHE_CONF_FILE" ] && [ -f "${APACHE_CONF_DIR}/httpd.conf" ]; then
+		APACHE_CONF_FILE="${APACHE_CONF_DIR}/httpd.conf"
 	fi
-	if command -v getenforce >/dev/null 2>&1; then
-		mode=$(getenforce 2>/dev/null)
-		if [ "$mode" != "Disabled" ]; then
-			IS_SELINUX_ENABLED=true
-			return 0
-		fi
-	fi
-	return 1
-}
+elif [ -d /usr/local/apache2/conf ]; then
+	APACHE_CONF_DIR="/usr/local/apache2/conf"
+	APACHE_CONF_FILE="${APACHE_CONF_DIR}/httpd.conf"
+else
+	APACHE_CONF_DIR=""
+	APACHE_CONF_FILE=""
+fi
 
 # Ensure the site exclusions file exists with sensible defaults.
 ensure_default_exclusions_file() {
 	if [ ! -f "$EXCLUSIONS_FILE" ] || [ ! -s "$EXCLUSIONS_FILE" ]; then
-		${SUDO} mkdir -p "$(dirname "$EXCLUSIONS_FILE")" 2>/dev/null || true
-		${SUDO} tee "$EXCLUSIONS_FILE" >/dev/null <<'EOF'
+		mkdir -p "$(dirname "$EXCLUSIONS_FILE")" 2>/dev/null || true
+		tee "$EXCLUSIONS_FILE" >/dev/null <<'EOF'
 # Lucee site search exclusions
 #
 # Domain patterns:
@@ -172,17 +172,11 @@ normalize_conf_whitespace() {
 		return 1
 	fi
 
-	# Only overwrite if content changed
-	if cmp -s "$conf_file" "$tmp"; then
-		rm -f "$tmp"
-		return 0
+	# Only copy/overwrite if file doesn't exist or content changed
+	if [ ! -f "$conf_file" ] || ! cmp -s "$conf_file" "$tmp"; then
+		cp -f --no-preserve=all "$tmp" "$conf_file"
 	fi
-
-	# Preserve original permissions before overwriting
-	local orig_perms
-	orig_perms=$(stat -c %a "$conf_file" 2>/dev/null || echo "644")
-	mv "$tmp" "$conf_file"
-	chmod "$orig_perms" "$conf_file" 2>/dev/null || chmod 644 "$conf_file"
+	rm -f "$tmp"
 }
 
 # Function to disable and remove an Apache configuration file
@@ -246,7 +240,6 @@ discover_apache_configs() {
 	local -a upgrade_html_files
 	local -a site_includes
 	local -a modified_primary_configs
-	local -a legacy_files
 	
 	# Determine Apache configuration directories based on distribution
 	local apache_dirs=()
@@ -285,16 +278,15 @@ discover_apache_configs() {
 		
 		# Check distribution-specific directories
 		if [ "$IS_DEBIAN" = true ]; then
-			# Debian: check sites-available and sites-enabled
-			for vhost_dir in "$apache_dir/sites-available" "$apache_dir/sites-enabled"; do
-				if [ -d "$vhost_dir" ]; then
-					while IFS= read -r -d '' vhost_file; do
-						if grep -q "Include.*upgrade-in-progress.*lucee-detect-upgrade\.conf" "$vhost_file" 2>/dev/null; then
-							vhost_files+=("$vhost_file")
-						fi
-					done < <(find "$vhost_dir" -maxdepth 1 -type f -name "*.conf" -print0 2>/dev/null)
-				fi
-			done
+			# Debian
+			vhost_dir="$apache_dir/sites-available"
+			if [ -d "$vhost_dir" ]; then
+				while IFS= read -r -d '' vhost_file; do
+					if grep -q "Include.*upgrade-in-progress.*lucee-detect-upgrade\.conf" "$vhost_file" 2>/dev/null; then
+						vhost_files+=("$vhost_file")
+					fi
+				done < <(find "$vhost_dir" -maxdepth 1 -type f -name "*.conf" -print0 2>/dev/null)
+			fi
 		else
 			# RHEL/Rocky: VirtualHost files are often in conf.d
 			if [ -d "$apache_dir/conf.d" ]; then
@@ -446,7 +438,7 @@ discover_apache_configs() {
 		echo "Checking .htaccess files in DocumentRoots..." >&2
 	fi
 	
-	# Use associative array to avoid duplicates
+	# Avoid duplicates from vhosts sharing docroot e.g. for ports 80 and 443
 	local -A seen_htaccess
 	
 	# Check all Apache directories for VirtualHost files to find DocumentRoots
@@ -454,21 +446,20 @@ discover_apache_configs() {
 		[ -d "$apache_dir" ] || continue
 		
 		# Look in sites-available directories
-		for sites_dir in "$apache_dir/sites-available" "$apache_dir/sites-enabled"; do
-			if [ -d "$sites_dir" ]; then
-				for vhost_file in "$sites_dir"/*.conf; do
-					[ -f "$vhost_file" ] || continue
-					local docroot
-					docroot=$(grep -i '^[[:space:]]*DocumentRoot' "$vhost_file" | head -1 | awk '{print $2}' | tr -d '"')
-					if [ -n "$docroot" ] && [ -f "${docroot}/.htaccess" ] && [ -z "${seen_htaccess["${docroot}/.htaccess"]}" ]; then
-						if grep -q "# NOTE: ErrorDocument 404 moved\|# ErrorDocument.*404.*\.cfm" "${docroot}/.htaccess" 2>/dev/null; then
-							modified_htaccess+=("${docroot}/.htaccess")
-							seen_htaccess["${docroot}/.htaccess"]=1
-						fi
+		sites_dir="$apache_dir/sites-available"
+		if [ -d "$sites_dir" ]; then
+			for vhost_file in "$sites_dir"/*.conf; do
+				[ -f "$vhost_file" ] || continue
+				local docroot
+				docroot=$(grep -i '^[[:space:]]*DocumentRoot' "$vhost_file" | head -1 | awk '{print $2}' | tr -d '"')
+				if [ -n "$docroot" ] && [ -f "${docroot}/.htaccess" ] && [ -z "${seen_htaccess["${docroot}/.htaccess"]}" ]; then
+					if grep -q "# NOTE: ErrorDocument 404 moved\|# ErrorDocument.*404.*\.cfm" "${docroot}/.htaccess" 2>/dev/null; then
+						modified_htaccess+=("${docroot}/.htaccess")
+						seen_htaccess["${docroot}/.htaccess"]=1
 					fi
-				done
-			fi
-		done
+				fi
+			done
+		fi
 	done
 	
 	# Search for upgrade-in-progress.html files in DocumentRoots
@@ -476,31 +467,28 @@ discover_apache_configs() {
 		echo "Searching for upgrade HTML files..." >&2
 	fi
 	
-	# Use associative array to avoid duplicates
-	local -A seen_html
-	
 	# Search in DocumentRoots from VirtualHost files (all distributions)
+	local html_name="lucee-upgrade-in-progress.html"
+	# Avoid duplicates from vhosts sharing docroot e.g. for ports 80 and 443
+	local -A seen_html
 	for apache_dir in "${apache_dirs[@]}"; do
 		[ -d "$apache_dir" ] || continue
 		
 		# Check Debian-style sites directories
-		for sites_dir in "$apache_dir/sites-available" "$apache_dir/sites-enabled"; do
-			if [ -d "$sites_dir" ]; then
-				for vhost_file in "$sites_dir"/*.conf; do
-					[ -f "$vhost_file" ] || continue
-					local docroot
-					docroot=$(grep -i '^[[:space:]]*DocumentRoot' "$vhost_file" | head -1 | awk '{print $2}' | tr -d '"')
-					if [ -n "$docroot" ]; then
-						for html_name in "upgrade-in-progress.html" "lucee-upgrade-in-progress.html"; do
-							if [ -f "${docroot}/${html_name}" ] && [ -z "${seen_html["${docroot}/${html_name}"]}" ]; then
-								upgrade_html_files+=("${docroot}/${html_name}")
-								seen_html["${docroot}/${html_name}"]=1
-							fi
-						done
+		sites_dir="$apache_dir/sites-available"
+		if [ -d "$sites_dir" ]; then
+			for vhost_file in "$sites_dir"/*.conf; do
+				[ -f "$vhost_file" ] || continue
+				local docroot
+				docroot=$(grep -i '^[[:space:]]*DocumentRoot' "$vhost_file" | head -1 | awk '{print $2}' | tr -d '"')
+				if [ -n "$docroot" ]; then
+					if [ -f "${docroot}/${html_name}" ] && [ -z "${seen_html["${docroot}/${html_name}"]}" ]; then
+						upgrade_html_files+=("${docroot}/${html_name}")
+						seen_html["${docroot}/${html_name}"]=1
 					fi
-				done
-			fi
-		done
+				fi
+			done
+		fi
 		
 		# Check RHEL/Rocky-style conf.d files
 		if [ -d "$apache_dir/conf.d" ]; then
@@ -513,12 +501,10 @@ discover_apache_configs() {
 				local docroot
 				docroot=$(grep -i '^[[:space:]]*DocumentRoot' "$vhost_file" | head -1 | awk '{print $2}' | tr -d '"')
 				if [ -n "$docroot" ]; then
-					for html_name in "upgrade-in-progress.html" "lucee-upgrade-in-progress.html"; do
-						if [ -f "${docroot}/${html_name}" ] && [ -z "${seen_html["${docroot}/${html_name}"]}" ]; then
-							upgrade_html_files+=("${docroot}/${html_name}")
-							seen_html["${docroot}/${html_name}"]=1
-						fi
-					done
+					if [ -f "${docroot}/${html_name}" ] && [ -z "${seen_html["${docroot}/${html_name}"]}" ]; then
+						upgrade_html_files+=("${docroot}/${html_name}")
+						seen_html["${docroot}/${html_name}"]=1
+					fi
 				fi
 			done
 		fi
@@ -529,13 +515,14 @@ discover_apache_configs() {
 	local -A seen_dirs
 	local -A seen_site_includes
 	
-	if [ -n "$UPG_DIR" ] && [ -d "${UPG_DIR}/site-includes-for-404" ]; then
-		include_dirs+=("${UPG_DIR}/site-includes-for-404")
-		seen_dirs["${UPG_DIR}/site-includes-for-404"]=1
+	if [ -n "$HTTPD_LUCEE_ROOT" ] && [ -f "${HTTPD_LUCEE_ROOT}/lucee-upgrade-in-progress.conf" ]; then
+		site_includes+=("${HTTPD_LUCEE_ROOT}/lucee-upgrade-in-progress.conf")
+		seen_site_includes["${HTTPD_LUCEE_ROOT}/lucee-upgrade-in-progress.conf"]=1
 	fi
 	
-	if [ -d "/opt/lucee/sys/upgrade-in-progress/site-includes-for-404" ] && [ -z "${seen_dirs['/opt/lucee/sys/upgrade-in-progress/site-includes-for-404']}" ]; then
-		include_dirs+=("/opt/lucee/sys/upgrade-in-progress/site-includes-for-404")
+	if [ -n "$HTTPD_LUCEE_ROOT" ] && [ -d "${HTTPD_LUCEE_ROOT}/site-includes-for-404" ]; then
+		include_dirs+=("${HTTPD_LUCEE_ROOT}/site-includes-for-404")
+		seen_dirs["${HTTPD_LUCEE_ROOT}/site-includes-for-404"]=1
 	fi
 	
 	for include_dir in "${include_dirs[@]}"; do
@@ -549,20 +536,6 @@ discover_apache_configs() {
 			fi
 		done < <(find "$include_dir" -type f -name "*.conf" -print0 2>/dev/null)
 	done
-	
-	# Also check for main upgrade config files that act as per-site includes
-	
-	# Add UPG_DIR version if it exists and is different from the hardcoded path
-	if [ -n "$UPG_DIR" ] && [ -f "${UPG_DIR}/lucee-upgrade-in-progress.conf" ]; then
-		site_includes+=("${UPG_DIR}/lucee-upgrade-in-progress.conf")
-		seen_site_includes["${UPG_DIR}/lucee-upgrade-in-progress.conf"]=1
-	fi
-	
-	# Add hardcoded path only if it's different from UPG_DIR
-	if [ -f "/opt/lucee/sys/upgrade-in-progress/lucee-upgrade-in-progress.conf" ] && [ -z "${seen_site_includes["/opt/lucee/sys/upgrade-in-progress/lucee-upgrade-in-progress.conf"]}" ]; then
-		site_includes+=("/opt/lucee/sys/upgrade-in-progress/lucee-upgrade-in-progress.conf")
-		seen_site_includes["/opt/lucee/sys/upgrade-in-progress/lucee-upgrade-in-progress.conf"]=1
-	fi
 	
 	# Also find cPanel userdata upgrade-in-progress files (these are per-site includes)
 	for apache_dir in "${apache_dirs[@]}"; do
@@ -612,47 +585,6 @@ discover_apache_configs() {
 		IFS=$'\n' modified_primary_configs=($(sort <<<"${modified_primary_configs[*]}"))
 	fi
 	
-	# Search for legacy files from older versions of the upgrade system
-	if [ "$show_progress" = "true" ]; then
-		echo "Searching for legacy upgrade files..." >&2
-	fi
-	
-	# Legacy files in /opt/lucee/sys (pre-upgrade-in-progress subdirectory)
-	if [ -d "/opt/lucee/sys" ]; then
-		local legacy_patterns=(
-			"configure-sites-for-upgrade-in-progress.sh"
-			"get-lucee-sites-for-upgrade-in-progress.sh"
-			"sites-configured-for-upgrade-in-progress.txt"
-			"upgrade-in-progress.html"
-			"upgrade-in-progress-nonroot.conf"
-			"upgrade-in-progress-root.conf"
-			"upgrade-in-progress.sh"
-		)
-		
-		for pattern in "${legacy_patterns[@]}"; do
-			if [ -f "/opt/lucee/sys/$pattern" ]; then
-				legacy_files+=("/opt/lucee/sys/$pattern")
-			fi
-		done
-	fi
-	
-	# upgrade-in-progress.html is legacy (was renamed to lucee-upgrade-in-progress.html)
-	local remaining_html_files=()
-	for html_file in "${upgrade_html_files[@]}"; do
-		if [[ "$html_file" == *"/upgrade-in-progress.html" ]]; then
-			legacy_files+=("$html_file")
-		else
-			remaining_html_files+=("$html_file")
-		fi
-	done
-	# Update upgrade_html_files to only contain non-legacy files
-	upgrade_html_files=("${remaining_html_files[@]}")
-	
-	# Sort legacy files
-	if [ ${#legacy_files[@]} -gt 0 ]; then
-		IFS=$'\n' legacy_files=($(sort <<<"${legacy_files[*]}"))
-	fi
-	
 	# Generate output based on format
 	case "$output_format" in
 		"json")
@@ -685,9 +617,6 @@ $(printf '\t\t"%s"' "${site_includes[@]}" | sed 's/$/,/' | sed '$s/,$//')
 	],
 	"modified_primary_configs": [
 $(printf '\t\t"%s"' "${modified_primary_configs[@]}" | sed 's/$/,/' | sed '$s/,$//')
-	],
-	"legacy_files": [
-$(printf '\t\t"%s"' "${legacy_files[@]}" | sed 's/$/,/' | sed '$s/,$//')
 	]
 }
 EOF
@@ -726,9 +655,6 @@ EOF
 				echo ""
 				echo "Per-site include files (${#site_includes[@]}):"
 				printf "  %s\n" "${site_includes[@]}"
-				echo ""
-				echo "Legacy files from older versions (${#legacy_files[@]}):"
-				printf "  %s\n" "${legacy_files[@]}"
 			} > "$temp_file"
 			;;
 		"paths-only")
@@ -740,7 +666,6 @@ EOF
 				printf "%s\n" "${upgrade_html_files[@]}"
 				printf "%s\n" "${site_includes[@]}"
 				printf "%s\n" "${modified_primary_configs[@]}"
-			printf "%s\n" "${legacy_files[@]}"
 			} > "$temp_file"
 			;;
 	esac
@@ -839,4 +764,15 @@ has_lucee_proxy_config() {
 	else
 		return 1
 	fi
+}
+
+# Excecute sed -i using tmp file then cp -f --no-preserve=all and rm tmp
+sed_i_nopreserve() {
+	local pattern="$1"
+	local file="$2"
+	local tmp=$(mktemp)
+	cat "$file" > "$tmp"
+	sed -i "$pattern" "$tmp"
+	cp -f --no-preserve=all "$tmp" "$file"
+	rm -f "$tmp"
 }
