@@ -106,9 +106,11 @@ fi
 
 error_if_include_not_found() {
 	local file="$1"
-	echo "Error: Required include not found: $file"
-	echo "Run deploy.sh, then retry."
-	exit 1
+	if [ ! -f "$file" ]; then
+		echo "Error: Required include not found: $file"
+		echo "Run deploy.sh, then retry."
+		exit 1
+	fi
 }
 
 error_if_include_not_found "${UPG_DIR}/lucee-detect-upgrade.conf"
@@ -193,10 +195,15 @@ done
 execute_or_simulate() {
 	local action="$1"
 	shift
-	
-	if [ "$PREVIEW_MODE" = true ]; then
-		printf "\nPending "
+
+	if [ "$action" = "backup_file" ] && [ ! -f "$1" ]; then
+		return 0
 	fi
+
+	if [ "$PREVIEW_MODE" = true ]; then
+		printf "Pending "
+	fi
+
 	case "$action" in
 		"create_dir")
 			echo "Create Directory (if not exists): $1"
@@ -214,9 +221,6 @@ execute_or_simulate() {
 			echo "Delete: $1"
 			;;
 		"backup_file")
-			if [ -f "$1" ]; then
-				return 0
-			fi
 			echo "Backup: $1"
 			;;
 		"enable_conf")
@@ -227,7 +231,6 @@ execute_or_simulate() {
 			;;
 		"apache_reload")
 			echo "Apache Reload"
-			return 0
 			;;
 		*)
 			echo "$action $*"
@@ -446,7 +449,7 @@ ensure_include_detect_upgrade_in_vhost() {
 	# Backup the file before making changes
 	execute_or_simulate "backup_file" "$vhost_file"
 	
-	echo "${PREVIEW_PREFIX}Ensuring ${HTTPD_LUCEE_ROOT}/lucee-detect-upgrade.conf is included in $vhost_file"
+	echo "${PREVIEW_PREFIX}Ensuring lucee-detect-upgrade.conf is included in $vhost_file"
 	
 	[ "$PREVIEW_MODE" = true ] && return 0
 
@@ -1024,7 +1027,7 @@ ensure_global_confs() {
 		if [ -f "/etc/apache2/conf-enabled/lucee-proxy.conf" ]; then
 			proxy_enabled=true
 		fi
-		if [ "$proxy_enabled" = true ]; then
+		if [ "$proxy_enabled" = true ] || [ "$PREVIEW_MODE" = true ]; then
 			echo "lucee-proxy.conf enabled"
 		elif [ "$proxy_available" = true ]; then
 			echo "lucee-proxy.conf available but not enabled"
@@ -1066,7 +1069,9 @@ ensure_global_confs() {
 
 copy_upgrade_html() {
 	local docroot=$1
+	echo -n "  "
 	execute_or_simulate "backup_file" "${docroot}/lucee-upgrade-in-progress.html"
+	echo -n "  "
 	execute_or_simulate "copy_file" "${UPG_DIR}/lucee-upgrade-in-progress.html" "${docroot}/lucee-upgrade-in-progress.html"
 }
 
