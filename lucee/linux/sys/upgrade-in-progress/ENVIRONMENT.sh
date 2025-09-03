@@ -18,12 +18,14 @@ else
 fi
 
 # HTTPD_ROOT
-cmd=$(command -v apache2 || command -v httpd)
+# Prefer control commands (apache2ctl/apachectl) over direct binaries (apache2/httpd)
+# as they properly set up the environment variables
+cmd=$(command -v apache2ctl || command -v apachectl || command -v httpd)
 if [ -n "$cmd" ]; then
-  HTTPD_ROOT=$($cmd -V | awk -F'"' '/HTTPD_ROOT/ {print $2}')
+	HTTPD_ROOT=$($cmd -V 2>/dev/null | awk -F'"' '/HTTPD_ROOT/ {print $2}')
 else
 	printf "\nERROR: No Apache controller found. Verify that Apache is installed and try again.\n"
-  exit 1
+	exit 1
 fi
 
 HTTPD_LUCEE_ROOT="${HTTPD_ROOT}/lucee-upgrade-in-progress"
@@ -45,9 +47,9 @@ if [ "$IS_DEBIAN" = false ] && [ -z "$CONF_DIR" ]; then
 	exit 1
 fi
 
-# if this is deploy.sh, exit 0
+# if this is deploy.sh, return 0
 if [ -f "${BASH_SOURCE[0]:-$0}" ]; then
-	exit 0
+	return 0
 fi
 
 # IS_CPANEL
@@ -59,7 +61,7 @@ fi
 
 SCRIPT_FILENAME=$(basename "$0")
 if [ "$SCRIPT_FILENAME" = "deploy.sh" ]; then
-	exit 0
+	return 0
 fi
 
 # Determine library directory, resolving symlinks where available
