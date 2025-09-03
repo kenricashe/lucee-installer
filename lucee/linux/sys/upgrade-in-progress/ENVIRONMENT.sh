@@ -48,7 +48,8 @@ if [ "$IS_DEBIAN" = false ] && [ -z "$CONF_DIR" ]; then
 fi
 
 # if this is deploy.sh, return 0
-if [ -f "${BASH_SOURCE[0]:-$0}" ]; then
+SCRIPT_FILENAME=$(basename "$0")
+if [ "$SCRIPT_FILENAME" = "deploy.sh" ]; then
 	return 0
 fi
 
@@ -57,11 +58,6 @@ if [ -f "/usr/local/cpanel/cpanel" ]; then
 	IS_CPANEL=true
 else
 	IS_CPANEL=false
-fi
-
-SCRIPT_FILENAME=$(basename "$0")
-if [ "$SCRIPT_FILENAME" = "deploy.sh" ]; then
-	return 0
 fi
 
 # Determine library directory, resolving symlinks where available
