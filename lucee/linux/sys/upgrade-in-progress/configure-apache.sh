@@ -446,10 +446,6 @@ ensure_include_detect_upgrade_in_vhost() {
 	
 	[ -f "$vhost_file" ] || return 1
 	
-	# Backup the file before making changes
-	[ -f "$vhost_file" ] && echo -n "  "
-	execute_or_simulate "backup_file" "$vhost_file"
-	
 	echo "  ${PREVIEW_PREFIX}Ensuring lucee-detect-upgrade.conf is included in $vhost_file"
 	
 	[ "$PREVIEW_MODE" = true ] && return 0
@@ -511,8 +507,6 @@ configure_site_includes() {
 		generate_site_404_include "$domain" "$port" "$error_404_block"
 		
 		# Comment out original 404s
-		[ -f "$conf_file" ] && echo -n "  "
-		execute_or_simulate "backup_file" "$conf_file"
 		comment_all_404_lines "$conf_file"
 		
 		if [ "$from_htaccess" = "true" ] && ! grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
@@ -1098,9 +1092,13 @@ configure_site_debian() {
 	
 	local ssl_404_block=""
 	if [ -f "$ssl_conf_file" ]; then
-		echo "  ${PREVIEW_PREFIX}Checking $ssl_conf_file"
+		echo -n "  "
+		execute_or_simulate "backup_file" "$ssl_conf_file"
 		
-		# Check if per-site include already exists
+		# Ensure detection include is present
+		ensure_include_detect_upgrade_in_vhost "$ssl_conf_file" "$domain" "443"
+		
+		# Check if per-site 404 include already exists
 		if has_site_include_file_for_404 "$domain" "443"; then
 			echo "  ${PREVIEW_PREFIX}Per-site include already exists for ${domain}:443; ensuring vhost includes it"
 			add_include_404_to_vhost "$ssl_conf_file" "$domain" "443"
@@ -1139,8 +1137,6 @@ configure_site_debian() {
 			# Generate per-site include file if we have a 404 block
 			configure_site_includes "$domain" "443" "$ssl_conf_file" "$docroot" "$ssl_404_block" "$ssl_from_htaccess"
 		fi
-		
-		ensure_include_detect_upgrade_in_vhost "$ssl_conf_file" "$domain" "443"
 	
 	else
 		echo "  ${PREVIEW_PREFIX}No SSL VirtualHost found for $domain"
@@ -1155,9 +1151,13 @@ configure_site_debian() {
 	fi
 
 	if [ -f "$http_conf_file" ]; then
-		echo "  ${PREVIEW_PREFIX}Checking $http_conf_file"
+		echo -n "  "
+		execute_or_simulate "backup_file" "$http_conf_file"
 		
-		# Check if per-site include already exists
+		# Ensure detection include is present
+		ensure_include_detect_upgrade_in_vhost "$http_conf_file" "$domain" "80"
+		
+		# Check if per-site 404 include already exists
 		if has_site_include_file_for_404 "$domain" "80"; then
 			echo "  ${PREVIEW_PREFIX}Per-site include already exists for ${domain}:80; ensuring vhost includes it"
 			add_include_404_to_vhost "$http_conf_file" "$domain" "80"
@@ -1203,9 +1203,6 @@ configure_site_debian() {
 			# Generate per-site include file if we have a 404 block
 			configure_site_includes "$domain" "80" "$http_conf_file" "$docroot" "$http_404_block" "$http_from_htaccess"
 		fi
-		
-		# Ensure detection include is present
-		ensure_include_detect_upgrade_in_vhost "$http_conf_file" "$domain" "80"
 		
 		# Best-effort warning if HTTP VirtualHost may not redirect to HTTPS
 		if ! grep -Eiq '(Redirect(\s+(permanent|temp|301|302))?\s+/?\s+https?://|RewriteRule\s+.*https://)' "$http_conf_file"; then
@@ -1391,7 +1388,11 @@ configure_site_redhat() {
 
 	local ssl_404_block=""
 	if [ -n "$ssl_conf_file" ]; then
-		echo "  ${PREVIEW_PREFIX}Checking $ssl_conf_file (SSL vhost)"
+		echo -n "  "
+		execute_or_simulate "backup_file" "$ssl_conf_file"
+		
+		# Ensure detection include is present
+		ensure_include_detect_upgrade_in_vhost "$ssl_conf_file" "$domain" "443"
 		
 		# Check if per-site include already exists
 		if has_site_include_file_for_404 "$domain" "443"; then
@@ -1432,9 +1433,6 @@ configure_site_redhat() {
 			# Generate per-site include file if we have a 404 block
 			configure_site_includes "$domain" "443" "$ssl_conf_file" "$docroot" "$ssl_404_block" "$ssl_from_htaccess"
 		fi
-		
-		# Ensure detection include is present
-		ensure_include_detect_upgrade_in_vhost "$ssl_conf_file" "$domain" "443"
 	
 	else
 		echo "  No SSL VirtualHost found for $domain"
@@ -1457,7 +1455,11 @@ configure_site_redhat() {
 	done < "$SITES_FILE"
 
 	if [ -n "$http_conf_file" ]; then
-		echo "  ${PREVIEW_PREFIX}Checking $http_conf_file (HTTP vhost)"
+		echo -n "  "
+		execute_or_simulate "backup_file" "$http_conf_file"
+		
+		# Ensure detection include is present
+		ensure_include_detect_upgrade_in_vhost "$http_conf_file" "$domain" "80"
 		
 		# Check if per-site include already exists
 		if has_site_include_file_for_404 "$domain" "80"; then
@@ -1505,9 +1507,6 @@ configure_site_redhat() {
 			# Generate per-site include file if we have a 404 block
 			configure_site_includes "$domain" "80" "$http_conf_file" "$docroot" "$http_404_block" "$http_from_htaccess"
 		fi
-		
-		# Ensure detection include is present
-		ensure_include_detect_upgrade_in_vhost "$http_conf_file" "$domain" "80"
 	
 	else
 		echo "  Info: No HTTP VirtualHost found for $domain"
@@ -1615,6 +1614,7 @@ if [ "$PREVIEW_MODE" = true ]; then
 	fi
 	
 	# Switch to execute mode and re-run main logic directly
+	clear
 	PREVIEW_MODE=false
 	PREVIEW_PREFIX=""
 	printf "\nExecuting Apache configuration changes...\n"
