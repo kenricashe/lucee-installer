@@ -1,8 +1,9 @@
 #!/bin/bash
 
 SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-. "${SCRIPT_DIR}/ENVIRONMENT.sh"
-. "${SCRIPT_DIR}/shared-functions.sh"
+PARENT_DIR="$(dirname "$SCRIPT_DIR")"
+. "${PARENT_DIR}/ENVIRONMENT.sh"
+. "${PARENT_DIR}/shared-functions.sh"
 
 # Set backup timestamp for this run to keep all backups in the same directory
 BACKUP_TS="$(date +%Y-%m-%d-%H%M%S)"
@@ -271,11 +272,6 @@ remove_errordocument_404() {
 remove_site_includes() {
 	local conf_file="$1"
 	[ -f "$conf_file" ] || return 0
-	
-	# Source ENVIRONMENT.sh to get directory variables
-	local script_dir
-	script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-	[ -f "$script_dir/ENVIRONMENT.sh" ] && source "$script_dir/ENVIRONMENT.sh"
 	
 	# Extract domain and port from conf file name
 	local domain port
