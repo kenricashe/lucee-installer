@@ -147,7 +147,7 @@ revert_vhost_changes() {
 		}
 		
 		# Remove Include line and mark to skip preceding empty line
-		/^[[:space:]]*Include[[:space:]]+\/etc\/apache2\/upgrade-in-progress\/lucee-detect-upgrade\.conf/ {
+		/^[[:space:]]*Include[[:space:]]+\/etc\/apache2\/lucee-upgrade-in-progress\/lucee-detect-upgrade\.conf/ {
 			skip_next_empty=1
 			blank_line_count = 0
 			next
