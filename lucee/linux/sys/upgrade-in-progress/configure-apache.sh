@@ -5,13 +5,6 @@ SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "${SCRIPT_DIR}/ENVIRONMENT.sh"
 . "${SCRIPT_DIR}/shared-functions.sh"
 
-# Set backup timestamp for this run to keep all backups in the same directory
-BACKUP_TS="$(date +%Y-%m-%d-%H%M%S)"
-
-# Default options
-PREVIEW_MODE=true
-PREVIEW_PREFIX="Pending: "
-
 # preflight: check that required Apache modules are enabled
 # mod_proxy, mod_setenvif, mod_headers
 # Group by module; detect per environment; emit a single error per missing module
@@ -118,12 +111,40 @@ error_if_include_not_found() {
 	exit 1
 }
 
-DETECT_CONF="${HTTPD_LUCEE_ROOT}/lucee-detect-upgrade.conf"
-UPG_HTML="${UPG_DIR}/lucee-upgrade-in-progress.html"
+error_if_include_not_found "${UPG_DIR}/lucee-detect-upgrade.conf"
+error_if_include_not_found "${UPG_DIR}/lucee-upgrade-in-progress.html"
 
-# preflight: required files must exist at path used by per-site Includes and docroot copy
-error_if_include_not_found "${DETECT_CONF}"
-error_if_include_not_found "${UPG_HTML}"
+if [ ! -f "$SITES_FILE" ]; then
+	echo "Lucee sites data file not found."
+	echo ""
+	echo "Press Enter to get data ..."
+	read -r _
+	"${UPG_DIR}/get-lucee-sites.sh"
+	# Re-check for generated file
+	if [ ! -f "$SITES_FILE" ]; then
+		echo "Error: Failed to generate sites data file. Aborting now."
+		exit 1
+	fi
+	clear
+fi
+
+# Set backup timestamp for this run to keep all backups in the same directory
+BACKUP_TS="$(date +%Y-%m-%d-%H%M%S)"
+
+# Default options
+PREVIEW_MODE=true
+PREVIEW_PREFIX="Pending: "
+
+# Use [.] instead of \. to avoid awk treating "\." as an escape in string constants
+LUCEE404_REGEX='^[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+/[^[:space:]]*[.](cfm|cfml|cfc|cfs)([^[:alnum:]_]|$)'
+# Any ErrorDocument 404 (any target), for precedence checks and comment-all behavior
+ANY404_REGEX='^[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+'
+
+# cPanel userdata paths (IS_CPANEL provided by ENVIRONMENT.sh)
+if [ "$IS_CPANEL" = true ]; then
+	CPANEL_USERDATA_SSL_PATH="${CONF_DIR}/userdata/ssl/2_4"
+	CPANEL_USERDATA_STD_PATH="${CONF_DIR}/userdata/std/2_4"
+fi
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -271,15 +292,14 @@ generate_site_404_include() {
 	local error_block="$3"
 	
 	# Create site includes directory if it doesn't exist
-	if [ "$PREVIEW_MODE" = false ]; then
-		mkdir -p "$SITE_INCLUDES_404_DIR"
-	fi
+	execute_or_simulate "create_dir" "$SITE_INCLUDES_404_DIR"
 	
 	# Generate include file path
 	local include_file="${SITE_INCLUDES_404_DIR}/${domain}-${port}.conf"
 	
 	# Create the include file with header in new location
 	execute_or_simulate "create_file" "$include_file"
+
 	if [ "$PREVIEW_MODE" = false ]; then
 		cat > "$include_file" << EOF
 # Auto-generated per-site include for ${domain}:${port}
@@ -289,15 +309,15 @@ generate_site_404_include() {
 <IfDefine !LUCEE_UPGRADE_IN_PROGRESS>
 EOF
 
-	# Add ErrorDocument 404 line if it exists
-	local error_line
-	error_line=$(extract_404_line_from_block "$error_block" || true)
-	if [ -n "$error_line" ]; then
-		append_with_single_newline $'\t'"$error_line" "$include_file"
-	fi
-	
-	# Add closing sections
-	cat >> "$include_file" << EOF
+		# Add ErrorDocument 404 line if it exists
+		local error_line
+		error_line=$(extract_404_line_from_block "$error_block" || true)
+		if [ -n "$error_line" ]; then
+			append_with_single_newline $'\t'"$error_line" "$include_file"
+		fi
+		
+		# Add closing sections
+		cat >> "$include_file" << EOF
 </IfDefine>
 
 <IfDefine LUCEE_UPGRADE_IN_PROGRESS>
@@ -305,9 +325,7 @@ EOF
 	Define LUCEE_SITE_HAS_CF_404
 </IfDefine>
 EOF
-	fi # end execute mode
-	
-	echo "$include_file"
+	fi # end non-preview block
 }
 
 # Add per-site include line to vhost if not already present
@@ -319,10 +337,9 @@ add_include_404_to_vhost() {
 	local include_file="${SITE_INCLUDES_404_DIR}/${domain_match}-${port_filter}.conf"
 	local include_line="Include ${include_file}"
 	
-	if [ "$PREVIEW_MODE" = true ]; then
-		echo "Preview Create: $include_file"
-		return 0
-	fi
+	execute_or_simulate "create_file" "$include_file"
+	
+	[ "$PREVIEW_MODE" = true ] && return 0
 	
 	[ -f "$vhost_file" ] || return 1
 	
@@ -370,124 +387,17 @@ add_include_404_to_vhost() {
 	fi
 }
 
-# Configure site includes for sites with CF 404 handlers
-configure_site_includes() {
-	local domain="$1"
-	local port="$2"
-	local conf_file="$3"
-	local docroot="$4"
-	local error_404_block="$5"
-	local from_htaccess="$6"
-	
-	# Only generate per-site include file if we have a CF 404 block
-	if [ -n "$error_404_block" ]; then
-		# Generate the include file with the 404 block
-		generate_site_404_include "$domain" "$port" "$error_404_block"
-		
-		# Comment out original 404s
-		execute_or_simulate "backup_file" "$conf_file"
-		comment_all_404_lines "$conf_file"
-		
-		if [ "$from_htaccess" = "true" ] && ! grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
-			execute_or_simulate "backup_file" "$docroot/.htaccess"
-			comment_all_404_lines "$docroot/.htaccess"
-		fi
-		
-		# Add per-site include to vhost
-		add_include_404_to_vhost "$conf_file" "$domain" "$port"
-	fi
-	
-	# Ensure detection include is present for all sites
-	ensure_include_detect_upgrade_in_vhost "$conf_file" "$domain" "$port"
-}
-
-# Check if a per-site include already exists for the given domain and port
-has_site_include_file_for_404() {
-	local domain="$1"
-	local port="$2"
-	local include_file="${SITE_INCLUDES_404_DIR}/${domain}-${port}.conf"
-	[ -f "$include_file" ]
-}
-
-# Use [.] instead of \. to avoid awk treating "\." as an escape in string constants
-LUCEE404_REGEX='^[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+/[^[:space:]]*[.](cfm|cfml|cfc|cfs)([^[:alnum:]_]|$)'
-# Any ErrorDocument 404 (any target), for precedence checks and comment-all behavior
-ANY404_REGEX='^[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+'
-
-if [ ! -f "$SITES_FILE" ]; then
-	echo "Lucee sites data file not found."
-	echo ""
-	echo "Press Enter to get data ..."
-	read -r _
-	"${UPG_DIR}/get-lucee-sites.sh"
-	# Re-check for generated file
-	if [ ! -f "$SITES_FILE" ]; then
-		echo "Error: Failed to generate sites data file. Aborting now."
-		exit 1
-	fi
-	clear
-fi
-
-# cPanel userdata paths (IS_CPANEL provided by ENVIRONMENT.sh)
-if [ "$IS_CPANEL" = true ]; then
-	CPANEL_USERDATA_SSL_PATH="${CONF_DIR}/userdata/ssl/2_4"
-	CPANEL_USERDATA_STD_PATH="${CONF_DIR}/userdata/std/2_4"
-fi
-
-# Extract the last matching ErrorDocument 404 *.cf* even if it is commented (e.g., from prior runs)
-# Strips leading '# ' from the extracted lines and excludes our NOTE lines
-extract_404_block_allow_commented() {
-	local file="$1"
-	[ -f "$file" ] || return 1
-	awk -v IGNORECASE=1 -v pat="$LUCEE404_REGEX" '
-		{ lines[++n]=$0 }
-		# match active or commented ErrorDocument 404 *.cf*
-		$0 ~ /^[\t ]*#?[\t ]*ErrorDocument[\t ]+404[\t ]+/ && $0 ~ pat { ln=n }
-		END {
-			if (!ln) exit 1
-			start=ln-1
-			while (start>=1 && (lines[start] ~ /^[\t ]*#/ || lines[start] ~ /^[\t ]*$/)) start--
-			for (i=start+1; i<ln; i++) {
-				if (lines[i] ~ /NOTE: ErrorDocument 404/) continue
-				# strip leading comment markers
-				sub(/^[\t ]*#[\t ]?/, "", lines[i])
-				print lines[i]
-			}
-			line=lines[ln]
-			sub(/^[\t ]*#[\t ]?/, "", line)
-			print line
-		}
-	' "$file"
-}
-
-# Return 0 if the last ErrorDocument 404 in file targets .cf*, else return 1
-last_404_is_cf() {
-	local file="$1"
-	[ -f "$file" ] || return 1
-	awk -v IGNORECASE=1 '
-		/^[\t ]*#/ { next }
-		# capture last ErrorDocument 404 target (rest of line after the code)
-		match($0, /^[\t ]*ErrorDocument[\t ]+404[\t ]+(.*)$/, m) { last=m[1] }
-		END {
-			if (!length(last)) exit 1
-			# consider it CF only if it ends with .cfm/.cfml/.cfc/.cfs (optionally followed by non-word chars)
-			if (last ~ /\.(cfm|cfml|cfc|cfs)([^[:alnum:]_]|$)/) exit 0; else exit 1
-		}
-	' "$file"
-}
-
 # Comment out ALL ErrorDocument 404 lines (any target) with an explanatory note
 comment_all_404_lines() {
 	local file="$1"
 	[ -f "$file" ] || return 0
-	local tmp base
-	# Preserve ownership and mode (important for user-owned .htaccess)
-	local _uid _gid _mode
-	_uid=$(stat -c '%u' "$file" 2>/dev/null || echo "")
-	_gid=$(stat -c '%g' "$file" 2>/dev/null || echo "")
-	_mode=$(stat -c '%a' "$file" 2>/dev/null || echo "")
-	tmp=$(mktemp)
-	base=$(basename "$file")
+	
+	echo "${PREVIEW_PREFIX}Comment out all ErrorDocument 404 lines in $file"
+	
+	[ "$PREVIEW_MODE" = false ] && return 0
+	
+	local tmp=$(mktemp)
+	local base=$(basename "$file")
 	if [ "$base" = ".htaccess" ]; then
 		awk -v IGNORECASE=1 -v pat="$ANY404_REGEX" -v note="# NOTE: ErrorDocument 404 moved by /opt/lucee/sys/upgrade-in-progress/configure-apache.sh into Apache vhost/userdata and disabled during upgrades. See per-site Include directives." '
 			{ lines[++n]=$0 }
@@ -518,87 +428,8 @@ comment_all_404_lines() {
 		' "$file" > "$tmp"
 	fi
 	# Write back in place to preserve existing mode/ownership
-	cat "$tmp" > "$file"
+	cp -f --no-preserve=all "$tmp" "$file"
 	rm -f "$tmp"
-}
-
-# Extract the first matching ErrorDocument 404 *.cf* line and its contiguous preceding comments
-# Prints the block to stdout; returns non-zero if not found
-extract_404_block() {
-	local file="$1"
-	[ -f "$file" ] || return 1
-	awk -v IGNORECASE=1 -v pat="$LUCEE404_REGEX" '
-		{ lines[++n]=$0 }
-		$0 ~ pat { ln=n }
-		END {
-			if (!ln) exit 1
-			start=ln-1
-			while (start>=1 && (lines[start] ~ /^[\t ]*#/ || lines[start] ~ /^[\t ]*$/)) start--
-			for (i=start+1; i<ln; i++) print lines[i]
-			print lines[ln]
-		}
-	' "$file"
-}
-
-# Remove the first matching ErrorDocument 404 *.cf* line and its contiguous preceding comments from file (in-place)
-remove_404_block() {
-	local file="$1"
-	[ -f "$file" ] || return 0
-	local tmp
-	tmp=$(mktemp)
-	local base
-	base=$(basename "$file")
-	if [ "$base" = ".htaccess" ]; then
-		# In .htaccess: comment out ALL ErrorDocument 404 lines with a note; migration uses the last via extract_404_block()
-		awk -v IGNORECASE=1 -v pat="$LUCEE404_REGEX" -v note="# NOTE: ErrorDocument 404 moved by /opt/lucee/sys/upgrade-in-progress/configure-apache.sh into Apache vhost/userdata and disabled during upgrades. See per-site Include directives." '
-			{ lines[++n]=$0 }
-			END {
-				for (i=1;i<=n;i++) {
-					if (lines[i] ~ pat) {
-						print note
-						if (lines[i] ~ /^[\t ]*#/) {
-							print lines[i]
-						}
-						else {
-							print "# " lines[i]
-						}
-					}
-					else {
-						print lines[i]
-					}
-				}
-			}
-		' "$file" > "$tmp"
-	else
-		# In vhost/userdata files: comment out ALL ErrorDocument 404 lines with a note
-		awk -v IGNORECASE=1 -v pat="$LUCEE404_REGEX" -v note="# NOTE: ErrorDocument 404 disabled/commented by /opt/lucee/sys/upgrade-in-progress/configure-apache.sh (managed inline and wrapped in vhost/userdata)." '
-			{ lines[++n]=$0 }
-			END {
-				for (i=1;i<=n;i++) {
-					if (lines[i] ~ pat) {
-						print note
-						if (lines[i] ~ /^[\t ]*#/) {
-							print lines[i]
-						}
-						else {
-							print "# " lines[i]
-						}
-					}
-					else {
-						print lines[i]
-					}
-				}
-			}
-		' "$file" > "$tmp"
-	fi
-	if [ $? -eq 0 ]; then
-		cp -f --no-preserve=all "$tmp" "$file"
-		rm -f "$tmp"
-		return 0
-	else
-		rm -f "$tmp"
-		return 1
-	fi
 }
 
 # Ensure the lucee-detect-upgrade.conf Include line exists inside the targeted vhost (by domain and optional port).
@@ -608,17 +439,16 @@ ensure_include_detect_upgrade_in_vhost() {
 	local port_filter="$3"
 	local tmp
 	
-	local include_line="Include ${DETECT_CONF}"
+	local include_line="Include ${HTTPD_LUCEE_ROOT}/lucee-detect-upgrade.conf"
 	
 	[ -f "$vhost_file" ] || return 1
 	
 	# Backup the file before making changes
 	execute_or_simulate "backup_file" "$vhost_file"
 	
-	echo "${PREVIEW_PREFIX}Ensuring ${DETECT_CONF} is included in $vhost_file"
-	if [ "$PREVIEW_MODE" = true ]; then
-		return 0
-	fi
+	echo "${PREVIEW_PREFIX}Ensuring ${HTTPD_LUCEE_ROOT}/lucee-detect-upgrade.conf is included in $vhost_file"
+	
+	[ "$PREVIEW_MODE" = true ] && return 0
 
 	tmp=$(mktemp)
 	awk -v dom="$domain_match" -v port="$port_filter" -v inc_line="$include_line" -v inc_path="$DETECT_CONF" '
@@ -662,42 +492,101 @@ ensure_include_detect_upgrade_in_vhost() {
 	fi
 }
 
-# Check if mod_headers is enabled (needed for X-Lucee-Upgrade header polling)
-# Uses APACHE_CONTROLLER from ENVIRONMENT.sh
-headers_module_enabled() {
-	case "$APACHE_CONTROLLER" in
-		apache2)
-			apache2ctl -M 2>/dev/null | grep -qiE '(^|[^[:alnum:]_])headers_module([^[:alnum:]_]|$)'
-			return $?
-			;;
-		httpd)
-			httpd -M 2>/dev/null | grep -qiE '(^|[^[:alnum:]_])headers_module([^[:alnum:]_]|$)'
-			return $?
-			;;
-		apachectl)
-			# Prefer httpd -M on RHEL-like systems; fall back to apachectl -t -D DUMP_MODULES; try apachectl -M last
-			if command -v httpd >/dev/null 2>&1; then
-				httpd -M 2>/dev/null | grep -qiE '(^|[^[:alnum:]_])headers_module([^[:alnum:]_]|$)'
-				return $?
-			else
-				if apachectl -t -D DUMP_MODULES 2>/dev/null | grep -qiE '(^|[^[:alnum:]_])headers_module([^[:alnum:]_]|$)'; then
-					return 0
-				fi
-				if apachectl -M 2>/dev/null | grep -qiE '(^|[^[:alnum:]_])headers_module([^[:alnum:]_]|$)'; then
-					return 0
-				fi
-				return 1
-			fi
-			;;
-		apache2ctl)
-			apache2ctl -M 2>/dev/null | grep -qiE '(^|[^[:alnum:]_])headers_module([^[:alnum:]_]|$)'
-			return $?
-			;;
-		*)
-			# If we can't detect, do not block; treat as enabled to avoid false alarms
-			return 0
-			;;
-	esac
+# Configure site includes for sites with CF 404 handlers
+configure_site_includes() {
+	local domain="$1"
+	local port="$2"
+	local conf_file="$3"
+	local docroot="$4"
+	local error_404_block="$5"
+	local from_htaccess="$6"
+	
+	# Only generate per-site include file if we have a CF 404 block
+	if [ -n "$error_404_block" ]; then
+		# Generate the include file with the 404 block
+		generate_site_404_include "$domain" "$port" "$error_404_block"
+		
+		# Comment out original 404s
+		execute_or_simulate "backup_file" "$conf_file"
+		comment_all_404_lines "$conf_file"
+		
+		if [ "$from_htaccess" = "true" ] && ! grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
+			execute_or_simulate "backup_file" "$docroot/.htaccess"
+			comment_all_404_lines "$docroot/.htaccess"
+		fi
+		
+		# Add per-site include to vhost
+		add_include_404_to_vhost "$conf_file" "$domain" "$port"
+	fi
+}
+
+# Check if a per-site include already exists for the given domain and port
+has_site_include_file_for_404() {
+	local domain="$1"
+	local port="$2"
+	local include_file="${SITE_INCLUDES_404_DIR}/${domain}-${port}.conf"
+	[ -f "$include_file" ]
+}
+
+# Extract the last matching ErrorDocument 404 *.cf* even if it is commented (e.g., from prior runs)
+# Strips leading '# ' from the extracted lines and excludes our NOTE lines
+# Does not modify file, only returns the block.
+extract_404_block_allow_commented() {
+	local file="$1"
+	[ -f "$file" ] || return 1
+	awk -v IGNORECASE=1 -v pat="$LUCEE404_REGEX" '
+		{ lines[++n]=$0 }
+		# match active or commented ErrorDocument 404 *.cf*
+		$0 ~ /^[\t ]*#?[\t ]*ErrorDocument[\t ]+404[\t ]+/ && $0 ~ pat { ln=n }
+		END {
+			if (!ln) exit 1
+			start=ln-1
+			while (start>=1 && (lines[start] ~ /^[\t ]*#/ || lines[start] ~ /^[\t ]*$/)) start--
+			for (i=start+1; i<ln; i++) {
+				if (lines[i] ~ /NOTE: ErrorDocument 404/) continue
+				# strip leading comment markers
+				sub(/^[\t ]*#[\t ]?/, "", lines[i])
+				print lines[i]
+			}
+			line=lines[ln]
+			sub(/^[\t ]*#[\t ]?/, "", line)
+			print line
+		}
+	' "$file"
+}
+
+# Return 0 if the last ErrorDocument 404 in file targets .cf*, else return 1
+last_404_is_cf() {
+	local file="$1"
+	[ -f "$file" ] || return 1
+	awk -v IGNORECASE=1 '
+		/^[\t ]*#/ { next }
+		# capture last ErrorDocument 404 target (rest of line after the code)
+		match($0, /^[\t ]*ErrorDocument[\t ]+404[\t ]+(.*)$/, m) { last=m[1] }
+		END {
+			if (!length(last)) exit 1
+			# consider it CF only if it ends with .cfm/.cfml/.cfc/.cfs (optionally followed by non-word chars)
+			if (last ~ /\.(cfm|cfml|cfc|cfs)([^[:alnum:]_]|$)/) exit 0; else exit 1
+		}
+	' "$file"
+}
+
+# Extract the first matching ErrorDocument 404 *.cf* line and its contiguous preceding comments
+# Prints the block to stdout; returns non-zero if not found
+extract_404_block() {
+	local file="$1"
+	[ -f "$file" ] || return 1
+	awk -v IGNORECASE=1 -v pat="$LUCEE404_REGEX" '
+		{ lines[++n]=$0 }
+		$0 ~ pat { ln=n }
+		END {
+			if (!ln) exit 1
+			start=ln-1
+			while (start>=1 && (lines[start] ~ /^[\t ]*#/ || lines[start] ~ /^[\t ]*$/)) start--
+			for (i=start+1; i<ln; i++) print lines[i]
+			print lines[ln]
+		}
+	' "$file"
 }
 
 find_active_lucee_proxy_conf_path() {
@@ -733,10 +622,9 @@ generate_allowed_ip_proxy_include() {
 	
 	local filename="lucee-proxy-for-allowed-ip.conf"
 
-	if [ "$PREVIEW_MODE" = true ]; then
-		echo "${PREVIEW_PREFIX}Create $filename"
-		return 0
-	fi
+	execute_or_simulate "create_file" "${HTTPD_LUCEE_ROOT}/${filename}"
+
+	[ "$PREVIEW_MODE" = true ] && return 0
 
 	local src=$(find_active_lucee_proxy_conf_path)
 	if [ -z "$src" ]; then
@@ -751,8 +639,7 @@ generate_allowed_ip_proxy_include() {
 	fi
 
 	local dest="${HTTPD_LUCEE_ROOT}/${filename}"
-	local tmp
-	tmp=$(mktemp)
+	local tmp=$(mktemp)
 
 	# Derive backend target from the active lucee-proxy.conf
 	# Prefer balancer://, then ajp://, then http(s)://; fallback to http://127.0.0.1:8888
@@ -937,6 +824,8 @@ replace_proxy_with_comment() {
 	local config_file="$1"
 	local proxy_conf_path="$2"
 	[ -f "$config_file" ] || return 1
+
+	[ "$PREVIEW_MODE" = true ] && return 0
 	
 	local tmp
 	tmp=$(mktemp)
@@ -1074,6 +963,8 @@ migrate_lucee_proxy_config() {
 	# Backup source file
 	execute_or_simulate "backup_file" "$source_file"
 	
+	[ "$PREVIEW_MODE" = true ] && return 0
+	
 	# Write proxy block to lucee-proxy.conf
 	echo "$proxy_block" > "$proxy_conf_path"
 	
@@ -1082,7 +973,7 @@ migrate_lucee_proxy_config() {
 	
 	# Replace original block with comment indicating migration
 	if replace_proxy_with_comment "$source_file" "$proxy_conf_path"; then
-		echo "${PREVIEW_PREFIX}Successfully migrated Lucee proxy configuration"
+		echo "Successfully migrated Lucee proxy configuration"
 		return 0
 	else
 		echo "Error: Failed to replace proxy block with migration comment"
@@ -1099,8 +990,13 @@ ensure_global_confs() {
 
 	execute_or_simulate "create_dir" "${HTTPD_LUCEE_ROOT}"
 
+	# if lucee-detect-upgrade.conf does not exist in HTTPD_LUCEE_ROOT, copy it from UPG_DIR
+	if [ ! -f "${HTTPD_LUCEE_ROOT}/lucee-detect-upgrade.conf" ]; then
+		execute_or_simulate "copy_file" "${UPG_DIR}/lucee-detect-upgrade.conf" "${HTTPD_LUCEE_ROOT}/lucee-detect-upgrade.conf"
+	fi
+
 	echo ""
-	echo "Checking for existing Lucee proxy configuration ..."
+	echo "Checking Lucee proxy configuration ..."
 
 	# Debian, Ubuntu, Pop!_OS, etc
 	if [ "$IS_DEBIAN" = true ]; then
@@ -1199,7 +1095,6 @@ configure_site_debian() {
 		if has_site_include_file_for_404 "$domain" "443"; then
 			echo "  ${PREVIEW_PREFIX}Per-site include already exists for ${domain}:443; ensuring vhost includes it"
 			add_include_404_to_vhost "$ssl_conf_file" "$domain" "443"
-			ensure_include_detect_upgrade_in_vhost "$ssl_conf_file" "$domain" "443"
 		else
 			# Extract 404 block for per-site include generation
 			local ssl_from_htaccess="false"
@@ -1234,10 +1129,10 @@ configure_site_debian() {
 			
 			# Generate per-site include file if we have a 404 block
 			configure_site_includes "$domain" "443" "$ssl_conf_file" "$docroot" "$ssl_404_block" "$ssl_from_htaccess"
-			
-			# Ensure detection include is present
-			ensure_include_detect_upgrade_in_vhost "$ssl_conf_file" "$domain" "443"
 		fi
+		
+		ensure_include_detect_upgrade_in_vhost "$ssl_conf_file" "$domain" "443"
+	
 	else
 		echo "  ${PREVIEW_PREFIX}No SSL VirtualHost found for $domain"
 	fi
@@ -1257,7 +1152,6 @@ configure_site_debian() {
 		if has_site_include_file_for_404 "$domain" "80"; then
 			echo "  ${PREVIEW_PREFIX}Per-site include already exists for ${domain}:80; ensuring vhost includes it"
 			add_include_404_to_vhost "$http_conf_file" "$domain" "80"
-			ensure_include_detect_upgrade_in_vhost "$http_conf_file" "$domain" "80"
 		else
 			# Extract 404 block for per-site include generation
 			local http_404_block=""
@@ -1299,14 +1193,16 @@ configure_site_debian() {
 			
 			# Generate per-site include file if we have a 404 block
 			configure_site_includes "$domain" "80" "$http_conf_file" "$docroot" "$http_404_block" "$http_from_htaccess"
-			
-			# Ensure detection include is present
-			ensure_include_detect_upgrade_in_vhost "$http_conf_file" "$domain" "80"
 		fi
+		
+		# Ensure detection include is present
+		ensure_include_detect_upgrade_in_vhost "$http_conf_file" "$domain" "80"
+		
 		# Best-effort warning if HTTP VirtualHost may not redirect to HTTPS
 		if ! grep -Eiq '(Redirect(\s+(permanent|temp|301|302))?\s+/?\s+https?://|RewriteRule\s+.*https://)' "$http_conf_file"; then
 			echo "  ${PREVIEW_PREFIX}Warning: HTTP vhost for $domain may not redirect to HTTPS. Ensure a proper 80->443 redirect is configured to avoid exposure over HTTP."
 		fi
+	
 	else
 		echo "  ${PREVIEW_PREFIX}Info: No HTTP configuration file found for $domain"
 	fi
@@ -1331,25 +1227,22 @@ configure_site_cpanel() {
 	echo "${PREVIEW_PREFIX}Processing site $domain with DocumentRoot: $docroot"
 	
 	# assuming cPanel docroot: /home/user/public_html
-	local user="${docroot#/home/}" # strip /home/
-	user="${user%%/*}"             # strip everything after first /
+	# parse user via pure Bash parameter expansion (no regex)
+	local user="${docroot#/home/}" # removes /home/ prefix
+	user="${user%%/*}"             # removes longest matching suffix i.e. everything after first /
 	
 	# Copy lucee-upgrade-in-progress.html to docroot
 	copy_upgrade_html "$docroot"
 	
-	# Create userdata directory
-	if [ "$PREVIEW_MODE" = false ]; then
-		mkdir -p ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}
-		mkdir -p ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}
-	else
-		echo "${PREVIEW_PREFIX}CREATE: userdata directories for ${user}/${domain}"
-	fi
+	# Create userdata directories
+	execute_or_simulate "create_dir" "${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}"
+	execute_or_simulate "create_dir" "${CPANEL_USERDATA_STD_PATH}/${user}/${domain}"
 
 	# Check if per-site includes already exist
 	if has_site_include_file_for_404 "$domain" "443" && has_site_include_file_for_404 "$domain" "80"; then
 		echo "  ${PREVIEW_PREFIX}Per-site includes already exist for ${domain}; updating userdata files"
 	else
-		# Extract 404 block from existing userdata or .htaccess if site had one previously
+		# Extract 404 block from existing .htaccess or userdata if any
 		local cp_404_block=""
 		local cp_from_htaccess="false"
 		
@@ -1419,50 +1312,41 @@ configure_site_cpanel() {
 	
 	# SSL userdata file
 	execute_or_simulate "backup_file" "${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf"
+	execute_or_simulate "create_file" "${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf"
+	
 	if [ "$PREVIEW_MODE" = false ]; then
 		cat > ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf << EOF
 # This file is automatically generated and managed by
 # ${UPG_DIR}/configure-apache.sh
 # Any manual changes will be overwritten when the script runs
 
-Include ${DETECT_CONF}
+Include ${HTTPD_LUCEE_ROOT}/lucee-detect-upgrade.conf
 
 EOF
-		
 		# Add per-site include if it exists
 		if [ -f "$ssl_include" ]; then
 			append_with_single_newline "Include $ssl_include" ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf
 		fi
-	else
-		echo "${PREVIEW_PREFIX}CREATE: ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf"
 	fi
 	
 	# HTTP userdata file
 	execute_or_simulate "backup_file" "${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf"
+	execute_or_simulate "create_file" "${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf"
+	
 	if [ "$PREVIEW_MODE" = false ]; then
 		cat > ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf << EOF
 # This file is automatically generated and managed by
 # ${UPG_DIR}/configure-apache.sh
 # Any manual changes will be overwritten when the script runs
 
-Include ${DETECT_CONF}
+Include ${HTTPD_LUCEE_ROOT}/lucee-detect-upgrade.conf
 
 EOF
-		
 		# Add per-site include if it exists
 		if [ -f "$http_include" ]; then
 			append_with_single_newline "Include $http_include" ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf
 		fi
-	else
-		echo "${PREVIEW_PREFIX}CREATE: ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf"
 	fi
-}
-
-# Function to pause for user input
-press_enter_to_continue() {
-	echo
-	echo "Press Enter to continue..."
-	read -r
 }
 
 # Function to configure RHEL sites
@@ -1499,7 +1383,6 @@ configure_site_redhat() {
 		if has_site_include_file_for_404 "$domain" "443"; then
 			echo "  ${PREVIEW_PREFIX}Per-site include already exists for ${domain}:443; ensuring vhost includes it"
 			add_include_404_to_vhost "$ssl_conf_file" "$domain" "443"
-			ensure_include_detect_upgrade_in_vhost "$ssl_conf_file" "$domain" "443"
 		else
 			# Extract 404 block for per-site include generation
 			local ssl_from_htaccess="false"
@@ -1534,10 +1417,11 @@ configure_site_redhat() {
 			
 			# Generate per-site include file if we have a 404 block
 			configure_site_includes "$domain" "443" "$ssl_conf_file" "$docroot" "$ssl_404_block" "$ssl_from_htaccess"
-			
-			# Ensure detection include is present
-			ensure_include_detect_upgrade_in_vhost "$ssl_conf_file" "$domain" "443"
 		fi
+		
+		# Ensure detection include is present
+		ensure_include_detect_upgrade_in_vhost "$ssl_conf_file" "$domain" "443"
+	
 	else
 		echo "  No SSL VirtualHost found for $domain"
 	fi
@@ -1565,7 +1449,6 @@ configure_site_redhat() {
 		if has_site_include_file_for_404 "$domain" "80"; then
 			echo "  ${PREVIEW_PREFIX}Per-site include already exists for ${domain}:80; ensuring vhost includes it"
 			add_include_404_to_vhost "$http_conf_file" "$domain" "80"
-			ensure_include_detect_upgrade_in_vhost "$http_conf_file" "$domain" "80"
 		else
 			# Extract 404 block for per-site include generation
 			local http_404_block=""
@@ -1607,10 +1490,11 @@ configure_site_redhat() {
 			
 			# Generate per-site include file if we have a 404 block
 			configure_site_includes "$domain" "80" "$http_conf_file" "$docroot" "$http_404_block" "$http_from_htaccess"
-			
-			# Ensure detection include is present
-			ensure_include_detect_upgrade_in_vhost "$http_conf_file" "$domain" "80"
 		fi
+		
+		# Ensure detection include is present
+		ensure_include_detect_upgrade_in_vhost "$http_conf_file" "$domain" "80"
+	
 	else
 		echo "  Info: No HTTP VirtualHost found for $domain"
 	fi
@@ -1646,12 +1530,13 @@ process_sites() {
 
 # Function to get user confirmation (only in preview mode)
 get_user_confirmation() {
-	if [ "$PREVIEW_MODE" = false ]; then
-		return 0
-	fi
+	
+	[ "$PREVIEW_MODE" = false ] && return 0
+	
 	echo ""
 	echo "Do you want to proceed with these changes? [y/N]"
 	read -r response
+
 	case "$response" in
 		[yY]|[yY][eE][sS])
 			return 0
@@ -1666,15 +1551,11 @@ get_user_confirmation() {
 # Main execution logic function
 run_main_logic() {
 	local env_type
-	# Debian, Ubuntu, Pop!_OS, etc
 	if [ "$IS_DEBIAN" = true ]; then
 		env_type="debian"
-	# has conf.d (Fedora, Red Hat, AlmaLinux, Rocky Linux, etc)
 	elif [ -n "$CONF_DIR" ]; then
-		# cPanel
 		if [ "$IS_CPANEL" = true ]; then
 			env_type="cpanel"
-		# NOT cPanel
 		else
 			env_type="redhat"
 		fi
@@ -1715,12 +1596,8 @@ if [ "$PREVIEW_MODE" = true ]; then
 	
 	# Switch to execute mode and re-run main logic directly
 	PREVIEW_MODE=false
-	echo "Executing Apache configuration changes..."
-	echo ""
-	
-	# Run the same logic again in execute mode
+	printf "\nExecuting Apache configuration changes...\n"
 	run_main_logic
 fi
 
-echo ""
-echo "DONE!"
+printf "\nDONE!\n"
