@@ -29,7 +29,7 @@ run_edit_sites() {
 
 run_edit_ip_allow() {
 	local TXT_FILE="${UPG_DIR}/ip-allow.txt"
-	local CONF_FILE="${LUCEE_HTTPD_ROOT}/ip-allow.conf"
+	local CONF_FILE="${HTTPD_LUCEE_ROOT}/ip-allow.conf"
 
 	# start with localhost defaults
 	if [ ! -f "${TXT_FILE}" ]; then

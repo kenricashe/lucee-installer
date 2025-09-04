@@ -624,9 +624,10 @@ generate_allowed_ip_proxy_include() {
 	
 	local filename="lucee-proxy-for-allowed-ip.conf"
 
-	execute_or_simulate "create_file" "${HTTPD_LUCEE_ROOT}/${filename}"
-
-	[ "$PREVIEW_MODE" = true ] && return 0
+	if [ "$PREVIEW_MODE" = true ]; then
+		execute_or_simulate "create_file" "${HTTPD_LUCEE_ROOT}/${filename}"
+		return 0
+	fi
 
 	local src=$(find_active_lucee_proxy_conf_path)
 	if [ -z "$src" ]; then
@@ -731,9 +732,9 @@ generate_allowed_ip_proxy_include() {
 		fi
 		execute_or_simulate "backup_file" "$dest"
 	fi
+	execute_or_simulate "create_file" "${HTTPD_LUCEE_ROOT}/${filename}"
 	cp -f --no-preserve=all "$tmp" "$dest"
 	rm -f "$tmp"
-	
 	return 0
 }
 

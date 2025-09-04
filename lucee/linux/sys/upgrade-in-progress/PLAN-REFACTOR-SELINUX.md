@@ -4,7 +4,7 @@ By simply storing all .conf files under Apache root directory, no need for seman
 
 ## Todo List
 
-- [x] Replace UPG_DIR with LUCEE_HTTPD_ROOT when copying .conf files
+- [x] Replace UPG_DIR with HTTPD_LUCEE_ROOT when copying .conf files
 
 - [x] Don't need normalize_conf_whitespace for auto-generated files e.g. userdata
 
@@ -23,7 +23,7 @@ By simply storing all .conf files under Apache root directory, no need for seman
 
 - [x] begin Lucee proxy
 
-## Replace UPG_DIR with LUCEE_HTTPD_ROOT when copying .conf files
+## Replace UPG_DIR with HTTPD_LUCEE_ROOT when copying .conf files
 
 - [x] execute_or_simulate "copy_file"
 
