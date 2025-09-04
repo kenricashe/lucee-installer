@@ -1000,7 +1000,9 @@ ensure_global_confs() {
 	echo ""
 	execute_or_simulate "create_dir" "${HTTPD_LUCEE_ROOT}"
 
-	create_ip_allow_txt_if_not_exist
+	if [ "$PREVIEW_MODE" = false ]; then
+		create_ip_allow_txt_if_not_exist
+	fi
 	if [ ! -f "${HTTPD_LUCEE_ROOT}/ip-allow.conf" ]; then
 		execute_or_simulate "build_ip_all_conf_from_txt"
 	fi

@@ -82,7 +82,7 @@ press_enter_to_continue() {
 	read -r _
 }
 
-IP_ALLOW_TXT_FILE="${HTTPD_LUCEE_ROOT}/ip-allow.txt"
+IP_ALLOW_TXT_FILE="${UPG_DIR}/ip-allow.txt"
 IP_ALLOW_CONF_FILE="${HTTPD_LUCEE_ROOT}/ip-allow.conf"
 
 create_ip_allow_txt_if_not_exist() {
