@@ -294,8 +294,8 @@ generate_site_404_include() {
 	local port="$2"
 	local error_block="$3"
 	
-	# Create site includes directory if it doesn't exist
-	if [ ! -d "$SITE_INCLUDES_404_DIR" ]; then
+	# Create site includes directory if it doesn't exist (and either not in preview mode or it's for port 443)
+	if [ ! -d "$SITE_INCLUDES_404_DIR" ] && ( [ "$PREVIEW_MODE" = false ] || [ "$port" = "443" ] ); then
 		echo -n "  "
 		execute_or_simulate "create_dir" "$SITE_INCLUDES_404_DIR"
 	fi
@@ -1244,7 +1244,9 @@ configure_site_cpanel() {
 	copy_upgrade_html "$docroot"
 	
 	# Create userdata directories
+	echo -n "  "
 	execute_or_simulate "create_dir" "${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}"
+	echo -n "  "
 	execute_or_simulate "create_dir" "${CPANEL_USERDATA_STD_PATH}/${user}/${domain}"
 
 	# Check if per-site includes already exist
@@ -1550,8 +1552,7 @@ get_user_confirmation() {
 	[ "$PREVIEW_MODE" = false ] && return 0
 	
 	echo ""
-	echo "Do you want to proceed with these pending changes? [y/N]"
-	read -r response
+	read -r -p "Do you want to proceed with these pending changes? [y/N] " response
 
 	case "$response" in
 		[yY]|[yY][eE][sS])
