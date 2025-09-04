@@ -295,12 +295,16 @@ generate_site_404_include() {
 	local error_block="$3"
 	
 	# Create site includes directory if it doesn't exist
-	execute_or_simulate "create_dir" "$SITE_INCLUDES_404_DIR"
+	if [ ! -d "$SITE_INCLUDES_404_DIR" ]; then
+		echo -n "  "
+		execute_or_simulate "create_dir" "$SITE_INCLUDES_404_DIR"
+	fi
 	
 	# Generate include file path
 	local include_file="${SITE_INCLUDES_404_DIR}/${domain}-${port}.conf"
 	
 	# Create the include file with header in new location
+	echo -n "  "
 	execute_or_simulate "create_file" "$include_file"
 
 	if [ "$PREVIEW_MODE" = false ]; then
@@ -339,8 +343,6 @@ add_include_404_to_vhost() {
 	local port_filter="$3"
 	local include_file="${SITE_INCLUDES_404_DIR}/${domain_match}-${port_filter}.conf"
 	local include_line="Include ${include_file}"
-	
-	execute_or_simulate "create_file" "$include_file"
 	
 	[ "$PREVIEW_MODE" = true ] && return 0
 	
@@ -395,9 +397,9 @@ comment_all_404_lines() {
 	local file="$1"
 	[ -f "$file" ] || return 0
 	
-	echo "${PREVIEW_PREFIX}Comment out all ErrorDocument 404 lines in $file"
+	echo "  ${PREVIEW_PREFIX}Comment out all ErrorDocument 404 lines in $file"
 	
-	[ "$PREVIEW_MODE" = false ] && return 0
+	[ "$PREVIEW_MODE" = true ] && return 0
 	
 	local tmp=$(mktemp)
 	local base=$(basename "$file")
