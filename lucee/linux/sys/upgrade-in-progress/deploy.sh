@@ -73,9 +73,9 @@ done
 CONF_FILE="${UPG_DIR}/lucee-detect-upgrade.conf"
 if [ -f "$CONF_FILE" ]; then
 	# Escape '&' for sed replacement safety
-	ESC_HTTPD_LUCEE_ROOT="${HTTPD_LUCEE_ROOT//&/\\&}"
-	# replace the template's hardcoded /etc/apache2 with the actual path e.g. /etc/httpd
-	sed -i "s|/etc/apache2|${ESC_HTTPD_LUCEE_ROOT}|g" "$CONF_FILE"
+	ESC_HTTPD_ROOT="${HTTPD_ROOT//&/\\&}"
+	# Replace the template's hardcoded /etc/apache2/lucee-upgrade-in-progress with just HTTPD_LUCEE_ROOT
+	sed -i "s|/etc/apache2/lucee-upgrade-in-progress|${ESC_HTTPD_ROOT}/lucee-upgrade-in-progress|g" "$CONF_FILE"
 fi
 
 echo "Deployment to ${UPG_DIR} completed successfully."
