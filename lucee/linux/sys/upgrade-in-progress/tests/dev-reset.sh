@@ -494,6 +494,7 @@ normalize_vhost_tags() {
 	fi
 }
 
+rm -rf /etc/apache2/lucee-upgrade-in-progress
 rm -f /var/lucee-upgrade-in-progress
 
 # append contents of lucee-proxy.conf to apache2.conf (without header comment)
