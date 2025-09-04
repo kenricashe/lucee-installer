@@ -229,6 +229,9 @@ execute_or_simulate() {
 		"disable_conf")
 			echo "Disable: $1"
 			;;
+		"build_ip_all_conf_from_txt")
+			echo "Create File: ${HTTPD_LUCEE_ROOT}/ip-allow.conf"
+			;;
 		"apache_reload")
 			echo "Apache Reload"
 			;;
@@ -262,6 +265,9 @@ execute_or_simulate() {
 				;;
 			"disable_conf")
 				disable_conf "$1"
+				;;
+			"build_ip_all_conf_from_txt")
+				build_ip_all_conf_from_txt
 				;;
 			"apache_reload")
 				# apache_reload handles output of config test on error
@@ -993,6 +999,11 @@ ensure_global_confs() {
 
 	echo ""
 	execute_or_simulate "create_dir" "${HTTPD_LUCEE_ROOT}"
+
+	create_ip_allow_txt_if_not_exist
+	if [ ! -f "${HTTPD_LUCEE_ROOT}/ip-allow.conf" ]; then
+		execute_or_simulate "build_ip_all_conf_from_txt"
+	fi
 
 	# if lucee-detect-upgrade.conf does not exist in HTTPD_LUCEE_ROOT, copy it from UPG_DIR
 	if [ ! -f "${HTTPD_LUCEE_ROOT}/lucee-detect-upgrade.conf" ]; then
