@@ -205,9 +205,13 @@ restore_original_errordocument_404() {
 				while IFS= read -r line; do
 					# Check if this is a commented ErrorDocument 404 line
 					if [[ "$line" =~ ^[[:space:]]*#[[:space:]]*ErrorDocument[[:space:]]+404 ]]; then
-						# Remove the comment character and preserve indentation
-						echo "${line/#\#/}" >> "$tmp"
-						log_verbose "Uncommented: $line -> ${line/#\#/}"
+						# Extract indentation
+						local indent=$(echo "$line" | sed -E 's/^([[:space:]]*)#.*/\1/')
+						# Extract the directive without comment character
+						local directive=$(echo "$line" | sed -E 's/^[[:space:]]*#[[:space:]]*//')
+						# Output with proper indentation
+						echo "${indent}${directive}" >> "$tmp"
+						log_verbose "Uncommented: $line -> ${indent}${directive}"
 					else
 						# Keep other lines as they are
 						echo "$line" >> "$tmp"
@@ -616,6 +620,18 @@ main() {
 	upgrade_html_files=$(echo "$discovery_output" | sed -n '/{"upgrade_html_files": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
 	site_includes=$(echo "$discovery_output" | sed -n '/{"site_includes": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
 	legacy_files=$(echo "$discovery_output" | sed -n '/{"legacy_files": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	
+	# Debug output to show what's being detected
+	log_verbose "Found vhost_files: $(echo "$vhost_files" | wc -l) files"
+	log_verbose "Found proxy_configs: $(echo "$proxy_configs" | wc -l) files"
+	if [ -n "$proxy_configs" ]; then
+		log_verbose "Proxy configs: $proxy_configs"
+	fi
+	log_verbose "Found upgrade_configs: $(echo "$upgrade_configs" | wc -l) files"
+	log_verbose "Found modified_htaccess: $(echo "$modified_htaccess" | wc -l) files"
+	log_verbose "Found upgrade_html_files: $(echo "$upgrade_html_files" | wc -l) files"
+	log_verbose "Found site_includes: $(echo "$site_includes" | wc -l) files"
+	log_verbose "Found legacy_files: $(echo "$legacy_files" | wc -l) files"
 	
 	# Add any VirtualHost files with commented ErrorDocument directives
 	if [ -n "$commented_vhosts" ]; then
