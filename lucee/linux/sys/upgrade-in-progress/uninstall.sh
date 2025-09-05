@@ -189,10 +189,36 @@ restore_original_errordocument_404() {
 		if ! grep -q "^[[:space:]]*ErrorDocument[[:space:]]\+404[[:space:]]" "$vhost_file" 2>/dev/null; then
 			# Uncomment the existing directive by removing the comment character
 			log_verbose "Uncommenting existing ErrorDocument 404 directive"
+			
+			# Show the exact line we're trying to uncomment for debugging
+			log_verbose "Commented line: $(grep -A1 "NOTE: ErrorDocument 404 disabled" "$vhost_file" | grep "^[[:space:]]*#" | head -1)"
+			
 			# Remove the note line
 			sed_i_nopreserve "/NOTE: ErrorDocument 404 disabled\/commented by/d" "$vhost_file"
-			# Uncomment the directive (replace '# ' or '#\t' with nothing)
-			sed_i_nopreserve "s/^[[:space:]]*#[[:space:]]\+\(ErrorDocument[[:space:]]\+404[[:space:]]\+.*\)/\t\1/" "$vhost_file"
+			
+			# Use a more direct approach to uncomment the directive
+			if [ "$PREVIEW_MODE" = false ]; then
+				# Create a temporary file
+				local tmp=$(mktemp)
+				
+				# Process the file line by line
+				while IFS= read -r line; do
+					# Check if this is a commented ErrorDocument 404 line
+					if [[ "$line" =~ ^[[:space:]]*#[[:space:]]*ErrorDocument[[:space:]]+404 ]]; then
+						# Remove the comment character and preserve indentation
+						echo "${line/#\#/}" >> "$tmp"
+						log_verbose "Uncommented: $line -> ${line/#\#/}"
+					else
+						# Keep other lines as they are
+						echo "$line" >> "$tmp"
+					fi
+				done < "$vhost_file"
+				
+				# Replace the original file
+				cp -f --no-preserve=all "$tmp" "$vhost_file"
+				rm -f "$tmp"
+			fi
+			
 			log_action "Restored original ErrorDocument 404 to: $vhost_file"
 			return 0
 		else
@@ -333,11 +359,23 @@ process_uninstall_operations() {
 	local site_includes="$6"
 	local legacy_files="$7"
 
-	# Remove VirtualHost Include directives
+	# Remove VirtualHost Include directives and restore commented ErrorDocument directives
 	if [ -n "$vhost_files" ]; then
-		echo "${PREVIEW_PREFIX}Processing VirtualHost files with upgrade Include directives..."
+		echo "${PREVIEW_PREFIX}Processing VirtualHost files..."
 		while IFS= read -r vhost_file; do
-			[ -n "$vhost_file" ] && remove_include_directives "$vhost_file"
+			if [ -n "$vhost_file" ]; then
+				# Check if file has Include directives
+				if grep -q "Include.*upgrade-in-progress.*lucee-detect-upgrade\.conf" "$vhost_file" 2>/dev/null; then
+					echo "  ${PREVIEW_PREFIX}Removing Include directives from: $vhost_file"
+					remove_include_directives "$vhost_file"
+				fi
+				
+				# Check if file has commented ErrorDocument directives
+				if grep -q "NOTE: ErrorDocument 404 disabled/commented by" "$vhost_file" 2>/dev/null; then
+					echo "  ${PREVIEW_PREFIX}Restoring commented ErrorDocument in: $vhost_file"
+					restore_original_errordocument_404 "$vhost_file"
+				fi
+			fi
 		done <<< "$vhost_files"
 		echo ""
 	fi
@@ -352,6 +390,8 @@ process_uninstall_operations() {
 					log_verbose "Preserving lucee-proxy.conf: $proxy_file"
 					continue
 				fi
+				
+				echo "  ${PREVIEW_PREFIX}Removing proxy file: $proxy_file"
 				
 				# Disable and remove Apache configuration (Debian/Ubuntu)
 				if [ "$IS_DEBIAN" = true ]; then
