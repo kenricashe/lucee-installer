@@ -470,10 +470,16 @@ ensure_include_detect_upgrade_in_vhost() {
 	
 	echo "  ${PREVIEW_PREFIX}Ensuring lucee-detect-upgrade.conf is included in $vhost_file"
 	
+	# Check if the include already exists in the file
+	if grep -q "${HTTPD_LUCEE_ROOT}/lucee-detect-upgrade.conf" "$vhost_file"; then
+		echo "  ${PREVIEW_PREFIX}Include directive already exists in $vhost_file"
+		return 0
+	fi
+	
 	[ "$PREVIEW_MODE" = true ] && return 0
 
 	tmp=$(mktemp)
-	awk -v dom="$domain_match" -v port="$port_filter" -v inc_line="$include_line" -v inc_path="$DETECT_CONF" '
+	awk -v dom="$domain_match" -v port="$port_filter" -v inc_line="$include_line" -v inc_path="$HTTPD_LUCEE_ROOT/lucee-detect-upgrade.conf" '
 		BEGIN { inblk=0; match_this=0; blk_port=""; inserted=0; had_inc=0 }
 		{ line=$0; lines[++n]=$0 }
 		/<VirtualHost[> \t]/ { inblk=1; match_this=0; blk_port=""; had_inc=0; if (match($0, /<VirtualHost[^>]*:([0-9]+)/, m)) { blk_port=m[1] } }
@@ -489,7 +495,7 @@ ensure_include_detect_upgrade_in_vhost() {
 			}
 		}
 		# Detect an existing Include for this exact path inside the current vhost block
-		inblk && match($0, /^[\t ]*Include(Optional)?[\t ]+([^ \t#]+)([ \t#]|$)/, m) {
+		inblk && match($0, /^[\t ]*Include(Optional)?[\t ]+([^ \t#]+)([\t #]|$)/, m) {
 			if (m[2] == inc_path) { had_inc=1 }
 		}
 		{
