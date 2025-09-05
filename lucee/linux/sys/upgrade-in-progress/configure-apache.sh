@@ -1073,6 +1073,14 @@ ensure_global_confs() {
 	elif [ -n "$CONF_DIR" ]; then
 
 		local proxy_conf="${CONF_DIR}/lucee-proxy.conf"
+		
+		# First check if we need migration (before any renames happen to avoid potential race condition)
+		local need_migration=false
+		if [ ! -f "$proxy_conf" ] && [ ! -f "${proxy_conf}.disabled" ]; then
+			need_migration=true
+		fi
+		
+		# Handle disabled file if it exists
 		if [ -f "${proxy_conf}.disabled" ]; then
 			if [ -f "$proxy_conf" ]; then
 				execute_or_simulate "delete_file" "${proxy_conf}.disabled"
@@ -1080,7 +1088,8 @@ ensure_global_confs() {
 				execute_or_simulate "rename_file" "${proxy_conf}.disabled" "$proxy_conf"
 			fi
 		fi
-		if [ ! -f "${proxy_conf}" ]; then
+		
+		if [ "$need_migration" = true ]; then
 			migrate_lucee_proxy_config "$CONF_DIR" "${proxy_conf}"
 		fi
 
