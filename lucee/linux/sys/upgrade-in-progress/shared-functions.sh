@@ -528,12 +528,6 @@ discover_apache_configs() {
 			seen_site_includes["${HTTPD_LUCEE_ROOT}/lucee-detect-upgrade.conf"]=1
 		fi
 		
-		# Generated proxy and IP allow files
-		if [ -f "${HTTPD_LUCEE_ROOT}/lucee-proxy-for-allowed-ip.conf" ]; then
-			proxy_configs+=("${HTTPD_LUCEE_ROOT}/lucee-proxy-for-allowed-ip.conf")
-			seen_proxy["${HTTPD_LUCEE_ROOT}/lucee-proxy-for-allowed-ip.conf"]=1
-		fi
-		
 		if [ -f "${HTTPD_LUCEE_ROOT}/ip-allow.conf" ]; then
 			site_includes+=("${HTTPD_LUCEE_ROOT}/ip-allow.conf")
 			seen_site_includes["${HTTPD_LUCEE_ROOT}/ip-allow.conf"]=1
