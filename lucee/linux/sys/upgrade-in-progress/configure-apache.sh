@@ -438,7 +438,7 @@ comment_all_404_lines() {
 			}
 		' "$file" > "$tmp"
 	else
-		awk -v IGNORECASE=1 -v pat="$ANY404_REGEX" -v note="# NOTE: ErrorDocument 404 disabled/commented by /opt/lucee/sys/upgrade-in-progress/configure-apache.sh (managed inline and wrapped in vhost/userdata)." '
+		awk -v IGNORECASE=1 -v pat="$ANY404_REGEX" -v note="# NOTE: ErrorDocument 404 disabled/commented by /opt/lucee/sys/upgrade-in-progress/configure-apache.sh (now managed via VirtualHost Include)" '
 			{ lines[++n]=$0 }
 			END {
 				for (i=1;i<=n;i++) {
