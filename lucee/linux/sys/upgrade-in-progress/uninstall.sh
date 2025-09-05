@@ -498,45 +498,6 @@ main() {
 		exit 0
 	fi
 	
-	# If no configurations found but directory exists, handle it separately
-	if [ -z "$discovery_output" ] && [ "$has_upgrade_dir" = true ]; then
-		echo "Found lucee-upgrade-in-progress directory to remove."
-		
-		if [ "$PREVIEW_MODE" = true ]; then
-			echo "PREVIEW OF PENDING CHANGES:"
-			echo "============================"
-			echo ""
-			echo "Would execute: remove_dir ${HTTPD_ROOT}/lucee-upgrade-in-progress"
-			echo ""
-			
-			if [ "$FORCE" = false ]; then
-				if confirm_action "Execute these changes now?"; then
-					PREVIEW_MODE=false
-					PREVIEW_PREFIX=""
-					echo ""
-					echo "EXECUTING CHANGES:"
-					echo "=================="
-					echo ""
-					echo "Removing Apache lucee-upgrade-in-progress directory..."
-					execute_or_simulate "remove_dir" "${HTTPD_ROOT}/lucee-upgrade-in-progress"
-					echo ""
-					echo "Uninstall complete."
-					exit 0
-				else
-					echo "Uninstall cancelled."
-					exit 0
-				fi
-			fi
-			exit 0
-		else
-			echo "Removing Apache lucee-upgrade-in-progress directory..."
-			execute_or_simulate "remove_dir" "${HTTPD_ROOT}/lucee-upgrade-in-progress"
-			echo ""
-			echo "Uninstall complete."
-			exit 0
-		fi
-	fi
-	
 	# Parse JSON output to get file lists
 	local vhost_files proxy_configs upgrade_configs modified_htaccess upgrade_html_files site_includes legacy_files
 	
