@@ -185,86 +185,17 @@ restore_original_errordocument_404() {
 		
 		log_verbose "Found commented ErrorDocument 404 with note: $original_errordoc"
 		
-		# Check if current file already has an active ErrorDocument 404
-		if ! grep -q "^[[:space:]]*ErrorDocument[[:space:]]\+404[[:space:]]" "$vhost_file" 2>/dev/null; then
-			# Uncomment the existing directive by removing the comment character
-			log_verbose "Uncommenting existing ErrorDocument 404 directive"
-			
-			# Show the exact line we're trying to uncomment for debugging
-			log_verbose "Commented line: $(grep -A1 "NOTE: ErrorDocument 404 disabled" "$vhost_file" | grep "^[[:space:]]*#" | head -1)"
-			
+		# Always uncomment the directive and remove the note, regardless of whether there's already an active one
+		if [ "$PREVIEW_MODE" = false ]; then
 			# Remove the note line
-			sed_i_nopreserve "/NOTE: ErrorDocument 404 disabled\/commented by/d" "$vhost_file"
+			sed -i "/NOTE: ErrorDocument 404 disabled\/commented by/d" "$vhost_file"
 			
-			# Use a simpler approach - directly edit the file with sed
-			if [ "$PREVIEW_MODE" = false ]; then
-				# First remove the note line
-				sed -i "/NOTE: ErrorDocument 404 disabled\/commented by/d" "$vhost_file"
-				
-				# Then uncomment the ErrorDocument line
-				# This approach preserves indentation by replacing '# ' or '#\t' with the same amount of spaces/tabs
-				sed -i 's/^\([[:space:]]*\)#[[:space:]]\+\(ErrorDocument[[:space:]]\+404.*\)/\1\2/' "$vhost_file"
-				
-				# Verify the change worked
-				if grep -q "^[[:space:]]*ErrorDocument[[:space:]]\+404" "$vhost_file"; then
-					log_verbose "Successfully uncommented ErrorDocument 404 directive"
-				else
-					log_verbose "WARNING: Failed to uncomment ErrorDocument 404 directive"
-					
-					# Fallback approach - add a new directive after DocumentRoot
-					local insert_line
-					insert_line=$(grep -n "DocumentRoot" "$vhost_file" | head -1 | cut -d: -f1)
-					if [ -n "$insert_line" ]; then
-						sed -i "${insert_line}a\\\tErrorDocument 404 /404.cfm?%{REQUEST_URI}&%{QUERY_STRING}" "$vhost_file"
-						log_verbose "Added new ErrorDocument 404 directive after DocumentRoot"
-					fi
-				fi
-				
-				# Remove any empty lines at the end of VirtualHost block
-				sed -i '/^[[:space:]]*$/d' "$vhost_file"
-				
-				# Add a single newline before closing VirtualHost tag if needed
-				sed -i '/<\/VirtualHost>/i\' "$vhost_file"
-			fi
+			# Uncomment the ErrorDocument line
+			sed -i 's/^\([[:space:]]*\)#[[:space:]]*\(ErrorDocument[[:space:]]\+404.*\)/\1\2/' "$vhost_file"
 			
 			log_action "Restored original ErrorDocument 404 to: $vhost_file"
-			return 0
-		else
-			log_verbose "ErrorDocument 404 already exists in $vhost_file"
-			
-			# There's already an active directive, but we should still clean up the commented one
-			# by removing the note and uncommenting the directive (which will result in a duplicate)
-			# Then we can remove the duplicate
-			if [ "$PREVIEW_MODE" = false ]; then
-				# Remove the note line
-				sed -i "/NOTE: ErrorDocument 404 disabled\/commented by/d" "$vhost_file"
-				
-				# Uncomment the ErrorDocument line
-				sed -i 's/^\([[:space:]]*\)#[[:space:]]*\(ErrorDocument[[:space:]]\+404.*\)/\1\2/' "$vhost_file"
-				
-				# Now remove duplicate ErrorDocument 404 lines (keep the first one)
-				local tmp_file=$(mktemp)
-				local found_first=false
-				while IFS= read -r line; do
-					if [[ "$line" =~ ^[[:space:]]*ErrorDocument[[:space:]]+404 ]]; then
-						if [ "$found_first" = false ]; then
-							echo "$line" >> "$tmp_file"
-							found_first=true
-						fi
-						# Skip subsequent ErrorDocument 404 lines
-					else
-						echo "$line" >> "$tmp_file"
-					fi
-				done < "$vhost_file"
-				
-				# Replace the original file
-				cp -f --no-preserve=all "$tmp_file" "$vhost_file"
-				rm -f "$tmp_file"
-				
-				log_action "Cleaned up commented ErrorDocument 404 from: $vhost_file"
-			fi
-			return 0
 		fi
+		return 0
 	fi
 	
 	# If no commented directive found, try to find in backups
