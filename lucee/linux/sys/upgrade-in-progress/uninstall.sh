@@ -232,21 +232,36 @@ restore_original_errordocument_404() {
 		else
 			log_verbose "ErrorDocument 404 already exists in $vhost_file"
 			
-			# Since there's already an active directive, remove the commented one and the note
+			# There's already an active directive, but we should still clean up the commented one
+			# by removing the note and uncommenting the directive (which will result in a duplicate)
+			# Then we can remove the duplicate
 			if [ "$PREVIEW_MODE" = false ]; then
 				# Remove the note line
 				sed -i "/NOTE: ErrorDocument 404 disabled\/commented by/d" "$vhost_file"
 				
-				# Remove the commented ErrorDocument line
-				sed -i "/^[[:space:]]*#[[:space:]]*ErrorDocument[[:space:]]\+404/d" "$vhost_file"
+				# Uncomment the ErrorDocument line
+				sed -i 's/^\([[:space:]]*\)#[[:space:]]*\(ErrorDocument[[:space:]]\+404.*\)/\1\2/' "$vhost_file"
 				
-				# Clean up empty lines
-				sed -i '/^[[:space:]]*$/d' "$vhost_file"
+				# Now remove duplicate ErrorDocument 404 lines (keep the first one)
+				local tmp_file=$(mktemp)
+				local found_first=false
+				while IFS= read -r line; do
+					if [[ "$line" =~ ^[[:space:]]*ErrorDocument[[:space:]]+404 ]]; then
+						if [ "$found_first" = false ]; then
+							echo "$line" >> "$tmp_file"
+							found_first=true
+						fi
+						# Skip subsequent ErrorDocument 404 lines
+					else
+						echo "$line" >> "$tmp_file"
+					fi
+				done < "$vhost_file"
 				
-				# Add a single newline before closing VirtualHost tag if needed
-				sed -i '/<\/VirtualHost>/i\' "$vhost_file"
+				# Replace the original file
+				cp -f --no-preserve=all "$tmp_file" "$vhost_file"
+				rm -f "$tmp_file"
 				
-				log_action "Removed redundant commented ErrorDocument 404 from: $vhost_file"
+				log_action "Cleaned up commented ErrorDocument 404 from: $vhost_file"
 			fi
 			return 0
 		fi
