@@ -590,6 +590,9 @@ main() {
 	
 	# Debug output to show what's being detected
 	log_verbose "Found vhost_files: $(echo "$vhost_files" | wc -l) files"
+	if [ -n "$vhost_files" ]; then
+		log_verbose "VHost files: $vhost_files"
+	fi
 	log_verbose "Found proxy_configs: $(echo "$proxy_configs" | wc -l) files"
 	if [ -n "$proxy_configs" ]; then
 		log_verbose "Proxy configs: $proxy_configs"
@@ -603,9 +606,8 @@ main() {
 	# Add any VirtualHost files with commented ErrorDocument directives
 	if [ -n "$commented_vhosts" ]; then
 		if [ -n "$vhost_files" ]; then
-			vhost_files="$vhost_files\n$commented_vhosts"
-			# Remove duplicates
-			vhost_files=$(echo -e "$vhost_files" | sort | uniq)
+			# Combine both lists and remove duplicates
+			vhost_files=$(printf "%s\n%s" "$vhost_files" "$commented_vhosts" | sort | uniq | grep -v '^$')
 		else
 			vhost_files="$commented_vhosts"
 		fi
