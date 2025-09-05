@@ -142,6 +142,7 @@ build_ip_all_conf_from_txt() {
 		} > "$TMP_CONF"
 	fi
 
+	mkdir -p "${HTTPD_LUCEE_ROOT}"
 	cp -f --no-preserve=all "$TMP_CONF" "$IP_ALLOW_CONF_FILE"
 	rm -f "$TMP_CONF"
 }
