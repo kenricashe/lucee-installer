@@ -481,14 +481,60 @@ main() {
 	log_verbose "Lucee Root: $LUCEE_ROOT"
 	log_verbose "Upgrade Dir: $UPG_DIR"
 	
+	# Check for lucee-upgrade-in-progress directory in HTTPD_ROOT
+	local has_upgrade_dir=false
+	if [ -d "${HTTPD_ROOT}/lucee-upgrade-in-progress" ]; then
+		has_upgrade_dir=true
+		log_verbose "Found lucee-upgrade-in-progress directory in ${HTTPD_ROOT}"
+	fi
+	
 	# Discover current configurations
 	echo "Discovering current upgrade configurations..."
 	local discovery_output
 	discovery_output=$(discover_apache_configs "json" "false")
 	
-	if [ -z "$discovery_output" ]; then
+	if [ -z "$discovery_output" ] && [ "$has_upgrade_dir" = false ]; then
 		echo "No upgrade configurations found."
 		exit 0
+	fi
+	
+	# If no configurations found but directory exists, handle it separately
+	if [ -z "$discovery_output" ] && [ "$has_upgrade_dir" = true ]; then
+		echo "Found lucee-upgrade-in-progress directory to remove."
+		
+		if [ "$PREVIEW_MODE" = true ]; then
+			echo "PREVIEW OF PENDING CHANGES:"
+			echo "============================"
+			echo ""
+			echo "Would execute: remove_dir ${HTTPD_ROOT}/lucee-upgrade-in-progress"
+			echo ""
+			
+			if [ "$FORCE" = false ]; then
+				if confirm_action "Execute these changes now?"; then
+					PREVIEW_MODE=false
+					PREVIEW_PREFIX=""
+					echo ""
+					echo "EXECUTING CHANGES:"
+					echo "=================="
+					echo ""
+					echo "Removing Apache lucee-upgrade-in-progress directory..."
+					execute_or_simulate "remove_dir" "${HTTPD_ROOT}/lucee-upgrade-in-progress"
+					echo ""
+					echo "Uninstall complete."
+					exit 0
+				else
+					echo "Uninstall cancelled."
+					exit 0
+				fi
+			fi
+			exit 0
+		else
+			echo "Removing Apache lucee-upgrade-in-progress directory..."
+			execute_or_simulate "remove_dir" "${HTTPD_ROOT}/lucee-upgrade-in-progress"
+			echo ""
+			echo "Uninstall complete."
+			exit 0
+		fi
 	fi
 	
 	# Parse JSON output to get file lists
