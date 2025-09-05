@@ -196,31 +196,35 @@ restore_original_errordocument_404() {
 			# Remove the note line
 			sed_i_nopreserve "/NOTE: ErrorDocument 404 disabled\/commented by/d" "$vhost_file"
 			
-			# Use a more direct approach to uncomment the directive
+			# Use a simpler approach - directly edit the file with sed
 			if [ "$PREVIEW_MODE" = false ]; then
-				# Create a temporary file
-				local tmp=$(mktemp)
+				# First remove the note line
+				sed -i "/NOTE: ErrorDocument 404 disabled\/commented by/d" "$vhost_file"
 				
-				# Process the file line by line
-				while IFS= read -r line; do
-					# Check if this is a commented ErrorDocument 404 line
-					if [[ "$line" =~ ^[[:space:]]*#[[:space:]]*ErrorDocument[[:space:]]+404 ]]; then
-						# Extract indentation
-						local indent=$(echo "$line" | sed -E 's/^([[:space:]]*)#.*/\1/')
-						# Extract the directive without comment character
-						local directive=$(echo "$line" | sed -E 's/^[[:space:]]*#[[:space:]]*//')
-						# Output with proper indentation
-						echo "${indent}${directive}" >> "$tmp"
-						log_verbose "Uncommented: $line -> ${indent}${directive}"
-					else
-						# Keep other lines as they are
-						echo "$line" >> "$tmp"
+				# Then uncomment the ErrorDocument line
+				# This approach preserves indentation by replacing '# ' or '#\t' with the same amount of spaces/tabs
+				sed -i 's/^\([[:space:]]*\)#[[:space:]]\+\(ErrorDocument[[:space:]]\+404.*\)/\1\2/' "$vhost_file"
+				
+				# Verify the change worked
+				if grep -q "^[[:space:]]*ErrorDocument[[:space:]]\+404" "$vhost_file"; then
+					log_verbose "Successfully uncommented ErrorDocument 404 directive"
+				else
+					log_verbose "WARNING: Failed to uncomment ErrorDocument 404 directive"
+					
+					# Fallback approach - add a new directive after DocumentRoot
+					local insert_line
+					insert_line=$(grep -n "DocumentRoot" "$vhost_file" | head -1 | cut -d: -f1)
+					if [ -n "$insert_line" ]; then
+						sed -i "${insert_line}a\\\tErrorDocument 404 /404.cfm?%{REQUEST_URI}&%{QUERY_STRING}" "$vhost_file"
+						log_verbose "Added new ErrorDocument 404 directive after DocumentRoot"
 					fi
-				done < "$vhost_file"
+				fi
 				
-				# Replace the original file
-				cp -f --no-preserve=all "$tmp" "$vhost_file"
-				rm -f "$tmp"
+				# Remove any empty lines at the end of VirtualHost block
+				sed -i '/^[[:space:]]*$/d' "$vhost_file"
+				
+				# Add a single newline before closing VirtualHost tag if needed
+				sed -i '/<\/VirtualHost>/i\' "$vhost_file"
 			fi
 			
 			log_action "Restored original ErrorDocument 404 to: $vhost_file"
