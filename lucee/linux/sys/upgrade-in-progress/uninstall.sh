@@ -437,6 +437,13 @@ process_uninstall_operations() {
 		echo ""
 	fi
 	
+	# Remove Apache lucee-upgrade-in-progress directory
+	if [ -d "${HTTPD_ROOT}/lucee-upgrade-in-progress" ]; then
+		echo "${PREVIEW_PREFIX}Removing Apache lucee-upgrade-in-progress directory..."
+		execute_or_simulate "remove_dir" "${HTTPD_ROOT}/lucee-upgrade-in-progress"
+		echo ""
+	fi
+	
 	# Reload Apache configuration
 	if [ "$PREVIEW_MODE" = false ]; then
 		echo "${PREVIEW_PREFIX}Reloading Apache configuration..."
