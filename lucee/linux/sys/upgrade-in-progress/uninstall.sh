@@ -187,18 +187,13 @@ restore_original_errordocument_404() {
 		
 		# Check if current file already has an active ErrorDocument 404
 		if ! grep -q "^[[:space:]]*ErrorDocument[[:space:]]\+404[[:space:]]" "$vhost_file" 2>/dev/null; then
-			# Find a good place to insert it (after DocumentRoot, before </VirtualHost>)
-			local insert_line
-			insert_line=$(grep -n "DocumentRoot\|</VirtualHost>" "$vhost_file" | grep "DocumentRoot" | tail -1 | cut -d: -f1)
-			if [ -n "$insert_line" ]; then
-				# Insert after DocumentRoot line
-				sed_i_nopreserve "${insert_line}a\\\t${original_errordoc}" "$vhost_file"
-				log_action "Restored original ErrorDocument 404 to: $vhost_file"
-			else
-				# Fallback: insert before </VirtualHost>
-				sed_i_nopreserve "/<\/VirtualHost>/i\\\t${original_errordoc}" "$vhost_file"
-				log_action "Restored original ErrorDocument 404 to: $vhost_file"
-			fi
+			# Uncomment the existing directive by removing the comment character
+			log_verbose "Uncommenting existing ErrorDocument 404 directive"
+			# Remove the note line
+			sed_i_nopreserve "/NOTE: ErrorDocument 404 disabled\/commented by/d" "$vhost_file"
+			# Uncomment the directive (replace '# ' or '#\t' with nothing)
+			sed_i_nopreserve "s/^[[:space:]]*#[[:space:]]\+\(ErrorDocument[[:space:]]\+404[[:space:]]\+.*\)/\t\1/" "$vhost_file"
+			log_action "Restored original ErrorDocument 404 to: $vhost_file"
 			return 0
 		else
 			log_verbose "ErrorDocument 404 already exists in $vhost_file"
