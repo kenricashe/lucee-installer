@@ -336,6 +336,20 @@ EOF
 <IfDefine LUCEE_UPGRADE_IN_PROGRESS>
 	# Set flag to indicate this site has a Lucee 404 handler
 	Define LUCEE_SITE_HAS_CF_404
+	
+	# For allowed IPs, provide the original ErrorDocument 404 handler
+	<IfModule mod_setenvif.c>
+		<If "%{ENV:LUCEE_UPGRADE_BYPASS} == '1'">
+EOF
+
+		# Add the original ErrorDocument for allowed IPs if it exists
+		if [ -n "$error_line" ]; then
+			append_with_single_newline $'\t\t\t'"$error_line" "$include_file"
+		fi
+		
+		cat >> "$include_file" << EOF
+		</If>
+	</IfModule>
 </IfDefine>
 EOF
 	fi # end non-preview block
