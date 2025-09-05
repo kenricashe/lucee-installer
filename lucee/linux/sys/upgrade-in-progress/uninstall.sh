@@ -579,14 +579,14 @@ main() {
 	# Parse JSON output to get file lists
 	local vhost_files proxy_configs upgrade_configs modified_htaccess upgrade_html_files site_includes legacy_files
 	
-	# Extract file arrays from JSON (handle multi-line arrays)
-	vhost_files=$(echo "$discovery_output" | sed -n '/{"vhost_files": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
-	proxy_configs=$(echo "$discovery_output" | sed -n '/{"proxy_configs": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
-	upgrade_configs=$(echo "$discovery_output" | sed -n '/{"upgrade_configs": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
-	modified_htaccess=$(echo "$discovery_output" | sed -n '/{"modified_htaccess": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
-	upgrade_html_files=$(echo "$discovery_output" | sed -n '/{"upgrade_html_files": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
-	site_includes=$(echo "$discovery_output" | sed -n '/{"site_includes": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
-	legacy_files=$(echo "$discovery_output" | sed -n '/{"legacy_files": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	# Extract file arrays from JSON (handle multi-line arrays with proper whitespace matching)
+	vhost_files=$(echo "$discovery_output" | sed -n '/[[:space:]]*"vhost_files": \[/,/[[:space:]]*\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	proxy_configs=$(echo "$discovery_output" | sed -n '/[[:space:]]*"proxy_configs": \[/,/[[:space:]]*\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	upgrade_configs=$(echo "$discovery_output" | sed -n '/[[:space:]]*"upgrade_configs": \[/,/[[:space:]]*\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	modified_htaccess=$(echo "$discovery_output" | sed -n '/[[:space:]]*"modified_htaccess": \[/,/[[:space:]]*\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	upgrade_html_files=$(echo "$discovery_output" | sed -n '/[[:space:]]*"upgrade_html_files": \[/,/[[:space:]]*\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	site_includes=$(echo "$discovery_output" | sed -n '/[[:space:]]*"site_includes": \[/,/[[:space:]]*\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	legacy_files=$(echo "$discovery_output" | sed -n '/[[:space:]]*"legacy_files": \[/,/[[:space:]]*\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
 	
 	# Debug output to show what's being detected
 	log_verbose "Found vhost_files: $(echo "$vhost_files" | wc -l) files"
