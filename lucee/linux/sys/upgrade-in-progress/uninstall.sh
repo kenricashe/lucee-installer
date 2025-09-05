@@ -530,6 +530,7 @@ main() {
 		if [ "$FORCE" = false ]; then
 			if confirm_action "Execute these changes now?"; then
 				PREVIEW_MODE=false
+				PREVIEW_PREFIX=""
 				echo ""
 				echo "EXECUTING CHANGES:"
 				echo "=================="
