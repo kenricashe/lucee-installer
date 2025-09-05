@@ -519,6 +519,8 @@ main() {
 	[ -n "$upgrade_html_files" ] && total_items=$((total_items + $(echo "$upgrade_html_files" | wc -l)))
 	[ -n "$site_includes" ] && total_items=$((total_items + $(echo "$site_includes" | wc -l)))
 	[ -n "$legacy_files" ] && total_items=$((total_items + $(echo "$legacy_files" | wc -l)))
+	# Count the lucee-upgrade-in-progress directory if it exists
+	[ "$has_upgrade_dir" = true ] && total_items=$((total_items + 1))
 	
 	if [ "$total_items" -eq 0 ]; then
 		echo "No upgrade configurations found to remove."
