@@ -172,7 +172,42 @@ restore_original_errordocument_404() {
 		return 0
 	fi
 	
-	log_verbose "Searching for original ErrorDocument 404 in backups for: $vhost_file"
+	log_verbose "Searching for original ErrorDocument 404 in: $vhost_file"
+	
+	# First check if there's a commented-out ErrorDocument with our note pattern
+	local commented_errordoc
+	commented_errordoc=$(grep -A1 "NOTE: ErrorDocument 404 disabled/commented by" "$vhost_file" 2>/dev/null | grep -E "^[[:space:]]*#[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+" | head -1)
+	
+	if [ -n "$commented_errordoc" ]; then
+		# Found a commented directive with our note pattern, extract the original directive
+		local original_errordoc
+		original_errordoc=$(echo "$commented_errordoc" | sed -E 's/^[[:space:]]*#[[:space:]]*//')
+		
+		log_verbose "Found commented ErrorDocument 404 with note: $original_errordoc"
+		
+		# Check if current file already has an active ErrorDocument 404
+		if ! grep -q "^[[:space:]]*ErrorDocument[[:space:]]\+404[[:space:]]" "$vhost_file" 2>/dev/null; then
+			# Find a good place to insert it (after DocumentRoot, before </VirtualHost>)
+			local insert_line
+			insert_line=$(grep -n "DocumentRoot\|</VirtualHost>" "$vhost_file" | grep "DocumentRoot" | tail -1 | cut -d: -f1)
+			if [ -n "$insert_line" ]; then
+				# Insert after DocumentRoot line
+				sed_i_nopreserve "${insert_line}a\\\t${original_errordoc}" "$vhost_file"
+				log_action "Restored original ErrorDocument 404 to: $vhost_file"
+			else
+				# Fallback: insert before </VirtualHost>
+				sed_i_nopreserve "/<\/VirtualHost>/i\\\t${original_errordoc}" "$vhost_file"
+				log_action "Restored original ErrorDocument 404 to: $vhost_file"
+			fi
+			return 0
+		else
+			log_verbose "ErrorDocument 404 already exists in $vhost_file"
+			return 0
+		fi
+	fi
+	
+	# If no commented directive found, try to find in backups
+	log_verbose "No commented ErrorDocument found, checking backups for: $vhost_file"
 	
 	# Find backup versions, but limit to direct backup directories (not nested ones)
 	local backup_files
