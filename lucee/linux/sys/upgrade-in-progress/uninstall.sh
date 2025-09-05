@@ -501,10 +501,43 @@ process_uninstall_operations() {
 	fi
 }
 
+# Function to find VirtualHost files with commented ErrorDocument directives
+find_vhosts_with_commented_errordocs() {
+	local output_files=""
+	local apache_dirs=("/etc/httpd" "/etc/apache2" "/usr/local/apache/conf")
+	
+	# Add any additional directories from ENVIRONMENT.sh
+	[ -n "$CONF_DIR" ] && apache_dirs+=("$CONF_DIR")
+	[ -n "$SITES_AVAILABLE_DIR" ] && apache_dirs+=("$(dirname "$SITES_AVAILABLE_DIR")")
+	
+	for apache_dir in "${apache_dirs[@]}"; do
+		[ -d "$apache_dir" ] || continue
+		
+		# Check main conf directory and conf.d
+		for search_dir in "$apache_dir" "$apache_dir/conf.d" "$apache_dir/sites-available"; do
+			[ -d "$search_dir" ] || continue
+			
+			while IFS= read -r -d '' vhost_file; do
+				# Skip our own config files
+				[[ "$vhost_file" == *"lucee-proxy"* ]] && continue
+				[[ "$vhost_file" == *"upgrade-in-progress"* ]] && continue
+				
+				# Check if file contains the commented ErrorDocument pattern
+				if grep -q "NOTE: ErrorDocument 404 disabled/commented by" "$vhost_file" 2>/dev/null; then
+					output_files="${output_files}${vhost_file}\n"
+				fi
+			done < <(find "$search_dir" -maxdepth 1 -type f -name "*.conf" -print0 2>/dev/null)
+		done
+	done
+	
+	# Return the list of files
+	echo -e "$output_files" | sort | uniq
+}
+
 # Main uninstall function
 main() {
 	echo "Lucee Upgrade-in-Progress System Uninstaller"
-	echo "============================================="
+	echo "=============================================="
 	echo ""
 	
 	log_verbose "Environment: Debian=$IS_DEBIAN, cPanel=$IS_CPANEL"
@@ -523,7 +556,11 @@ main() {
 	local discovery_output
 	discovery_output=$(discover_apache_configs "json" "false")
 	
-	if [ -z "$discovery_output" ] && [ "$has_upgrade_dir" = false ]; then
+	# Also find VirtualHost files with commented ErrorDocument directives
+	local commented_vhosts
+	commented_vhosts=$(find_vhosts_with_commented_errordocs)
+	
+	if [ -z "$discovery_output" ] && [ -z "$commented_vhosts" ] && [ "$has_upgrade_dir" = false ]; then
 		echo "No upgrade configurations found."
 		exit 0
 	fi
@@ -532,13 +569,24 @@ main() {
 	local vhost_files proxy_configs upgrade_configs modified_htaccess upgrade_html_files site_includes legacy_files
 	
 	# Extract file arrays from JSON (handle multi-line arrays)
-	vhost_files=$(echo "$discovery_output" | sed -n '/"vhost_files": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
-	proxy_configs=$(echo "$discovery_output" | sed -n '/"proxy_configs": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
-	upgrade_configs=$(echo "$discovery_output" | sed -n '/"upgrade_configs": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
-	modified_htaccess=$(echo "$discovery_output" | sed -n '/"modified_htaccess": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
-	upgrade_html_files=$(echo "$discovery_output" | sed -n '/"upgrade_html_files": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
-	site_includes=$(echo "$discovery_output" | sed -n '/"site_includes": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
-	legacy_files=$(echo "$discovery_output" | sed -n '/"legacy_files": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	vhost_files=$(echo "$discovery_output" | sed -n '/{"vhost_files": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	proxy_configs=$(echo "$discovery_output" | sed -n '/{"proxy_configs": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	upgrade_configs=$(echo "$discovery_output" | sed -n '/{"upgrade_configs": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	modified_htaccess=$(echo "$discovery_output" | sed -n '/{"modified_htaccess": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	upgrade_html_files=$(echo "$discovery_output" | sed -n '/{"upgrade_html_files": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	site_includes=$(echo "$discovery_output" | sed -n '/{"site_includes": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	legacy_files=$(echo "$discovery_output" | sed -n '/{"legacy_files": \[/,/\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
+	
+	# Add any VirtualHost files with commented ErrorDocument directives
+	if [ -n "$commented_vhosts" ]; then
+		if [ -n "$vhost_files" ]; then
+			vhost_files="$vhost_files\n$commented_vhosts"
+			# Remove duplicates
+			vhost_files=$(echo -e "$vhost_files" | sort | uniq)
+		else
+			vhost_files="$commented_vhosts"
+		fi
+	fi
 	
 	# Count total items to remove
 	local total_items=0
