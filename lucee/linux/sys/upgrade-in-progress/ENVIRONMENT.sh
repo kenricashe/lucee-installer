@@ -121,9 +121,7 @@ build_ip_all_conf_from_txt() {
 					;;
 			esac
 			ip="$trimmed"
-			# Escape dots for regex in IPv4; leave colons as-is for IPv6
-			esc_ip="$(echo "$ip" | sed 's/\./\\\./g')"
-			printf "\tSetEnvIf Remote_Addr \"%s\" LUCEE_UPGRADE_BYPASS=1\n" "$esc_ip"
+			printf "\tSetEnvIf Remote_Addr \"%s\" LUCEE_UPGRADE_BYPASS=1\n" "$ip"
 		done < "$IP_ALLOW_TXT_FILE"
 		echo "</IfModule>"
 		echo ""
