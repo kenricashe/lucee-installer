@@ -515,14 +515,41 @@ discover_apache_configs() {
 	local -A seen_dirs
 	local -A seen_site_includes
 	
-	if [ -n "$HTTPD_LUCEE_ROOT" ] && [ -f "${HTTPD_LUCEE_ROOT}/lucee-upgrade-in-progress.conf" ]; then
-		site_includes+=("${HTTPD_LUCEE_ROOT}/lucee-upgrade-in-progress.conf")
-		seen_site_includes["${HTTPD_LUCEE_ROOT}/lucee-upgrade-in-progress.conf"]=1
-	fi
-	
-	if [ -n "$HTTPD_LUCEE_ROOT" ] && [ -d "${HTTPD_LUCEE_ROOT}/site-includes-for-404" ]; then
-		include_dirs+=("${HTTPD_LUCEE_ROOT}/site-includes-for-404")
-		seen_dirs["${HTTPD_LUCEE_ROOT}/site-includes-for-404"]=1
+	# Check for files in HTTPD_LUCEE_ROOT
+	if [ -n "$HTTPD_LUCEE_ROOT" ]; then
+		# Main upgrade config files
+		if [ -f "${HTTPD_LUCEE_ROOT}/lucee-upgrade-in-progress.conf" ]; then
+			site_includes+=("${HTTPD_LUCEE_ROOT}/lucee-upgrade-in-progress.conf")
+			seen_site_includes["${HTTPD_LUCEE_ROOT}/lucee-upgrade-in-progress.conf"]=1
+		fi
+		
+		if [ -f "${HTTPD_LUCEE_ROOT}/lucee-detect-upgrade.conf" ]; then
+			site_includes+=("${HTTPD_LUCEE_ROOT}/lucee-detect-upgrade.conf")
+			seen_site_includes["${HTTPD_LUCEE_ROOT}/lucee-detect-upgrade.conf"]=1
+		fi
+		
+		# Generated proxy and IP allow files
+		if [ -f "${HTTPD_LUCEE_ROOT}/lucee-proxy-for-allowed-ip.conf" ]; then
+			proxy_configs+=("${HTTPD_LUCEE_ROOT}/lucee-proxy-for-allowed-ip.conf")
+			seen_proxy["${HTTPD_LUCEE_ROOT}/lucee-proxy-for-allowed-ip.conf"]=1
+		fi
+		
+		if [ -f "${HTTPD_LUCEE_ROOT}/ip-allow.conf" ]; then
+			site_includes+=("${HTTPD_LUCEE_ROOT}/ip-allow.conf")
+			seen_site_includes["${HTTPD_LUCEE_ROOT}/ip-allow.conf"]=1
+		fi
+		
+		# Per-site include directory
+		if [ -d "${HTTPD_LUCEE_ROOT}/site-includes-for-404" ]; then
+			include_dirs+=("${HTTPD_LUCEE_ROOT}/site-includes-for-404")
+			seen_dirs["${HTTPD_LUCEE_ROOT}/site-includes-for-404"]=1
+		fi
+		
+		# Check for SITE_INCLUDES_404_DIR if different from hardcoded path
+		if [ -n "$SITE_INCLUDES_404_DIR" ] && [ "$SITE_INCLUDES_404_DIR" != "${HTTPD_LUCEE_ROOT}/site-includes-for-404" ] && [ -d "$SITE_INCLUDES_404_DIR" ]; then
+			include_dirs+=("$SITE_INCLUDES_404_DIR")
+			seen_dirs["$SITE_INCLUDES_404_DIR"]=1
+		fi
 	fi
 	
 	for include_dir in "${include_dirs[@]}"; do
@@ -537,18 +564,41 @@ discover_apache_configs() {
 		done < <(find "$include_dir" -type f -name "*.conf" -print0 2>/dev/null)
 	done
 	
-	# Also find cPanel userdata upgrade-in-progress files (these are per-site includes)
+	# Also find cPanel userdata files (these are per-site includes)
 	for apache_dir in "${apache_dirs[@]}"; do
 		[ -d "$apache_dir" ] || continue
 		if [ -d "$apache_dir/conf.d/userdata" ]; then
+			# Find old upgrade-in-progress files
 			while IFS= read -r -d '' userdata_file; do
 				if [ -z "${seen_site_includes["$userdata_file"]}" ]; then
 					site_includes+=("$userdata_file")
 					seen_site_includes["$userdata_file"]=1
 				fi
 			done < <(find "$apache_dir/conf.d/userdata" -name "*upgrade-in-progress*" -type f -print0 2>/dev/null)
+			
+			# Find new lucee.conf files created by configure-apache.sh
+			while IFS= read -r -d '' lucee_conf; do
+				if [ -z "${seen_site_includes["$lucee_conf"]}" ]; then
+					site_includes+=("$lucee_conf")
+					seen_site_includes["$lucee_conf"]=1
+				fi
+			done < <(find "$apache_dir/conf.d/userdata" -name "lucee.conf" -type f -print0 2>/dev/null)
 		fi
 	done
+	
+	# Check cPanel userdata SSL and STD paths if they exist
+	if [ "$IS_CPANEL" = true ]; then
+		for userdata_path in "$CPANEL_USERDATA_SSL_PATH" "$CPANEL_USERDATA_STD_PATH"; do
+			if [ -n "$userdata_path" ] && [ -d "$userdata_path" ]; then
+				while IFS= read -r -d '' lucee_conf; do
+					if [ -z "${seen_site_includes["$lucee_conf"]}" ]; then
+						site_includes+=("$lucee_conf")
+						seen_site_includes["$lucee_conf"]=1
+					fi
+				done < <(find "$userdata_path" -name "lucee.conf" -type f -print0 2>/dev/null)
+			fi
+		done
+	fi
 	
 	# Check primary Apache configuration files for modifications
 	if [ "$show_progress" = "true" ]; then
