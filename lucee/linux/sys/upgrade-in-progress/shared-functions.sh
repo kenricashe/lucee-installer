@@ -223,6 +223,19 @@ disable_conf() {
 # Apache Configuration Discovery Functions
 # ============================================================================
 
+# Helper function to check if a file is a Lucee-specific config file
+# Returns 0 (true) if the file should be skipped, 1 (false) otherwise
+is_lucee_config_file() {
+	local file="$1"
+	
+	# Skip our own config files
+	[[ "$file" == *"lucee-proxy"* ]] && return 0
+	[[ "$file" == *"upgrade-in-progress"* ]] && return 0
+	
+	# Not a Lucee config file
+	return 1
+}
+
 # Discover all Apache configuration files that contain Lucee upgrade-related content
 # Returns: JSON-formatted data about discovered configurations
 discover_apache_configs() {
@@ -291,9 +304,10 @@ discover_apache_configs() {
 			# RHEL/Rocky: VirtualHost files are often in conf.d
 			if [ -d "$apache_dir/conf.d" ]; then
 				while IFS= read -r -d '' vhost_file; do
-					# Skip our own config files
-					[[ "$vhost_file" == *"lucee-proxy"* ]] && continue
-					[[ "$vhost_file" == *"upgrade-in-progress"* ]] && continue
+					# Skip our own config files using the helper function
+					if is_lucee_config_file "$vhost_file"; then
+						continue
+					fi
 					
 					if grep -q "Include.*upgrade-in-progress.*lucee-detect-upgrade\.conf" "$vhost_file" 2>/dev/null; then
 						vhost_files+=("$vhost_file")

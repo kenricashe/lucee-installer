@@ -202,9 +202,10 @@ collect_rhel_config_files() {
 	local CONF_D_DIR="${SERVER_ROOT}/conf.d"
 	if [ -d "$CONF_D_DIR" ]; then
 		while IFS= read -r conf_file; do
-			# Skip our own config files
-			[[ "$conf_file" == *"lucee-proxy"* ]] && continue
-			[[ "$conf_file" == *"upgrade-in-progress"* ]] && continue
+			# Skip our own config files using the helper function
+			if is_lucee_config_file "$conf_file"; then
+				continue
+			fi
 			
 			# Only add files that contain VirtualHost blocks
 			if [ -f "$conf_file" ] && [ -z "${SEEN[$conf_file]}" ] && grep -q "<VirtualHost" "$conf_file" 2>/dev/null; then
@@ -218,9 +219,10 @@ collect_rhel_config_files() {
 	for alt_conf_d in "/etc/httpd/conf.d" "/etc/apache2/conf.d"; do
 		if [ "$alt_conf_d" != "$CONF_D_DIR" ] && [ -d "$alt_conf_d" ]; then
 			while IFS= read -r conf_file; do
-				# Skip our own config files
-				[[ "$conf_file" == *"lucee-proxy"* ]] && continue
-				[[ "$conf_file" == *"upgrade-in-progress"* ]] && continue
+				# Skip our own config files using the helper function
+				if is_lucee_config_file "$conf_file"; then
+					continue
+				fi
 				
 				# Only add files that contain VirtualHost blocks
 				if [ -f "$conf_file" ] && [ -z "${SEEN[$conf_file]}" ] && grep -q "<VirtualHost" "$conf_file" 2>/dev/null; then

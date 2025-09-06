@@ -536,9 +536,10 @@ find_vhosts_with_commented_errordocs() {
 			[ -d "$search_dir" ] || continue
 			
 			while IFS= read -r -d '' vhost_file; do
-				# Skip our own config files
-				[[ "$vhost_file" == *"lucee-proxy"* ]] && continue
-				[[ "$vhost_file" == *"upgrade-in-progress"* ]] && continue
+				# Skip our own config files using the helper function
+				if is_lucee_config_file "$vhost_file"; then
+					continue
+				fi
 				
 				# Check if file contains the commented ErrorDocument pattern
 				if grep -q "NOTE: ErrorDocument 404 disabled/commented by" "$vhost_file" 2>/dev/null; then
