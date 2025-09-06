@@ -461,6 +461,15 @@ EOF
 
 remove_dummy_files() {
 
+dummy_files_exist() {
+	for file in "${CPANEL_FILES[@]}"; do
+		if [ -e "$file" ]; then
+			return 0
+		fi
+	done
+	return 1
+}
+
 	echo "Removing cPanel simulation files..."
 	rm -rf /usr/local/cpanel
 	rm -rf /scripts
@@ -520,13 +529,22 @@ show_status() {
 case "${1:-}" in
 	"on")
 		abort_if_real_cpanel
-		backup_existing_files
-		create_dummy_files
-		echo ""
-		echo "✓ cPanel simulation ENABLED"
-		echo ""
-		echo "You can now test the toolkit in cPanel mode."
-		echo "Use '$0 off' to disable simulation and restore original files."
+		if dummy_files_exist; then
+			echo "Dummy files exist from previous run - skipping backup to avoid backing up dummy files."
+			create_dummy_files
+			echo ""
+			echo "✓ cPanel simulation ENABLED (updated)"
+			echo ""
+			echo "Dummy files have been recreated with latest script version."
+		else
+			backup_existing_files
+			create_dummy_files
+			echo ""
+			echo "✓ cPanel simulation ENABLED"
+			echo ""
+			echo "You can now test the toolkit in cPanel mode."
+			echo "Use '$0 off' to disable simulation and restore original files."
+		fi
 		;;
 	"off")
 		abort_if_real_cpanel
