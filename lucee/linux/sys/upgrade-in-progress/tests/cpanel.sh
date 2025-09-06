@@ -18,6 +18,8 @@ CPANEL_FILES=(
 	"/scripts/restartsrv_httpd"
 )
 
+IS_DEBIAN=false
+IS_CPANEL=true
 BACKUP_DIR="/tmp/cpanel-sim-backup"
 
 show_usage() {
