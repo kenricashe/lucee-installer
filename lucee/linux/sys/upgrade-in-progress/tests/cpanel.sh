@@ -459,8 +459,6 @@ EOF
 	echo "  Created: /scripts/restartsrv_httpd"
 }
 
-remove_dummy_files() {
-
 dummy_files_exist() {
 	for file in "${CPANEL_FILES[@]}"; do
 		if [ -e "$file" ]; then
@@ -469,6 +467,8 @@ dummy_files_exist() {
 	done
 	return 1
 }
+
+remove_dummy_files() {
 
 	echo "Removing cPanel simulation files..."
 	rm -rf /usr/local/cpanel
