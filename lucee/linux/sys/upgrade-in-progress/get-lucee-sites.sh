@@ -192,11 +192,46 @@ collect_rhel_config_files() {
 		SERVER_ROOT="/etc/httpd"
 	fi
 
+	# Always add the main httpd.conf file if it exists
 	if [ -f "$RHEL_HTTPD_CONF" ]; then
 		QUEUE+=("$RHEL_HTTPD_CONF")
 		SEEN["$RHEL_HTTPD_CONF"]=1
 	fi
 
+	# Directly add conf.d files that contain VirtualHost blocks
+	local CONF_D_DIR="${SERVER_ROOT}/conf.d"
+	if [ -d "$CONF_D_DIR" ]; then
+		while IFS= read -r conf_file; do
+			# Skip our own config files
+			[[ "$conf_file" == *"lucee-proxy"* ]] && continue
+			[[ "$conf_file" == *"upgrade-in-progress"* ]] && continue
+			
+			# Only add files that contain VirtualHost blocks
+			if [ -f "$conf_file" ] && [ -z "${SEEN[$conf_file]}" ] && grep -q "<VirtualHost" "$conf_file" 2>/dev/null; then
+				SEEN["$conf_file"]=1
+				QUEUE+=("$conf_file")
+			fi
+		done < <(find "$CONF_D_DIR" -maxdepth 1 -type f -name "*.conf" 2>/dev/null)
+	fi
+
+	# Also check for alternative conf.d locations
+	for alt_conf_d in "/etc/httpd/conf.d" "/etc/apache2/conf.d"; do
+		if [ "$alt_conf_d" != "$CONF_D_DIR" ] && [ -d "$alt_conf_d" ]; then
+			while IFS= read -r conf_file; do
+				# Skip our own config files
+				[[ "$conf_file" == *"lucee-proxy"* ]] && continue
+				[[ "$conf_file" == *"upgrade-in-progress"* ]] && continue
+				
+				# Only add files that contain VirtualHost blocks
+				if [ -f "$conf_file" ] && [ -z "${SEEN[$conf_file]}" ] && grep -q "<VirtualHost" "$conf_file" 2>/dev/null; then
+					SEEN["$conf_file"]=1
+					QUEUE+=("$conf_file")
+				fi
+			done < <(find "$alt_conf_d" -maxdepth 1 -type f -name "*.conf" 2>/dev/null)
+		fi
+	done
+
+	# Process Include directives
 	while [ $idx -lt ${#QUEUE[@]} ]; do
 		local base="${QUEUE[$idx]}"
 		idx=$((idx+1))
