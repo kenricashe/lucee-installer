@@ -11,7 +11,10 @@ fi
 
 set -euo pipefail
 
+cpanel_config="/etc/apache2/conf/httpd.conf"
+
 CPANEL_FILES=(
+	"$cpanel_config"
 	"/usr/local/cpanel/cpanel"
 	"/usr/local/cpanel/bin/check_cpanel_module_status"
 	"/scripts/rebuildhttpdconf"
@@ -85,7 +88,6 @@ restore_files() {
 create_dummy_files() {
 
 	local primary_config="/etc/httpd/conf/httpd.conf"
-	local cpanel_config="/etc/apache2/conf/httpd.conf"
 	
 	echo "Creating cPanel simulation files..."
 	
