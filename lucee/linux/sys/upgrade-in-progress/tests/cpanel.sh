@@ -3,12 +3,19 @@
 # cPanel Simulation Toggle Script
 # Usage: ./tests/cpanel.sh [on|off|status]
 
+# strict error handling because this is a test script
+set -euo pipefail
+
+IS_DEBIAN=false
+IS_CPANEL=true
+HTTPD_ROOT="/etc/apache2"
+CONF_DIR="/etc/apache2/conf.d"
+
 SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "${SCRIPT_DIR}/../ENVIRONMENT.sh"
 . "${SCRIPT_DIR}/../shared-functions.sh"
 
-set -euo pipefail
-
+primary_config="/etc/httpd/conf/httpd.conf"
 cpanel_config="/etc/apache2/conf/httpd.conf"
 
 CPANEL_FILES=(
@@ -17,13 +24,9 @@ CPANEL_FILES=(
 	"/usr/local/cpanel/bin/check_cpanel_module_status"
 	"/scripts/rebuildhttpdconf"
 	"/scripts/restartsrv_httpd"
+	"/etc/apache2/conf.d/userdata/ssl/2_4"
+	"/etc/apache2/conf.d/userdata/std/2_4"
 )
-
-IS_DEBIAN=false
-IS_CPANEL=true
-CONF_DIR=""
-SITES_AVAILABLE_DIR=""
-BACKUP_DIR="/tmp/cpanel-sim-backup"
 
 show_usage() {
 	echo "Usage: $0 [on|off|status]"
@@ -54,42 +57,8 @@ abort_if_real_cpanel() {
 	fi
 }
 
-backup_existing_files() {
-	echo "Backing up any existing files..."
-	mkdir -p "$BACKUP_DIR"
-	
-	for file in "${CPANEL_FILES[@]}"; do
-		if [ -e "$file" ]; then
-			echo "  Backing up: $file"
-			mkdir -p "$BACKUP_DIR$(dirname "$file")"
-			cp -a "$file" "$BACKUP_DIR$file"
-		fi
-	done
-}
-
-restore_files() {
-	if [ -d "$BACKUP_DIR" ]; then
-		echo "Restoring original files..."
-		for file in "${CPANEL_FILES[@]}"; do
-			backup_file="$BACKUP_DIR$file"
-			if [ -e "$backup_file" ]; then
-				echo "  Restoring: $file"
-				mkdir -p "$(dirname "$file")"
-				cp -a "$backup_file" "$file"
-			fi
-		done
-		echo "Removing backup directory..."
-		rm -rf "$BACKUP_DIR"
-	fi
-}
-
-create_dummy_files() {
-
-	local primary_config="/etc/httpd/conf/httpd.conf"
-	
-	echo "Creating cPanel simulation files..."
-	
-	# Create cPanel simulation httpd.conf with all VirtualHost blocks
+# Create cPanel simulation httpd.conf with all VirtualHost blocks
+create_httpd_conf() {
 	if [ -f "$primary_config" ] && [ ! -f "$cpanel_config" ]; then
 		echo "  Creating /etc/apache2/conf/httpd.conf for cPanel simulation"
 		mkdir -p /etc/apache2/conf
@@ -136,8 +105,10 @@ EOF
 			done
 		fi
 	fi
-	
-	# Create /usr/local/cpanel/cpanel (detection file)
+}
+
+# Create /usr/local/cpanel/cpanel (detection file)
+create_usr_local_cpanel_cpanel() {
 	mkdir -p /usr/local/cpanel
 	cat > /usr/local/cpanel/cpanel << 'EOF'
 #!/bin/bash
@@ -147,8 +118,10 @@ exit 0
 EOF
 	chmod +x /usr/local/cpanel/cpanel
 	echo "  Created: /usr/local/cpanel/cpanel"
-	
-	# Create /usr/local/cpanel/bin/check_cpanel_module_status
+}
+
+# Create /usr/local/cpanel/bin/check_cpanel_module_status
+create_check_cpanel_module_status() {
 	mkdir -p /usr/local/cpanel/bin
 	cat > /usr/local/cpanel/bin/check_cpanel_module_status << 'EOF'
 #!/bin/bash
@@ -238,8 +211,10 @@ fi
 EOF
 	chmod +x /usr/local/cpanel/bin/check_cpanel_module_status
 	echo "  Created: /usr/local/cpanel/bin/check_cpanel_module_status"
-	
-	# Create /scripts/rebuildhttpdconf
+}
+
+# Create /scripts/rebuildhttpdconf
+create_rebuildhttpdconf() {
 	mkdir -p /scripts
 	cat > /scripts/rebuildhttpdconf << 'EOF'
 #!/bin/bash
@@ -398,8 +373,10 @@ fi
 EOF
 	chmod +x /scripts/rebuildhttpdconf
 	echo "  Created: /scripts/rebuildhttpdconf"
-	
-	# Create /scripts/restartsrv_httpd
+}
+
+# Create /scripts/restartsrv_httpd
+create_restartsrv_httpd() {
 	cat > /scripts/restartsrv_httpd << 'EOF'
 #!/bin/bash
 # Dummy cPanel Apache restart script for simulation
@@ -454,29 +431,29 @@ EOF
 	echo "  Created: /scripts/restartsrv_httpd"
 }
 
-dummy_files_exist() {
-	for file in "${CPANEL_FILES[@]}"; do
-		if [ -e "$file" ]; then
-			return 0
-		fi
-	done
-	return 1
+create_dummy_files() {
+
+	echo "Creating cPanel simulation files..."
+	
+	create_httpd_conf
+	create_usr_local_cpanel_cpanel
+	create_check_cpanel_module_status
+	create_rebuildhttpdconf
+	create_restartsrv_httpd
+
+	# Create userdata directories
+	mkdir -p /etc/apache2/conf.d/userdata/ssl/2_4
+	mkdir -p /etc/apache2/conf.d/userdata/std/2_4
+	echo "  Created: /etc/apache2/conf.d/userdata directories"
+	
 }
 
 remove_dummy_files() {
 
 	echo "Removing cPanel simulation files..."
+	rm -rf /etc/apache2
 	rm -rf /usr/local/cpanel
 	rm -rf /scripts
-	
-	# Remove copied httpd.conf file
-	if [ -f "/etc/apache2/conf/httpd.conf" ]; then
-		echo "  Removing /etc/apache2/conf/httpd.conf"
-		rm -f /etc/apache2/conf/httpd.conf
-		# Remove directory if empty
-		rmdir /etc/apache2/conf 2>/dev/null || true
-		rmdir /etc/apache2 2>/dev/null || true
-	fi
 }
 
 show_status() {
@@ -512,42 +489,25 @@ show_status() {
 	else
 		echo "Status: cPanel simulation is DISABLED"
 	fi
-	
-	if [ -d "$BACKUP_DIR" ]; then
-		echo ""
-		echo "Backup directory exists: $BACKUP_DIR"
-		echo "Original files can be restored with: $0 off"
-	fi
 }
 
 # Main script logic
+
+abort_if_real_cpanel
+
 case "${1:-}" in
 	"on")
-		abort_if_real_cpanel
-		if dummy_files_exist; then
-			echo "Dummy files exist from previous run - skipping backup to avoid backing up dummy files."
-			create_dummy_files
-			echo ""
-			echo "✓ cPanel simulation ENABLED (updated)"
-			echo ""
-			echo "Dummy files have been recreated with latest script version."
-		else
-			backup_existing_files
-			create_dummy_files
-			echo ""
-			echo "✓ cPanel simulation ENABLED"
-			echo ""
-			echo "You can now test the toolkit in cPanel mode."
-			echo "Use '$0 off' to disable simulation and restore original files."
-		fi
+		create_dummy_files
+		echo ""
+		echo "✓ cPanel simulation ENABLED"
+		echo ""
+		echo "You can now test the toolkit in cPanel mode."
+		echo "Use '$0 off' to disable simulation."
 		;;
 	"off")
-		abort_if_real_cpanel
 		remove_dummy_files
-		restore_files
 		echo ""
 		echo "✓ cPanel simulation DISABLED"
-		echo "Original files have been restored (if any existed)."
 		;;
 	"status")
 		show_status

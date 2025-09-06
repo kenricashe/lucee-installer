@@ -266,7 +266,6 @@ discover_apache_configs() {
 	
 	# Add any additional directories from ENVIRONMENT.sh
 	[ -n "$CONF_DIR" ] && apache_dirs+=("$CONF_DIR")
-	[ -n "$SITES_AVAILABLE_DIR" ] && apache_dirs+=("$(dirname "$SITES_AVAILABLE_DIR")")
 	
 	# Initialize associative arrays to avoid duplicates
 	local -A seen_proxy

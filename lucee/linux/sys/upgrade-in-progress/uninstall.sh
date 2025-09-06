@@ -526,7 +526,6 @@ find_vhosts_with_commented_errordocs() {
 	
 	# Add any additional directories from ENVIRONMENT.sh
 	[ -n "$CONF_DIR" ] && apache_dirs+=("$CONF_DIR")
-	[ -n "$SITES_AVAILABLE_DIR" ] && apache_dirs+=("$(dirname "$SITES_AVAILABLE_DIR")")
 	
 	for apache_dir in "${apache_dirs[@]}"; do
 		[ -d "$apache_dir" ] || continue

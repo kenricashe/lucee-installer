@@ -171,8 +171,9 @@ ANY404_REGEX='^[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+'
 
 # cPanel userdata paths (IS_CPANEL provided by ENVIRONMENT.sh)
 if [ "$IS_CPANEL" = true ]; then
-	CPANEL_USERDATA_SSL_PATH="${CONF_DIR}/userdata/ssl/2_4"
-	CPANEL_USERDATA_STD_PATH="${CONF_DIR}/userdata/std/2_4"
+	# For cPanel, always use /etc/apache2 regardless of CONF_DIR
+	CPANEL_USERDATA_SSL_PATH="/etc/apache2/conf.d/userdata/ssl/2_4"
+	CPANEL_USERDATA_STD_PATH="/etc/apache2/conf.d/userdata/std/2_4"
 fi
 
 # Parse command line arguments

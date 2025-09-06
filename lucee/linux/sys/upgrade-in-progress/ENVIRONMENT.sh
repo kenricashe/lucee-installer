@@ -10,32 +10,38 @@ if [ "$(id -u)" != "0" ]; then
 	exit 1
 fi
 
-# IS_DEBIAN
-if command -v a2enconf >/dev/null 2>&1; then
-	IS_DEBIAN=true
-else
-	IS_DEBIAN=false
+# IS_DEBIAN (if not already defined)
+if [ -z "${IS_DEBIAN:-}" ]; then
+	if command -v a2enconf >/dev/null 2>&1; then
+		IS_DEBIAN=true
+	else
+		IS_DEBIAN=false
+	fi
 fi
 
-# HTTPD_ROOT
+# HTTPD_ROOT (if not already defined)
 # Prefer control commands (apache2ctl/apachectl) over direct binaries (apache2/httpd)
 # as they properly set up the environment variables
-cmd=$(command -v apache2ctl || command -v apachectl || command -v httpd)
-if [ -n "$cmd" ]; then
-	HTTPD_ROOT=$($cmd -V 2>/dev/null | awk -F'"' '/HTTPD_ROOT/ {print $2}')
-else
-	printf "\nERROR: No Apache controller found. Verify that Apache is installed and try again.\n"
-	exit 1
+if [ -z "${HTTPD_ROOT:-}" ]; then
+	cmd=$(command -v apache2ctl || command -v apachectl || command -v httpd)
+	if [ -n "$cmd" ]; then
+		HTTPD_ROOT=$($cmd -V 2>/dev/null | awk -F'"' '/HTTPD_ROOT/ {print $2}')
+	else
+		printf "\nERROR: No Apache controller found. Verify that Apache is installed and try again.\n"
+		exit 1
+	fi
 fi
 
 HTTPD_LUCEE_ROOT="${HTTPD_ROOT}/lucee-upgrade-in-progress"
 SITE_INCLUDES_404_DIR="${HTTPD_LUCEE_ROOT}/site-includes-for-404"
 
 # CONF_DIR (if any) e.g. /etc/httpd/conf.d or /etc/apache2/conf.d
-if [ -d "${HTTPD_ROOT}/conf.d" ]; then
-	CONF_DIR="${HTTPD_ROOT}/conf.d"
-else
-	CONF_DIR=""
+if [ -z "${CONF_DIR:-}" ]; then
+	if [ -d "${HTTPD_ROOT}/conf.d" ]; then
+		CONF_DIR="${HTTPD_ROOT}/conf.d"
+	else
+		CONF_DIR=""
+	fi
 fi
 
 # Abort if unsupported environment
