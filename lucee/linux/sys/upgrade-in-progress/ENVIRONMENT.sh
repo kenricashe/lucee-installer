@@ -49,7 +49,7 @@ fi
 
 # if sourced by deploy.sh, skip the rest of this script
 SCRIPT_FILENAME=$(basename "$0")
-if [ "$SCRIPT_FILENAME" = "deploy.sh" ]; then
+if [ "$SCRIPT_FILENAME" = "deploy.sh" ] || [ "$SCRIPT_FILENAME" = "cpanel.sh" ]; then
 	return 0
 fi
 

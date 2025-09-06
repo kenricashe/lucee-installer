@@ -3,11 +3,9 @@
 # cPanel Simulation Toggle Script
 # Usage: ./tests/cpanel.sh [on|off|status]
 
-# require root
-if [ "$(id -u)" != "0" ]; then
-	echo "This script must be run as root or with sudo."
-	exit 1
-fi
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+. "${SCRIPT_DIR}/../ENVIRONMENT.sh"
+. "${SCRIPT_DIR}/../shared-functions.sh"
 
 set -euo pipefail
 
@@ -95,10 +93,6 @@ create_dummy_files() {
 	if [ -f "$primary_config" ] && [ ! -f "$cpanel_config" ]; then
 		echo "  Creating /etc/apache2/conf/httpd.conf for cPanel simulation"
 		mkdir -p /etc/apache2/conf
-		
-		# Source shared functions for proper discovery
-		SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-		. "${SCRIPT_DIR}/../shared-functions.sh"
 		
 		# Start with header comment
 		cat > "$cpanel_config" << EOF
