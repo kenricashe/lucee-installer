@@ -7,6 +7,7 @@
 SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "${SCRIPT_DIR}/ENVIRONMENT.sh"
 . "${SCRIPT_DIR}/shared-functions.sh"
+. "${SCRIPT_DIR}/version.sh"
 
 run_edit_exclusions() {
 	ensure_default_exclusions_file
@@ -73,6 +74,7 @@ while true; do
 	clear
 	echo "------------------------------------------"
 	echo " 'Upgrade in Progress' for Lucee + Apache"
+	echo "  ${VERSION_STRING}"
 	if [ -e "/var/lucee-upgrade-in-progress" ]; then
 		echo "Current Server Status: UPGRADE IN PROGRESS"
 	else

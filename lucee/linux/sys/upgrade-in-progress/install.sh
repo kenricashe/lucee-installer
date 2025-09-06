@@ -18,9 +18,10 @@ if [ "$(id -u)" != "0" ]; then
 	exit 1
 fi
 
-# UPDATE THIS WITH EACH COMMIT
+# Source centralized version information
+source "$(dirname "$0")/version.sh"
 echo ""
-echo "install.sh version: 2025-09-05 02:38:10 Pacific"
+echo "install.sh ${VERSION_STRING}"
 
 OWNER=${OWNER:-kenricashe}
 REPO=${REPO:-lucee-installer}

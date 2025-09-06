@@ -10,6 +10,7 @@ SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 FILES=(
 	"ENVIRONMENT.sh"
 	"shared-functions.sh"
+	"version.sh"
 	"menu.sh"
 	"get-lucee-sites.sh"
 	"configure-apache.sh"
