@@ -6,6 +6,7 @@
 SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "${SCRIPT_DIR}/ENVIRONMENT.sh"
 . "${SCRIPT_DIR}/shared-functions.sh"
+. "${SCRIPT_DIR}/version.sh"
 
 FILES=(
 	"ENVIRONMENT.sh"
@@ -39,6 +40,9 @@ if [ ${#missing[@]} -gt 0 ]; then
 	done
 	exit 1
 fi
+
+echo ""
+echo "Deploying ${VERSION_STRING}"
 
 # Use Lucee root path from command line argument or prompt for it
 DEFAULT_LUCEE_ROOT="/opt/lucee"

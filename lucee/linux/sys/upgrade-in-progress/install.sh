@@ -18,11 +18,6 @@ if [ "$(id -u)" != "0" ]; then
 	exit 1
 fi
 
-# Source centralized version information
-source "$(dirname "$0")/version.sh"
-echo ""
-echo "install.sh ${VERSION_STRING}"
-
 OWNER=${OWNER:-kenricashe}
 REPO=${REPO:-lucee-installer}
 
