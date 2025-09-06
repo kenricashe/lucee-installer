@@ -384,7 +384,8 @@ discover_apache_configs() {
 				include_path=$(echo "$include_line" | sed -E 's/^[[:space:]]*(Include|IncludeOptional)[[:space:]]+//i' | tr -d '"')
 				
 				# Skip if already processed
-				[ -n "${processed_includes["$include_path"]}" ] && continue
+				# +x parameter expansion prevents unbound variable errors when set -u is enabled in calling script
+				[ -n "${processed_includes["$include_path"]+x}" ] && continue
 				processed_includes["$include_path"]=1
 				
 				# If it's a directory pattern (ends with /*), check that directory
@@ -452,7 +453,7 @@ discover_apache_configs() {
 				[ -f "$vhost_file" ] || continue
 				local docroot
 				docroot=$(grep -i '^[[:space:]]*DocumentRoot' "$vhost_file" | head -1 | awk '{print $2}' | tr -d '"')
-				if [ -n "$docroot" ] && [ -f "${docroot}/.htaccess" ] && [ -z "${seen_htaccess["${docroot}/.htaccess"]}" ]; then
+				if [ -n "$docroot" ] && [ -f "${docroot}/.htaccess" ] && [ -z "${seen_htaccess["${docroot}/.htaccess"]+x}" ]; then
 					if grep -q "# NOTE: ErrorDocument 404 moved\|# ErrorDocument.*404.*\.cfm" "${docroot}/.htaccess" 2>/dev/null; then
 						modified_htaccess+=("${docroot}/.htaccess")
 						seen_htaccess["${docroot}/.htaccess"]=1
@@ -482,7 +483,7 @@ discover_apache_configs() {
 				local docroot
 				docroot=$(grep -i '^[[:space:]]*DocumentRoot' "$vhost_file" | head -1 | awk '{print $2}' | tr -d '"')
 				if [ -n "$docroot" ]; then
-					if [ -f "${docroot}/${html_name}" ] && [ -z "${seen_html["${docroot}/${html_name}"]}" ]; then
+					if [ -f "${docroot}/${html_name}" ] && [ -z "${seen_html["${docroot}/${html_name}"]+x}" ]; then
 						upgrade_html_files+=("${docroot}/${html_name}")
 						seen_html["${docroot}/${html_name}"]=1
 					fi
@@ -501,7 +502,7 @@ discover_apache_configs() {
 				local docroot
 				docroot=$(grep -i '^[[:space:]]*DocumentRoot' "$vhost_file" | head -1 | awk '{print $2}' | tr -d '"')
 				if [ -n "$docroot" ]; then
-					if [ -f "${docroot}/${html_name}" ] && [ -z "${seen_html["${docroot}/${html_name}"]}" ]; then
+					if [ -f "${docroot}/${html_name}" ] && [ -z "${seen_html["${docroot}/${html_name}"]+x}" ]; then
 						upgrade_html_files+=("${docroot}/${html_name}")
 						seen_html["${docroot}/${html_name}"]=1
 					fi
@@ -551,7 +552,7 @@ discover_apache_configs() {
 			echo "Checking per-site includes: $include_dir" >&2
 		fi
 		while IFS= read -r -d '' include_file; do
-			if [ -z "${seen_site_includes["$include_file"]}" ]; then
+			if [ -z "${seen_site_includes["$include_file"]+x}" ]; then
 				site_includes+=("$include_file")
 				seen_site_includes["$include_file"]=1
 			fi
@@ -564,7 +565,7 @@ discover_apache_configs() {
 		if [ -d "$apache_dir/conf.d/userdata" ]; then
 			# Find old upgrade-in-progress files
 			while IFS= read -r -d '' userdata_file; do
-				if [ -z "${seen_site_includes["$userdata_file"]}" ]; then
+				if [ -z "${seen_site_includes["$userdata_file"]+x}" ]; then
 					site_includes+=("$userdata_file")
 					seen_site_includes["$userdata_file"]=1
 				fi
@@ -572,7 +573,7 @@ discover_apache_configs() {
 			
 			# Find new lucee.conf files created by configure-apache.sh
 			while IFS= read -r -d '' lucee_conf; do
-				if [ -z "${seen_site_includes["$lucee_conf"]}" ]; then
+				if [ -z "${seen_site_includes["$lucee_conf"]+x}" ]; then
 					site_includes+=("$lucee_conf")
 					seen_site_includes["$lucee_conf"]=1
 				fi
@@ -585,7 +586,7 @@ discover_apache_configs() {
 		for userdata_path in "$CPANEL_USERDATA_SSL_PATH" "$CPANEL_USERDATA_STD_PATH"; do
 			if [ -n "$userdata_path" ] && [ -d "$userdata_path" ]; then
 				while IFS= read -r -d '' lucee_conf; do
-					if [ -z "${seen_site_includes["$lucee_conf"]}" ]; then
+					if [ -z "${seen_site_includes["$lucee_conf"]+x}" ]; then
 						site_includes+=("$lucee_conf")
 						seen_site_includes["$lucee_conf"]=1
 					fi
