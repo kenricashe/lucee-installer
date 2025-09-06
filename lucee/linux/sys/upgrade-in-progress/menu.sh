@@ -64,6 +64,11 @@ run_end() {
 	"${UPG_DIR}/end.sh"
 }
 
+run_uninstall() {
+	clear
+	"${UPG_DIR}/uninstall.sh"
+}
+
 while true; do
 	clear
 	echo "------------------------------------------"
@@ -93,6 +98,8 @@ while true; do
 	echo "e) End 'Upgrade in Progress'"
 	echo ""
 	echo "q) Quit"
+	echo ""
+	echo "u) Uninstall"
 	echo ""
 	read -r -p "Select an option: " choice
 	case "${choice}" in
@@ -127,6 +134,9 @@ while true; do
 		q|Q)
 			echo "Exiting."
 			exit 0
+			;;
+		u|U)
+			run_uninstall
 			;;
 		*)
 			echo "Invalid selection."
