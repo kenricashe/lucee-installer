@@ -83,10 +83,14 @@ restore_files() {
 }
 
 create_dummy_files() {
+
+	local primary_config="/etc/httpd/conf/httpd.conf"
+	local cpanel_config="/etc/apache2/conf/httpd.conf"
+	
 	echo "Creating cPanel simulation files..."
 	
 	# Create cPanel simulation httpd.conf with all VirtualHost blocks
-	if [ -f "/etc/httpd/conf/httpd.conf" ] && [ ! -f "/etc/apache2/conf/httpd.conf" ]; then
+	if [ -f "$primary_config" ] && [ ! -f "$cpanel_config" ]; then
 		echo "  Creating /etc/apache2/conf/httpd.conf for cPanel simulation"
 		mkdir -p /etc/apache2/conf
 		
@@ -95,7 +99,7 @@ create_dummy_files() {
 		. "${SCRIPT_DIR}/../shared-functions.sh"
 		
 		# Start with header comment
-		cat > /etc/apache2/conf/httpd.conf << EOF
+		cat > "$cpanel_config" << EOF
 # cPanel simulation dummy file - aggregated Apache configuration for testing
 # This file is created by cpanel.sh for testing purposes only
 # Generated on: $(date)
@@ -103,24 +107,19 @@ create_dummy_files() {
 EOF
 		
 		# Copy the primary Apache config content
-		if primary_config=$(find_primary_apache_config); then
-			# Avoid copying the file to itself (circular reference in cPanel simulation)
-			if [ "$primary_config" != "/etc/apache2/conf/httpd.conf" ]; then
-				cat "$primary_config" >> /etc/apache2/conf/httpd.conf
-			fi
-		fi
+		cat "$primary_config" >> "$cpanel_config"
 		
 		# Find and append VirtualHost blocks from other .conf files using discovery
-		echo "" >> /etc/apache2/conf/httpd.conf
-		echo "# Additional VirtualHost blocks discovered from Apache configuration files" >> /etc/apache2/conf/httpd.conf
-		echo "" >> /etc/apache2/conf/httpd.conf
+		echo "" >> "$cpanel_config"
+		echo "# Additional VirtualHost blocks discovered from Apache configuration files" >> "$cpanel_config"
+		echo "" >> "$cpanel_config"
 		
 		# Use discover_apache_configs to find all config files with VirtualHost blocks
 		discover_apache_configs "paths-only" "false" | while read -r conf_file; do
 			if [ -f "$conf_file" ] && grep -q "<VirtualHost" "$conf_file" 2>/dev/null; then
 				# Skip the primary config since we already included it
 				if [ "$conf_file" != "$primary_config" ]; then
-					echo "# From: $conf_file" >> /etc/apache2/conf/httpd.conf
+					echo "# From: $conf_file" >> "$cpanel_config"
 					awk '
 						/<VirtualHost/ { in_vhost=1; vhost_content=$0 "\n"; next }
 						in_vhost && /<\/VirtualHost>/ { 
@@ -131,7 +130,7 @@ EOF
 							next
 						}
 						in_vhost { vhost_content = vhost_content $0 "\n" }
-					' "$conf_file" >> /etc/apache2/conf/httpd.conf
+					' "$conf_file" >> "$cpanel_config"
 				fi
 			fi
 		done
