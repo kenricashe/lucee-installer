@@ -166,32 +166,30 @@ confirm_action() {
 	esac
 }
 
-# Function to restore original ErrorDocument 404 directives from backups
+# Function to restore original ErrorDocument 404 directives by uncommenting them
 restore_original_errordocument_404() {
 	local vhost_file="$1"
 	
-	# Skip in preview mode
-	if [ "$PREVIEW_MODE" = true ]; then
-		return 0
-	fi
+	log_verbose "Searching for commented ErrorDocument 404 in: $vhost_file"
 	
-	log_verbose "Searching for original ErrorDocument 404 in: $vhost_file"
-	
-	# First check if there's a commented-out ErrorDocument with our note pattern
+	# Check if there's a commented-out ErrorDocument with our note pattern
 	local commented_errordoc
-	commented_errordoc=$(grep -A1 "NOTE: ErrorDocument 404 disabled/commented by" "$vhost_file" 2>/dev/null | grep -E "^[[:space:]]*#[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+" | head -1)
+	commented_errordoc=$(grep -A1 "NOTE: ErrorDocument 404.*configure-apache.sh" "$vhost_file" 2>/dev/null | grep -E "^[[:space:]]*#[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+" | head -1)
 	
 	if [ -n "$commented_errordoc" ]; then
-		# Found a commented directive with our note pattern, extract the original directive
+		# Found a commented directive with our note pattern
 		local original_errordoc
 		original_errordoc=$(echo "$commented_errordoc" | sed -E 's/^[[:space:]]*#[[:space:]]*//')
 		
 		log_verbose "Found commented ErrorDocument 404 with note: $original_errordoc"
 		
-		# Always uncomment the directive and remove the note, regardless of whether there's already an active one
-		if [ "$PREVIEW_MODE" = false ]; then
+		if [ "$PREVIEW_MODE" = true ]; then
+			echo "Would uncomment ErrorDocument 404 in $vhost_file:"
+			echo "  $original_errordoc"
+			echo "Would remove note comment from $vhost_file"
+		else
 			# Remove the note line
-			sed -i "/NOTE: ErrorDocument 404 disabled\/commented by/d" "$vhost_file"
+			sed -i "/NOTE: ErrorDocument 404.*configure-apache.sh/d" "$vhost_file"
 			
 			# Uncomment the ErrorDocument line
 			sed -i 's/^\([[:space:]]*\)#[[:space:]]*\(ErrorDocument[[:space:]]\+404.*\)/\1\2/' "$vhost_file"
@@ -201,56 +199,40 @@ restore_original_errordocument_404() {
 		return 0
 	fi
 	
-	# If no commented directive found, try to find in backups
-	log_verbose "No commented ErrorDocument found, checking backups for: $vhost_file"
+	# Also check for .htaccess files in the site's document root
+	local docroot
+	docroot=$(grep -E "^[[:space:]]*DocumentRoot[[:space:]]+" "$vhost_file" 2>/dev/null | head -1 | sed -E 's/^[[:space:]]*DocumentRoot[[:space:]]+//' | tr -d '"')
+	local htaccess_file="${docroot}/.htaccess"
 	
-	# Find backup versions, but limit to direct backup directories (not nested ones)
-	local backup_files
-	backup_files=$(find "${BACKUP_ROOT}" -maxdepth 2 -path "*${vhost_file}" 2>/dev/null | sort -r)
-	
-	if [ -z "$backup_files" ]; then
-		log_verbose "No backups found for $vhost_file"
-		return 0
+	if [ -f "$htaccess_file" ]; then
+		log_verbose "Checking .htaccess file: $htaccess_file"
+		local htaccess_commented
+		htaccess_commented=$(grep -A1 "NOTE: ErrorDocument 404.*configure-apache.sh" "$htaccess_file" 2>/dev/null | grep -E "^[[:space:]]*#[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+" | head -1)
+		
+		if [ -n "$htaccess_commented" ]; then
+			local htaccess_original
+			htaccess_original=$(echo "$htaccess_commented" | sed -E 's/^[[:space:]]*#[[:space:]]*//')
+			
+			log_verbose "Found commented ErrorDocument 404 in .htaccess: $htaccess_original"
+			
+			if [ "$PREVIEW_MODE" = true ]; then
+				echo "Would uncomment ErrorDocument 404 in $htaccess_file:"
+				echo "  $htaccess_original"
+				echo "Would remove note comment from $htaccess_file"
+			else
+				# Remove the note line
+				sed -i "/NOTE: ErrorDocument 404.*configure-apache.sh/d" "$htaccess_file"
+				
+				# Uncomment the ErrorDocument line
+				sed -i 's/^\([[:space:]]*\)#[[:space:]]*\(ErrorDocument[[:space:]]\+404.*\)/\1\2/' "$htaccess_file"
+				
+				log_action "Restored original ErrorDocument 404 to: $htaccess_file"
+			fi
+			return 0
+		fi
 	fi
 	
-	# Search through backups from most recent to oldest
-	local original_errordoc
-	while IFS= read -r backup_file; do
-		if [ -f "$backup_file" ]; then
-			log_verbose "Checking backup: $backup_file"
-			# Look for ErrorDocument 404 lines that aren't commented out
-			original_errordoc=$(grep -E "^[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+" "$backup_file" 2>/dev/null | head -1)
-			if [ -n "$original_errordoc" ]; then
-				log_verbose "Found original ErrorDocument 404: $original_errordoc"
-				
-				# Check if current file already has an ErrorDocument 404
-				if ! grep -q "^[[:space:]]*ErrorDocument[[:space:]]\+404[[:space:]]" "$vhost_file" 2>/dev/null; then
-					if [ "$PREVIEW_MODE" = true ]; then
-						echo "Would restore to $vhost_file:"
-						echo "  $original_errordoc"
-					else
-						# Find a good place to insert it (after DocumentRoot, before </VirtualHost>)
-						local insert_line
-						insert_line=$(grep -n "DocumentRoot\|</VirtualHost>" "$vhost_file" | grep "DocumentRoot" | tail -1 | cut -d: -f1)
-						if [ -n "$insert_line" ]; then
-							# Insert after DocumentRoot line
-							sed_i_nopreserve "${insert_line}a\\\t${original_errordoc}" "$vhost_file"
-							log_action "Restored original ErrorDocument 404 to: $vhost_file"
-						else
-							# Fallback: insert before </VirtualHost>
-							sed_i_nopreserve "/<\/VirtualHost>/i\\\t${original_errordoc}" "$vhost_file"
-							log_action "Restored original ErrorDocument 404 to: $vhost_file"
-						fi
-					fi
-				else
-					log_verbose "ErrorDocument 404 already exists in $vhost_file"
-				fi
-				return 0
-			fi
-		fi
-	done <<< "$backup_files"
-	
-	log_verbose "No original ErrorDocument 404 found in any backup for $vhost_file"
+	log_verbose "No commented ErrorDocument 404 found in $vhost_file or associated .htaccess"
 }
 
 # Function to remove Include directives from VirtualHost files
@@ -284,7 +266,7 @@ remove_include_directives() {
 	if [ "$modified" = true ] && [ "$PREVIEW_MODE" = false ]; then
 		log_action "Removed upgrade Include directives from: $vhost_file"
 		
-		# Try to restore original ErrorDocument 404 directives from backups
+		# Try to restore original ErrorDocument 404 directives by uncommenting
 		restore_original_errordocument_404 "$vhost_file"
 	fi
 }
@@ -370,11 +352,6 @@ process_uninstall_operations() {
 					remove_include_directives "$vhost_file"
 				fi
 				
-				# Check if file has commented ErrorDocument directives
-				if grep -q "NOTE: ErrorDocument 404 disabled/commented by" "$vhost_file" 2>/dev/null; then
-					echo "  ${PREVIEW_PREFIX}Restoring commented ErrorDocument in: $vhost_file"
-					restore_original_errordocument_404 "$vhost_file"
-				fi
 			fi
 		done <<< "$vhost_files"
 		echo ""
@@ -634,7 +611,19 @@ main() {
 	log_verbose "Found site_includes: $(echo "$site_includes" | wc -l) files"
 	log_verbose "Found legacy_files: $(echo "$legacy_files" | wc -l) files"
 	
-	# Add any VirtualHost files with commented ErrorDocument directives
+	# Process VirtualHost files with commented ErrorDocument directives separately
+	if [ -n "$commented_vhosts" ]; then
+		echo "${PREVIEW_PREFIX}Processing VirtualHost files with commented ErrorDocument directives..."
+		while IFS= read -r vhost_file; do
+			if [ -n "$vhost_file" ]; then
+				echo "  ${PREVIEW_PREFIX}Restoring commented ErrorDocument in: $vhost_file"
+				restore_original_errordocument_404 "$vhost_file"
+			fi
+		done <<< "$commented_vhosts"
+		echo ""
+	fi
+	
+	# Add any VirtualHost files with commented ErrorDocument directives to the main list
 	if [ -n "$commented_vhosts" ]; then
 		if [ -n "$vhost_files" ]; then
 			# Combine both lists and remove duplicates
