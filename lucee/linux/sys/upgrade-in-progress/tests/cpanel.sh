@@ -21,6 +21,7 @@ CPANEL_FILES=(
 IS_DEBIAN=false
 IS_CPANEL=true
 CONF_DIR=""
+SITES_AVAILABLE_DIR=""
 BACKUP_DIR="/tmp/cpanel-sim-backup"
 
 show_usage() {
