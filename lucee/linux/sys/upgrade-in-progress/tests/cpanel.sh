@@ -192,8 +192,135 @@ EOF
 echo "cPanel simulation: rebuildhttpdconf"
 echo "  Simulating Apache configuration rebuild..."
 
-# In real cPanel, this rebuilds the entire Apache configuration
-# For simulation, we just check if Apache config is valid
+# Detect Apache configuration directory
+if [ -d "/etc/apache2" ]; then
+	APACHE_CONF_DIR="/etc/apache2"
+	VHOST_DIR="/etc/apache2/sites-available"
+elif [ -d "/etc/httpd" ]; then
+	APACHE_CONF_DIR="/etc/httpd"
+	VHOST_DIR="/etc/httpd/conf.d"
+else
+	echo "  Warning: Apache configuration directory not found"
+	exit 0
+fi
+
+USERDATA_DIR="$APACHE_CONF_DIR/conf.d/userdata"
+
+# Function to update userdata includes in a vhost file
+update_userdata_includes() {
+	local vhost_file="$1"
+	local domain="$2"
+	local user="$3"
+	
+	# Check for SSL and non-SSL userdata directories
+	local ssl_userdata_dir="$USERDATA_DIR/ssl/2_4/$user/$domain"
+	local std_userdata_dir="$USERDATA_DIR/std/2_4/$user/$domain"
+	
+	# Check if userdata .conf files exist
+	local has_ssl_userdata=false
+	local has_std_userdata=false
+	
+	if [ -d "$ssl_userdata_dir" ] && [ -n "$(find "$ssl_userdata_dir" -name "*.conf" 2>/dev/null)" ]; then
+		has_ssl_userdata=true
+	fi
+	
+	if [ -d "$std_userdata_dir" ] && [ -n "$(find "$std_userdata_dir" -name "*.conf" 2>/dev/null)" ]; then
+		has_std_userdata=true
+	fi
+	
+	# Create temporary file for modifications
+	local temp_file=$(mktemp)
+	local modified=false
+	
+	while IFS= read -r line; do
+		# Check for existing userdata includes
+		if [[ "$line" =~ ^[[:space:]]*#?[[:space:]]*Include.*userdata.*/$domain/\*\.conf ]]; then
+			# Determine if this is SSL or standard userdata
+			if [[ "$line" =~ /ssl/ ]]; then
+				if [ "$has_ssl_userdata" = true ]; then
+					# Uncomment if commented, or keep as-is if already uncommented
+					echo "${line#*#}" | sed 's/^[[:space:]]*/    /' >> "$temp_file"
+					echo "    Updated SSL userdata include for $domain"
+				else
+					# Comment out if not commented
+					if [[ ! "$line" =~ ^[[:space:]]*# ]]; then
+						echo "    #$line" >> "$temp_file"
+						echo "    Commented out SSL userdata include for $domain (no files found)"
+					else
+						echo "$line" >> "$temp_file"
+					fi
+				fi
+			else
+				if [ "$has_std_userdata" = true ]; then
+					# Uncomment if commented, or keep as-is if already uncommented
+					echo "${line#*#}" | sed 's/^[[:space:]]*/    /' >> "$temp_file"
+					echo "    Updated standard userdata include for $domain"
+				else
+					# Comment out if not commented
+					if [[ ! "$line" =~ ^[[:space:]]*# ]]; then
+						echo "    #$line" >> "$temp_file"
+						echo "    Commented out standard userdata include for $domain (no files found)"
+					else
+						echo "$line" >> "$temp_file"
+					fi
+				fi
+			fi
+			modified=true
+		else
+			echo "$line" >> "$temp_file"
+		fi
+	done < "$vhost_file"
+	
+	# Add missing userdata includes if they don't exist
+	if [ "$has_ssl_userdata" = true ] && ! grep -q "userdata/ssl.*/$domain/\*\.conf" "$vhost_file"; then
+		echo "    Include \"$ssl_userdata_dir/*.conf\"" >> "$temp_file"
+		echo "    Added SSL userdata include for $domain"
+		modified=true
+	fi
+	
+	if [ "$has_std_userdata" = true ] && ! grep -q "userdata/std.*/$domain/\*\.conf" "$vhost_file"; then
+		echo "    Include \"$std_userdata_dir/*.conf\"" >> "$temp_file"
+		echo "    Added standard userdata include for $domain"
+		modified=true
+	fi
+	
+	# Replace original file if modified
+	if [ "$modified" = true ]; then
+		mv "$temp_file" "$vhost_file"
+	else
+		rm "$temp_file"
+	fi
+}
+
+# Process VirtualHost files
+echo "  Processing VirtualHost configurations..."
+
+if [ -d "$VHOST_DIR" ]; then
+	for vhost_file in "$VHOST_DIR"/*.conf; do
+		if [ -f "$vhost_file" ]; then
+			# Extract domain and user from VirtualHost configuration
+			while IFS= read -r line; do
+				if [[ "$line" =~ ServerName[[:space:]]+([^[:space:]]+) ]]; then
+					domain="${BASH_REMATCH[1]}"
+					# Try to extract user from DocumentRoot or assume from domain
+					user_line=$(grep -i "DocumentRoot" "$vhost_file" | head -1)
+					if [[ "$user_line" =~ /home/([^/]+)/ ]]; then
+						user="${BASH_REMATCH[1]}"
+					else
+						# Fallback: use domain name as user
+						user=$(echo "$domain" | cut -d'.' -f1)
+					fi
+					
+					echo "  Processing $domain (user: $user)"
+					update_userdata_includes "$vhost_file" "$domain" "$user"
+					break
+				fi
+			done < "$vhost_file"
+		fi
+	done
+fi
+
+# Test Apache configuration
 if command -v apache2ctl >/dev/null 2>&1; then
 	APACHE_CMD="apache2ctl"
 elif command -v httpd >/dev/null 2>&1; then
