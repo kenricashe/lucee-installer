@@ -116,6 +116,33 @@ error_if_include_not_found() {
 error_if_include_not_found "${UPG_DIR}/lucee-detect-upgrade.conf"
 error_if_include_not_found "${UPG_DIR}/lucee-upgrade-in-progress.html"
 
+# cPanel mode: Check for /etc/apache2/conf/httpd.conf and use it exclusively
+if [ "$IS_CPANEL" = true ]; then
+	CPANEL_HTTP_CONF="/etc/apache2/conf/httpd.conf"
+	if [ ! -f "$CPANEL_HTTP_CONF" ]; then
+		echo "Warning: cPanel mode detected but $CPANEL_HTTP_CONF not found."
+		echo "This file should contain VirtualHost configurations for cPanel sites."
+		echo "Run 'cpanel.sh on' to set up proper cPanel simulation environment."
+		exit 0
+	fi
+	
+	# Check if the file contains any VirtualHost blocks
+	if ! grep -q "<VirtualHost" "$CPANEL_HTTP_CONF"; then
+		echo "Warning: $CPANEL_HTTP_CONF exists but contains no VirtualHost configurations."
+		echo "No sites to configure for upgrade mode."
+		exit 0
+	fi
+	
+	# Always regenerate sites file in cPanel mode to ensure it reflects current cPanel configuration
+	echo "cPanel mode: Extracting site information from $CPANEL_HTTP_CONF"
+	if "${UPG_DIR}/get-lucee-sites.sh"; then
+		echo "Successfully extracted site information for cPanel mode"
+	else
+		echo "Error: Failed to extract site information from cPanel configuration"
+		exit 1
+	fi
+fi
+
 if [ ! -f "$SITES_FILE" ]; then
 	echo "Lucee sites data file not found."
 	echo ""

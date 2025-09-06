@@ -81,6 +81,55 @@ restore_files() {
 create_dummy_files() {
 	echo "Creating cPanel simulation files..."
 	
+	# Create cPanel simulation httpd.conf with all VirtualHost blocks
+	if [ -f "/etc/httpd/conf/httpd.conf" ] && [ ! -f "/etc/apache2/conf/httpd.conf" ]; then
+		echo "  Creating /etc/apache2/conf/httpd.conf for cPanel simulation"
+		mkdir -p /etc/apache2/conf
+		
+		# Source shared functions for proper discovery
+		SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+		. "${SCRIPT_DIR}/../shared-functions.sh"
+		
+		# Start with header comment
+		cat > /etc/apache2/conf/httpd.conf << EOF
+# cPanel simulation dummy file - aggregated Apache configuration for testing
+# This file is created by cpanel.sh for testing purposes only
+# Generated on: $(date)
+
+EOF
+		
+		# Copy the primary Apache config content
+		if primary_config=$(find_primary_apache_config); then
+			cat "$primary_config" >> /etc/apache2/conf/httpd.conf
+		fi
+		
+		# Find and append VirtualHost blocks from other .conf files using discovery
+		echo "" >> /etc/apache2/conf/httpd.conf
+		echo "# Additional VirtualHost blocks discovered from Apache configuration files" >> /etc/apache2/conf/httpd.conf
+		echo "" >> /etc/apache2/conf/httpd.conf
+		
+		# Use discover_apache_configs to find all config files with VirtualHost blocks
+		discover_apache_configs "paths-only" "false" | while read -r conf_file; do
+			if [ -f "$conf_file" ] && grep -q "<VirtualHost" "$conf_file" 2>/dev/null; then
+				# Skip the primary config since we already included it
+				if [ "$conf_file" != "$primary_config" ]; then
+					echo "# From: $conf_file" >> /etc/apache2/conf/httpd.conf
+					awk '
+						/<VirtualHost/ { in_vhost=1; vhost_content=$0 "\n"; next }
+						in_vhost && /<\/VirtualHost>/ { 
+							vhost_content = vhost_content $0 "\n\n"
+							print vhost_content
+							in_vhost=0
+							vhost_content=""
+							next
+						}
+						in_vhost { vhost_content = vhost_content $0 "\n" }
+					' "$conf_file" >> /etc/apache2/conf/httpd.conf
+				fi
+			fi
+		done
+	fi
+	
 	# Create /usr/local/cpanel/cpanel (detection file)
 	mkdir -p /usr/local/cpanel
 	cat > /usr/local/cpanel/cpanel << 'EOF'
@@ -403,6 +452,15 @@ remove_dummy_files() {
 	echo "Removing cPanel simulation files..."
 	rm -rf /usr/local/cpanel
 	rm -rf /scripts
+	
+	# Remove copied httpd.conf file
+	if [ -f "/etc/apache2/conf/httpd.conf" ]; then
+		echo "  Removing /etc/apache2/conf/httpd.conf"
+		rm -f /etc/apache2/conf/httpd.conf
+		# Remove directory if empty
+		rmdir /etc/apache2/conf 2>/dev/null || true
+		rmdir /etc/apache2 2>/dev/null || true
+	fi
 }
 
 show_status() {
