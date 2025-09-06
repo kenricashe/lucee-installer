@@ -112,8 +112,8 @@ EOF
 		
 		# Use sites-configured.txt which already contains the list of VirtualHost files (third column)
 		# First check if the file exists
-		if [ -f "${UPG_DIR}/sites-configured.txt" ]; then
-			awk '{print $3}' "${UPG_DIR}/sites-configured.txt" | sort -u | while read -r conf_file; do
+		if [ -f "${SITES_FILE}" ]; then
+			awk '{print $3}' "${SITES_FILE}" | sort -u | while read -r conf_file; do
 				# Skip the primary config since we already included it
 				if [ -f "$conf_file" ] && [ "$conf_file" != "$primary_config" ]; then
 					echo "# From: $conf_file" >> "$cpanel_config"

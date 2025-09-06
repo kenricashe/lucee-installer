@@ -49,15 +49,8 @@ fi
 
 # if sourced by deploy.sh, skip the rest of this script
 SCRIPT_FILENAME=$(basename "$0")
-if [ "$SCRIPT_FILENAME" = "deploy.sh" ] || [ "$SCRIPT_FILENAME" = "cpanel.sh" ]; then
+if [ "$SCRIPT_FILENAME" = "deploy.sh" ]; then
 	return 0
-fi
-
-# IS_CPANEL
-if [ -f "/usr/local/cpanel/cpanel" ]; then
-	IS_CPANEL=true
-else
-	IS_CPANEL=false
 fi
 
 # Determine library directory, resolving symlinks where available
@@ -76,6 +69,17 @@ LUCEE_ROOT="${LUCEE_ROOT%/}" # usually /opt/lucee
 UPG_DIR="${LUCEE_ROOT}/sys/upgrade-in-progress"
 SITES_FILE="${UPG_DIR}/sites-configured.txt"
 EXCLUSIONS_FILE="${UPG_DIR}/site-exclusions.txt"
+
+if [ "$SCRIPT_FILENAME" = "cpanel.sh" ]; then
+	return 0
+fi
+
+# IS_CPANEL
+if [ -f "/usr/local/cpanel/cpanel" ]; then
+	IS_CPANEL=true
+else
+	IS_CPANEL=false
+fi
 
 press_enter_to_continue() {
 	printf "\nPress Enter to continue..."
