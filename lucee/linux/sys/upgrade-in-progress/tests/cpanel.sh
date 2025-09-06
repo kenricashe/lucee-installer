@@ -116,11 +116,12 @@ EOF
 		echo "# Additional VirtualHost blocks discovered from Apache configuration files" >> "$cpanel_config"
 		echo "" >> "$cpanel_config"
 		
-		# Use discover_apache_configs to find all config files with VirtualHost blocks
-		discover_apache_configs "paths-only" "false" 2>/dev/null | while read -r conf_file; do
-			if [ -f "$conf_file" ] && grep -q "<VirtualHost" "$conf_file" 2>/dev/null; then
+		# Use sites-configured.txt which already contains the list of VirtualHost files (third column)
+		# First check if the file exists
+		if [ -f "${UPG_DIR}/sites-configured.txt" ]; then
+			awk '{print $3}' "${UPG_DIR}/sites-configured.txt" | sort -u | while read -r conf_file; do
 				# Skip the primary config since we already included it
-				if [ "$conf_file" != "$primary_config" ]; then
+				if [ -f "$conf_file" ] && [ "$conf_file" != "$primary_config" ]; then
 					echo "# From: $conf_file" >> "$cpanel_config"
 					if awk '
 						/<VirtualHost/ { in_vhost=1; vhost_content=$0 "\n"; next }
@@ -138,8 +139,8 @@ EOF
 						echo "Warning: Failed to process VirtualHost blocks from $conf_file" >&2
 					fi
 				fi
-			fi
-		done || true
+			done
+		fi
 	fi
 	
 	# Create /usr/local/cpanel/cpanel (detection file)
