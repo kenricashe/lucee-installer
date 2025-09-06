@@ -417,7 +417,7 @@ discover_apache_configs() {
 		
 		# Find lucee-proxy.conf files (avoid duplicates with associative array)
 		while IFS= read -r -d '' proxy_file; do
-			if [ -z "${seen_proxy["$proxy_file"]+x}" ]; then
+			if [ -z "${seen_proxy["$proxy_file"]}" ]; then
 				proxy_configs+=("$proxy_file")
 				seen_proxy["$proxy_file"]=1
 			fi
@@ -426,7 +426,7 @@ discover_apache_configs() {
 		# Find upgrade-in-progress configuration files (exclude userdata - those are per-site includes)
 		while IFS= read -r -d '' upgrade_file; do
 			# Skip userdata files - they'll be categorized as per-site includes
-			if [[ "$upgrade_file" != */userdata/* ]] && [ -z "${seen_upgrade["$upgrade_file"]+x}" ]; then
+			if [[ "$upgrade_file" != */userdata/* ]] && [ -z "${seen_upgrade["$upgrade_file"]}" ]; then
 				upgrade_configs+=("$upgrade_file")
 				seen_upgrade["$upgrade_file"]=1
 			fi
