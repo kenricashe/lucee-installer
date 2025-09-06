@@ -333,6 +333,32 @@ process_uninstall_operations() {
 	local site_includes="$6"
 	local legacy_files="$7"
 
+	# Restore lucee-proxy.conf functionality FIRST
+	if [ "$IS_DEBIAN" = true ]; then
+		# For Debian/Ubuntu, ensure lucee-proxy.conf is enabled
+		local lucee_proxy_conf="${CONF_AVAILABLE_DIR}/lucee-proxy.conf"
+		if [ -f "$lucee_proxy_conf" ]; then
+			echo "${PREVIEW_PREFIX}Ensuring lucee-proxy.conf is enabled..."
+			if [ "$PREVIEW_MODE" = true ]; then
+				echo "Would execute: a2enconf lucee-proxy"
+			else
+				if command -v a2enconf >/dev/null 2>&1; then
+					a2enconf lucee-proxy >/dev/null 2>&1 || true
+					log_action "Enabled lucee-proxy.conf"
+				fi
+			fi
+		fi
+	else
+		# For RedHat/CentOS, restore .disabled file if it exists
+		local lucee_proxy_disabled="${CONF_DIR}/lucee-proxy.conf.disabled"
+		local lucee_proxy_conf="${CONF_DIR}/lucee-proxy.conf"
+		
+		if [ -f "$lucee_proxy_disabled" ]; then
+			echo "${PREVIEW_PREFIX}Restoring disabled lucee-proxy.conf..."
+			execute_or_simulate "rename_file" "$lucee_proxy_disabled" "$lucee_proxy_conf"
+		fi
+	fi
+
 	# Remove VirtualHost Include directives and restore commented ErrorDocument directives
 	if [ -n "$vhost_files" ]; then
 		echo "${PREVIEW_PREFIX}Processing VirtualHost files..."
@@ -566,31 +592,6 @@ main() {
 		log_verbose "Found lucee-upgrade-in-progress directory in ${HTTPD_ROOT}"
 	fi
 	
-	# Restore lucee-proxy.conf functionality BEFORE discovery
-	if [ "$IS_DEBIAN" = true ]; then
-		# For Debian/Ubuntu, ensure lucee-proxy.conf is enabled
-		local lucee_proxy_conf="${CONF_AVAILABLE_DIR}/lucee-proxy.conf"
-		if [ -f "$lucee_proxy_conf" ]; then
-			echo "${PREVIEW_PREFIX}Ensuring lucee-proxy.conf is enabled..."
-			if [ "$PREVIEW_MODE" = true ]; then
-				echo "Would execute: a2enconf lucee-proxy"
-			else
-				if command -v a2enconf >/dev/null 2>&1; then
-					a2enconf lucee-proxy >/dev/null 2>&1 || true
-					log_action "Enabled lucee-proxy.conf"
-				fi
-			fi
-		fi
-	else
-		# For RedHat/CentOS, restore .disabled file if it exists
-		local lucee_proxy_disabled="${CONF_DIR}/lucee-proxy.conf.disabled"
-		local lucee_proxy_conf="${CONF_DIR}/lucee-proxy.conf"
-		
-		if [ -f "$lucee_proxy_disabled" ]; then
-			echo "${PREVIEW_PREFIX}Restoring disabled lucee-proxy.conf..."
-			execute_or_simulate "rename_file" "$lucee_proxy_disabled" "$lucee_proxy_conf"
-		fi
-	fi
 	
 	# Discover current configurations
 	echo "Discovering current upgrade configurations..."
