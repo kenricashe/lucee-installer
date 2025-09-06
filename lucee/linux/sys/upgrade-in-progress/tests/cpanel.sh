@@ -102,7 +102,10 @@ EOF
 		
 		# Copy the primary Apache config content
 		if primary_config=$(find_primary_apache_config); then
-			cat "$primary_config" >> /etc/apache2/conf/httpd.conf
+			# Avoid copying the file to itself (circular reference in cPanel simulation)
+			if [ "$primary_config" != "/etc/apache2/conf/httpd.conf" ]; then
+				cat "$primary_config" >> /etc/apache2/conf/httpd.conf
+			fi
 		fi
 		
 		# Find and append VirtualHost blocks from other .conf files using discovery
