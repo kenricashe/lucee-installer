@@ -41,12 +41,6 @@ check_module() {
 				return 1
 			fi
 		fi
-	elif [ "$IS_CPANEL" = true ]; then
-		if /usr/local/cpanel/bin/check_cpanel_module_status --module="$DISPLAY_NAME" | grep -q "^${DISPLAY_NAME}: enabled"; then
-			return 0
-		else
-			return 1
-		fi
 	elif [ -n "$CONF_DIR" ]; then
 		# Fedora, Red Hat, AlmaLinux, Rocky Linux, etc.
 		# Prefer httpd -M; fall back to apachectl -t -D DUMP_MODULES; try apachectl -M last.
