@@ -6,17 +6,10 @@
 # strict error handling because this is a test script
 set -euo pipefail
 
-IS_DEBIAN=false
-IS_CPANEL=true
-HTTPD_ROOT="/etc/apache2"
-CONF_DIR="/etc/apache2/conf.d"
-
 SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "${SCRIPT_DIR}/../ENVIRONMENT.sh"
 . "${SCRIPT_DIR}/../shared-functions.sh"
 
-primary_confd="/etc/httpd/conf.d"
-primary_config="/etc/httpd/conf/httpd.conf"
 cpanel_config="/etc/apache2/conf/httpd.conf"
 
 CPANEL_FILES=(
@@ -63,7 +56,7 @@ abort_if_real_cpanel() {
 
 # Create cPanel simulation httpd.conf with all VirtualHost blocks
 create_httpd_conf() {
-	if [ -f "$primary_config" ] && [ ! -f "$cpanel_config" ]; then
+	if [ -f "$APACHE_CONF_FILE" ] && [ ! -f "$cpanel_config" ]; then
 		echo "  Creating /etc/apache2/conf/httpd.conf for cPanel simulation"
 		mkdir -p /etc/apache2/conf
 		
@@ -87,37 +80,43 @@ create_httpd_conf() {
 		if [ -f "${SITES_FILE}" ]; then
 			awk '{print $3}' "${SITES_FILE}" | sort -u | while read -r conf_file; do
 				# Skip the primary config since we already included it
-				if [ -f "$conf_file" ] && [ "$conf_file" != "$primary_config" ]; then
-					echo "# From: $conf_file" >> "$cpanel_config"
-					# Extract ServerName, DocumentRoot and Port
-					user=$(grep -m1 '^\s*DocumentRoot\s' "$conf_file" | awk '{print $2}' | cut -d/ -f3)
-					domain=$(grep -m1 '^\s*ServerName\s' "$conf_file" | awk '{print $2}')
-					# Extract port from VirtualHost directive, handling multiple ports and formats like *:80 or 1.2.3.4:443
-					port=$(grep -m1 '^\s*<VirtualHost\s' "$conf_file" | grep -oE ':[0-9]+' | head -1 | cut -d: -f2 || echo '80')
-					
-					# Determine if this is SSL or standard
-					if [ "$port" = "443" ]; then
-						ssl_dir="ssl"
-					else
-						ssl_dir="std"
+				if [ -f "$conf_file" ] && [ "$conf_file" != "$APACHE_CONF_FILE" ]; then
+					contains_vhost=$(grep -q '<VirtualHost' "$conf_file" && echo true || echo false)
+					if [ "$contains_vhost" = true ]; then
+						echo "# From: $conf_file" >> "$cpanel_config"
+						# Extract ServerName, DocumentRoot and Port
+						user=$(grep -m1 '^\s*DocumentRoot\s' "$conf_file" | awk '{print $2}' | cut -d/ -f3)
+						domain=$(grep -m1 '^\s*ServerName\s' "$conf_file" | awk '{print $2}')
+						# Extract port from VirtualHost directive, handling multiple ports and formats like *:80 or 1.2.3.4:443
+						port=$(grep -m1 '^\s*<VirtualHost\s' "$conf_file" | grep -oE ':[0-9]+' | head -1 | cut -d: -f2 || echo '80')
+						
+						# Determine if this is SSL or standard
+						if [ "$port" = "443" ]; then
+							ssl_dir="ssl"
+						else
+							ssl_dir="std"
+						fi
+						
+						# Add IncludeOptional directive before the VirtualHost block
+						echo "# From: $conf_file" >> "$cpanel_config"
+						
+						# Add the VirtualHost block with IncludeOptional
+						{
+							# Print the VirtualHost block
+							cat "$conf_file"
+							# Add IncludeOptional directive inside the VirtualHost block
+							echo -e "\t# cPanel includes"
+							echo -e "\tIncludeOptional \"/etc/apache2/conf.d/userdata/${ssl_dir}/2_4/${user}/${domain}/*.conf\""
+						} >> "$cpanel_config" 2>/dev/null || {
+							echo "Warning: Failed to process VirtualHost blocks from $conf_file" >&2
+						}
 					fi
-					
-					# Add IncludeOptional directive before the VirtualHost block
-					echo "# From: $conf_file" >> "$cpanel_config"
-					
-					# Add the VirtualHost block with IncludeOptional
-					{
-						# Print the VirtualHost block
-						cat "$conf_file"
-						# Add IncludeOptional directive inside the VirtualHost block
-						echo -e "\t# cPanel includes"
-						echo -e "\tIncludeOptional \"/etc/apache2/conf.d/userdata/${ssl_dir}/2_4/${user}/${domain}/*.conf\""
-					} >> "$cpanel_config" 2>/dev/null || {
-						echo "Warning: Failed to process VirtualHost blocks from $conf_file" >&2
-					}
+				fi
+				# disable files that would interfere with cPanel simulation
+				if [ "${conf_file}" = "${CONF_DIR}/lucee-proxy.conf" ] || [ "$contains_vhost" = true ]; then
+					mv "${conf_file}" "${conf_file}.disabled-for-cpanel-sim"
 				fi
 			done
-			mv "${SITES_FILE}" "${SITES_FILE}.disabled-for-cpanel-sim"
 		fi
 	fi
 }
@@ -182,9 +181,9 @@ remove_dummy_files() {
 	rm -rf /scripts
 }
 
-enable_primary_confd() {
+enable_CONF_DIR() {
 	echo "Enabling primary conf.d..."
-	cd "$primary_confd"
+	cd "$CONF_DIR"
 	for f in *.conf.disabled-for-cpanel-sim; do
 		mv "$f" "${f%.disabled-for-cpanel-sim}"
 	done
@@ -244,7 +243,7 @@ case "${1:-}" in
 		;;
 	"off")
 		remove_dummy_files
-		enable_primary_confd
+		enable_CONF_DIR
 		echo ""
 		echo "✓ cPanel simulation DISABLED"
 		;;

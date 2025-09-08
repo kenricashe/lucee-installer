@@ -19,16 +19,29 @@ if [ -z "${IS_DEBIAN:-}" ]; then
 	fi
 fi
 
+# IS_CPANEL
+if [ -z "${IS_CPANEL:-}" ]; then
+	if [ -f "/usr/local/cpanel/cpanel" ]; then
+		IS_CPANEL=true
+	else
+		IS_CPANEL=false
+	fi
+fi
+
 # HTTPD_ROOT (if not already defined)
 # Prefer control commands (apache2ctl/apachectl) over direct binaries (apache2/httpd)
 # as they properly set up the environment variables
 if [ -z "${HTTPD_ROOT:-}" ]; then
-	cmd=$(command -v apache2ctl || command -v apachectl || command -v httpd)
-	if [ -n "$cmd" ]; then
-		HTTPD_ROOT=$($cmd -V 2>/dev/null | awk -F'"' '/HTTPD_ROOT/ {print $2}')
+	if [ "$IS_CPANEL" = true ]; then
+		HTTPD_ROOT="/etc/apache2"
 	else
-		printf "\nERROR: No Apache controller found. Verify that Apache is installed and try again.\n"
-		exit 1
+		cmd=$(command -v apache2ctl || command -v apachectl || command -v httpd)
+		if [ -n "$cmd" ]; then
+			HTTPD_ROOT=$($cmd -V 2>/dev/null | awk -F'"' '/HTTPD_ROOT/ {print $2}')
+		else
+			printf "\nERROR: No Apache controller found. Verify that Apache is installed and try again.\n"
+			exit 1
+		fi
 	fi
 fi
 
@@ -78,13 +91,6 @@ EXCLUSIONS_FILE="${UPG_DIR}/site-exclusions.txt"
 
 if [ "$SCRIPT_FILENAME" = "cpanel.sh" ]; then
 	return 0
-fi
-
-# IS_CPANEL
-if [ -f "/usr/local/cpanel/cpanel" ]; then
-	IS_CPANEL=true
-else
-	IS_CPANEL=false
 fi
 
 press_enter_to_continue() {

@@ -1,15 +1,18 @@
 #!/bin/bash
 
 # Detect Apache configuration directories and main config file
-if [ -d /etc/httpd/conf ]; then
+if [ -d /etc/apache2/conf ]; then
+	APACHE_CONF_DIR="/etc/apache2/conf"
+	if [ -f "${APACHE_CONF_DIR}/httpd.conf" ]; then
+		APACHE_CONF_FILE="${APACHE_CONF_DIR}/httpd.conf"
+	elif [ -f "${APACHE_CONF_DIR}/apache2.conf" ]; then
+		APACHE_CONF_FILE="${APACHE_CONF_DIR}/apache2.conf"
+	else
+		APACHE_CONF_FILE=""
+	fi
+elif [ -d /etc/httpd/conf ]; then
 	APACHE_CONF_DIR="/etc/httpd/conf"
 	APACHE_CONF_FILE="${APACHE_CONF_DIR}/httpd.conf"
-elif [ -d /etc/apache2 ]; then
-	APACHE_CONF_DIR="/etc/apache2"
-	APACHE_CONF_FILE="${APACHE_CONF_DIR}/apache2.conf"
-	if [ ! -f "$APACHE_CONF_FILE" ] && [ -f "${APACHE_CONF_DIR}/httpd.conf" ]; then
-		APACHE_CONF_FILE="${APACHE_CONF_DIR}/httpd.conf"
-	fi
 elif [ -d /usr/local/apache2/conf ]; then
 	APACHE_CONF_DIR="/usr/local/apache2/conf"
 	APACHE_CONF_FILE="${APACHE_CONF_DIR}/httpd.conf"
