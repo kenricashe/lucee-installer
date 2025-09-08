@@ -152,7 +152,8 @@ create_restartsrv_httpd() {
 #!/bin/bash
 # cPanel simulation dummy file created by cpanel.sh for testing purposes only
 # Generated on: $(date)
-apache_graceful_reload
+
+systemctl reload httpd.service
 EOF
 	chmod +x /scripts/restartsrv_httpd
 	echo "  Created: /scripts/restartsrv_httpd"
