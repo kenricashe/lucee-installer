@@ -414,16 +414,14 @@ add_include_404_to_vhost() {
 				print "DEBUG: Empty domain filter, matching all" > "/dev/stderr"
 			}
 			else {
-				low=$0
-				if (tolower(low) ~ /(^|[\t ])[\t ]*server(name|alias)[\t ]+([^#]*)/) {
-					names=tolower(substr(low, RSTART+RLENGTH- length(substr(low, RSTART+RLENGTH))+1))
-					split(names, a, /[\t ]+/)
-					for (j in a) { 
-						if (a[j]==tolower(dom)) { 
-							match_this=1; 
-							print "DEBUG: Domain matched: " a[j] > "/dev/stderr"
-							break 
-						} 
+				low=tolower($0)
+				print "DEBUG: Checking line: " $0 > "/dev/stderr"
+				if (match(low, /^[\t ]*server(name|alias)[\t ]+([^#\t ]+)/, m)) {
+					domain_name = m[2]
+					print "DEBUG: Extracted domain: " domain_name " comparing to: " tolower(dom) > "/dev/stderr"
+					if (domain_name == tolower(dom)) { 
+						match_this=1; 
+						print "DEBUG: Domain matched!" > "/dev/stderr"
 					}
 				}
 			}
