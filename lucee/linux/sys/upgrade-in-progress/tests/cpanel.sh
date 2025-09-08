@@ -113,8 +113,8 @@ create_httpd_conf() {
 						}
 					fi
 				fi
-				# disable files that would interfere with cPanel simulation
-				if [ "${conf_file}" = "${CONF_DIR}/lucee-proxy.conf" ] || [ "$contains_vhost" = true ]; then
+				# disable vhost files that would interfere with cPanel simulation
+				if [ "$contains_vhost" = true ]; then
 					mv "${conf_file}" "${conf_file}.disabled-for-cpanel-sim"
 				fi
 			done
@@ -175,7 +175,9 @@ create_dummy_files() {
 	# Copy lucee-proxy.conf if exists (look in original RedHat location)
 	if [ -f "/etc/httpd/conf.d/lucee-proxy.conf" ]; then
 		cp "/etc/httpd/conf.d/lucee-proxy.conf" /etc/apache2/conf.d/
+		mv "/etc/httpd/conf.d/lucee-proxy.conf" "/etc/httpd/conf.d/lucee-proxy.conf.disabled-for-cpanel-sim"
 		echo "  Created: /etc/apache2/conf.d/lucee-proxy.conf"
+		echo "  Disabled: /etc/httpd/conf.d/lucee-proxy.conf"
 	fi
 
 }
