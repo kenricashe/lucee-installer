@@ -391,33 +391,52 @@ add_include_404_to_vhost() {
 	[ -f "$vhost_file" ] || return 1
 	
 	# Check if this specific include is already present
-	if grep -q "Include ${include_file}" "$vhost_file"; then
+	if grep -qF "Include ${include_file}" "$vhost_file"; then
+		echo "  DEBUG: Include already exists in $vhost_file: Include ${include_file}"
 		return 0
 	fi
 	
 	# Add the include line before </VirtualHost> in the matching vhost
 	local tmp
 	tmp=$(mktemp)
+	echo "  DEBUG: Adding include to $vhost_file for domain=$domain_match port=$port_filter"
+	echo "  DEBUG: Include line will be: $include_line"
 	awk -v dom="$domain_match" -v port="$port_filter" -v inc_line="$include_line" '
-		BEGIN { inblk=0; match_this=0; blk_port=""; inserted=0 }
-		/<VirtualHost[> \t]/ { inblk=1; match_this=0; blk_port=""; if (match($0, /<VirtualHost[^>]*:([0-9]+)/, m)) { blk_port=m[1] } }
+		BEGIN { inblk=0; match_this=0; blk_port=""; block_inserted=0 }
+		/<VirtualHost[> \t]/ { 
+			inblk=1; match_this=0; blk_port=""; block_inserted=0; 
+			if (match($0, /<VirtualHost[^>]*:([0-9]+)/, m)) { blk_port=m[1] } 
+			print "DEBUG: Found VirtualHost, port=" blk_port > "/dev/stderr"
+		}
 		inblk && tolower($0) ~ /^[\t ]*server(name|alias)[\t ]+/ {
-			if (dom == "") { match_this=1 }
+			if (dom == "") { 
+				match_this=1 
+				print "DEBUG: Empty domain filter, matching all" > "/dev/stderr"
+			}
 			else {
 				low=$0
 				if (tolower(low) ~ /(^|[\t ])[\t ]*server(name|alias)[\t ]+([^#]*)/) {
 					names=tolower(substr(low, RSTART+RLENGTH- length(substr(low, RSTART+RLENGTH))+1))
 					split(names, a, /[\t ]+/)
-					for (j in a) { if (a[j]==tolower(dom)) { match_this=1; break } }
+					for (j in a) { 
+						if (a[j]==tolower(dom)) { 
+							match_this=1; 
+							print "DEBUG: Domain matched: " a[j] > "/dev/stderr"
+							break 
+						} 
+					}
 				}
 			}
 		}
 		{
 			if ($0 ~ /<\/VirtualHost>/) {
-				if (inblk && inserted==0 && (dom=="" || match_this) && (port=="" || blk_port==port)) {
+				if (inblk && block_inserted==0 && (dom=="" || match_this) && (port=="" || blk_port==port)) {
+					print "DEBUG: Inserting include line" > "/dev/stderr"
 					print "\t" inc_line
 					print ""
-					inserted=1
+					block_inserted=1
+				} else {
+					print "DEBUG: Not inserting - inblk=" inblk " block_inserted=" block_inserted " match_this=" match_this " port_match=" (port=="" || blk_port==port) > "/dev/stderr"
 				}
 				inblk=0; match_this=0
 			}
