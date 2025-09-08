@@ -183,8 +183,10 @@ remove_dummy_files() {
 
 enable_CONF_DIR() {
 	echo "Enabling primary conf.d..."
-	cd "/etc/httpd/conf.d"
+	cd "/etc/httpd/conf.d" || return 1
 	for f in *.conf.disabled-for-cpanel-sim; do
+		# Skip if no files match the pattern
+		[ "$f" = '*.conf.disabled-for-cpanel-sim' ] && continue
 		mv "$f" "${f%.disabled-for-cpanel-sim}"
 	done
 }
