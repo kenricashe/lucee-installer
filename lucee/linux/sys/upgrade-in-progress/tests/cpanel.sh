@@ -70,11 +70,6 @@ create_httpd_conf() {
 		echo "IncludeOptional /etc/apache2/conf.d/*.conf" >> "$cpanel_config"
 		echo "" >> "$cpanel_config"
 
-		# Copy lucee-proxy.conf if exists (look in original RedHat location)
-		if [ -f "/etc/httpd/conf.d/lucee-proxy.conf" ]; then
-			cp "/etc/httpd/conf.d/lucee-proxy.conf" /etc/apache2/conf.d/
-		fi
-		
 		# Find and append VirtualHost blocks from other .conf files using discovery
 		echo "" >> "$cpanel_config"
 		echo "# Additional VirtualHost blocks discovered from Apache configuration files" >> "$cpanel_config"
@@ -176,6 +171,11 @@ create_dummy_files() {
 	mkdir -p /etc/apache2/conf.d/userdata/std/2_4
 	echo "  Created: /etc/apache2/conf.d/userdata directories"
 	
+	# Copy lucee-proxy.conf if exists (look in original RedHat location)
+	if [ -f "/etc/httpd/conf.d/lucee-proxy.conf" ]; then
+		cp "/etc/httpd/conf.d/lucee-proxy.conf" /etc/apache2/conf.d/
+	fi
+
 }
 
 remove_dummy_files() {
