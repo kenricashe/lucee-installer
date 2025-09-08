@@ -183,7 +183,7 @@ remove_dummy_files() {
 
 enable_CONF_DIR() {
 	echo "Enabling primary conf.d..."
-	cd "$CONF_DIR"
+	cd "/etc/httpd/conf.d"
 	for f in *.conf.disabled-for-cpanel-sim; do
 		mv "$f" "${f%.disabled-for-cpanel-sim}"
 	done
