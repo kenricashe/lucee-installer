@@ -19,6 +19,7 @@ CPANEL_FILES=(
 	"/scripts/restartsrv_httpd"
 	"/etc/apache2/conf.d/userdata/ssl/2_4"
 	"/etc/apache2/conf.d/userdata/std/2_4"
+	"/etc/apache2/conf.d/lucee-proxy.conf"
 )
 
 show_usage() {
@@ -159,7 +160,7 @@ EOF
 
 create_dummy_files() {
 
-	echo "Creating cPanel simulation files..."
+	printf "\nCreating cPanel simulation files..."
 	
 	create_httpd_conf
 	create_usr_local_cpanel_cpanel
@@ -174,6 +175,7 @@ create_dummy_files() {
 	# Copy lucee-proxy.conf if exists (look in original RedHat location)
 	if [ -f "/etc/httpd/conf.d/lucee-proxy.conf" ]; then
 		cp "/etc/httpd/conf.d/lucee-proxy.conf" /etc/apache2/conf.d/
+		echo "  Created: /etc/apache2/conf.d/lucee-proxy.conf"
 	fi
 
 }
