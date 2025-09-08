@@ -70,9 +70,9 @@ create_httpd_conf() {
 		echo "IncludeOptional /etc/apache2/conf.d/*.conf" >> "$cpanel_config"
 		echo "" >> "$cpanel_config"
 
-		# Copy lucee-proxy.conf if exists
-		if [ -f "${CONF_DIR}/lucee-proxy.conf" ]; then
-			cp "${CONF_DIR}/lucee-proxy.conf" /etc/apache2/conf.d/
+		# Copy lucee-proxy.conf if exists (look in original RedHat location)
+		if [ -f "/etc/httpd/conf.d/lucee-proxy.conf" ]; then
+			cp "/etc/httpd/conf.d/lucee-proxy.conf" /etc/apache2/conf.d/
 		fi
 		
 		# Find and append VirtualHost blocks from other .conf files using discovery
