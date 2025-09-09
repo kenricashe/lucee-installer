@@ -166,6 +166,53 @@ confirm_action() {
 	esac
 }
 
+# Helper function to restore ErrorDocument 404 in a specific .htaccess file
+restore_htaccess_errordocument() {
+	local htaccess_file="$1"
+	
+	if [ ! -f "$htaccess_file" ]; then
+		return 1
+	fi
+	
+	log_verbose "Checking .htaccess file for commented ErrorDocument: $htaccess_file"
+	
+	# Check if there's a commented-out ErrorDocument with our note pattern
+	local htaccess_commented
+	htaccess_commented=$(grep -A1 "NOTE: ErrorDocument 404.*configure-apache.sh" "$htaccess_file" 2>/dev/null | grep -E "^[[:space:]]*#[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+" | head -1)
+	
+	if [ -n "$htaccess_commented" ]; then
+		local htaccess_original
+		htaccess_original=$(echo "$htaccess_commented" | sed -E 's/^[[:space:]]*#[[:space:]]*//')
+		
+		log_verbose "Found commented ErrorDocument 404 in .htaccess: $htaccess_original"
+		
+		if [ "$PREVIEW_MODE" = true ]; then
+			echo "Would uncomment ErrorDocument 404 in $htaccess_file:"
+			echo "  $htaccess_original"
+			echo "Would remove note comment from $htaccess_file"
+		else
+			# Backup if requested
+			if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
+				backup_file "$htaccess_file"
+			fi
+			
+			# Remove the note line
+			sed -i "/NOTE: ErrorDocument 404.*configure-apache.sh/d" "$htaccess_file"
+			
+			# Uncomment the ErrorDocument line
+			sed -i 's/^\([[:space:]]*\)#[[:space:]]*\(ErrorDocument[[:space:]]\+404.*\)/\1\2/' "$htaccess_file"
+			
+			# Normalize whitespace to clean up any extra blank lines
+			normalize_conf_whitespace "$htaccess_file"
+			
+			log_action "Restored original ErrorDocument 404 to: $htaccess_file"
+		fi
+		return 0
+	fi
+	
+	return 1
+}
+
 # Function to restore original ErrorDocument 404 directives by uncommenting them
 restore_original_errordocument_404() {
 	local vhost_file="$1"
@@ -228,45 +275,8 @@ restore_original_errordocument_404() {
 			
 			if [ -f "$htaccess_file" ]; then
 				echo "[DEBUG] .htaccess file exists, checking for commented ErrorDocument"
-				log_verbose "Checking .htaccess file: $htaccess_file"
-				
-				# Debug: show what we're looking for
-				echo "[DEBUG] Looking for pattern: 'NOTE: ErrorDocument 404.*configure-apache.sh'"
-				local note_lines
-				note_lines=$(grep "NOTE: ErrorDocument 404.*configure-apache.sh" "$htaccess_file" 2>/dev/null)
-				if [ -n "$note_lines" ]; then
-					echo "[DEBUG] Found note lines:"
-					echo "$note_lines" | sed 's/^/[DEBUG]   /'
-				else
-					echo "[DEBUG] No note lines found"
-				fi
-				
-				local htaccess_commented
-				htaccess_commented=$(grep -A1 "NOTE: ErrorDocument 404.*configure-apache.sh" "$htaccess_file" 2>/dev/null | grep -E "^[[:space:]]*#[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+" | head -1)
-				
-				if [ -n "$htaccess_commented" ]; then
-					echo "[DEBUG] Found commented ErrorDocument line: $htaccess_commented"
-					local htaccess_original
-					htaccess_original=$(echo "$htaccess_commented" | sed -E 's/^[[:space:]]*#[[:space:]]*//')
-					
-					log_verbose "Found commented ErrorDocument 404 in .htaccess: $htaccess_original"
-					
-					if [ "$PREVIEW_MODE" = true ]; then
-						echo "Would uncomment ErrorDocument 404 in $htaccess_file:"
-						echo "  $htaccess_original"
-						echo "Would remove note comment from $htaccess_file"
-					else
-						# Remove the note line
-						sed -i "/NOTE: ErrorDocument 404.*configure-apache.sh/d" "$htaccess_file"
-						
-						# Uncomment the ErrorDocument line
-						sed -i 's/^\([[:space:]]*\)#[[:space:]]*\(ErrorDocument[[:space:]]\+404.*\)/\1\2/' "$htaccess_file"
-						
-						# Normalize whitespace to clean up any extra blank lines
-						normalize_conf_whitespace "$htaccess_file"
-						
-						log_action "Restored original ErrorDocument 404 to: $htaccess_file"
-					fi
+				if restore_htaccess_errordocument "$htaccess_file"; then
+					echo "[DEBUG] Successfully restored ErrorDocument in .htaccess"
 				else
 					echo "[DEBUG] No commented ErrorDocument found in .htaccess"
 				fi
@@ -277,6 +287,39 @@ restore_original_errordocument_404() {
 	fi
 	
 	log_verbose "No commented ErrorDocument 404 found in $vhost_file or associated .htaccess"
+}
+
+# cPanel-specific function to restore ErrorDocument 404 in .htaccess files using SITES_FILE
+restore_cpanel_htaccess_errordocuments() {
+	if [ "$IS_CPANEL" != true ]; then
+		return 0
+	fi
+	
+	echo "${PREVIEW_PREFIX}Processing cPanel .htaccess files for ErrorDocument restoration..."
+	local processed_count=0
+	
+	while IFS='|' read -r domain docroot _; do
+		if [ -z "$domain" ] || [ -z "$docroot" ]; then
+			continue
+		fi
+		
+		local htaccess_file="${docroot}/.htaccess"
+		echo "[DEBUG] cPanel: Checking $domain -> $htaccess_file"
+		
+		if [ -f "$htaccess_file" ]; then
+			if restore_htaccess_errordocument "$htaccess_file"; then
+				echo "  ${PREVIEW_PREFIX}Restored ErrorDocument 404 for $domain"
+				processed_count=$((processed_count + 1))
+			fi
+		fi
+	done < "$SITES_FILE"
+	
+	if [ "$processed_count" -gt 0 ]; then
+		echo "${PREVIEW_PREFIX}Processed $processed_count cPanel .htaccess files"
+	else
+		echo "${PREVIEW_PREFIX}No cPanel .htaccess files needed ErrorDocument restoration"
+	fi
+	echo ""
 }
 
 # Function to remove Include directives from VirtualHost files
@@ -676,6 +719,9 @@ main() {
 		done <<< "$commented_vhosts"
 		echo ""
 	fi
+	
+	# Process cPanel .htaccess files for ErrorDocument restoration
+	restore_cpanel_htaccess_errordocuments
 	
 	# Add any VirtualHost files with commented ErrorDocument directives to the main list
 	if [ -n "$commented_vhosts" ]; then
