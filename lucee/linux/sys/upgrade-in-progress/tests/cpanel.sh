@@ -20,6 +20,7 @@ CPANEL_FILES=(
 	"/etc/apache2/conf.d/userdata/ssl/2_4"
 	"/etc/apache2/conf.d/userdata/std/2_4"
 	"/etc/apache2/conf.d/lucee-proxy.conf"
+	"/etc/apache2/lucee-upgrade-in-progress/lucee-detect-upgrade.conf"
 )
 
 show_usage() {
@@ -185,6 +186,10 @@ create_dummy_files() {
 		echo "  Created: /etc/apache2/conf.d/lucee-proxy.conf"
 		echo "  Disabled: /etc/httpd/conf.d/lucee-proxy.conf"
 	fi
+
+	# Copy lucee-detect-upgrade.conf
+	cp "${UPG_DIR}/lucee-detect-upgrade.conf" /etc/apache2/lucee-upgrade-in-progress/
+	echo "  Created: /etc/apache2/lucee-upgrade-in-progress/lucee-detect-upgrade.conf"
 
 }
 
