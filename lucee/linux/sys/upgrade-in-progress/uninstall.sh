@@ -293,13 +293,6 @@ restore_original_errordocument_404() {
 restore_cpanel_htaccess_errordocuments() {
 	
 	echo "${PREVIEW_PREFIX}Processing cPanel .htaccess files for ErrorDocument restoration..."
-	echo "[DEBUG] SITES_FILE: $SITES_FILE"
-	echo "[DEBUG] SITES_FILE exists: $([ -f "$SITES_FILE" ] && echo "yes" || echo "no")"
-	if [ -f "$SITES_FILE" ]; then
-		echo "[DEBUG] SITES_FILE size: $(wc -l < "$SITES_FILE") lines"
-		echo "[DEBUG] First few lines of SITES_FILE:"
-		head -3 "$SITES_FILE" 2>/dev/null || echo "[DEBUG] Could not read SITES_FILE"
-	fi
 	local processed_count=0
 	
 	while read -r domain docroot _; do
@@ -308,7 +301,6 @@ restore_cpanel_htaccess_errordocuments() {
 		fi
 		
 		local htaccess_file="${docroot}/.htaccess"
-		echo "[DEBUG] cPanel: Checking $domain -> $htaccess_file"
 		
 		if [ -f "$htaccess_file" ]; then
 			if restore_htaccess_errordocument "$htaccess_file"; then
