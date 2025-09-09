@@ -210,6 +210,13 @@ restore_original_errordocument_404() {
 	local all_docroots
 	all_docroots=$(grep -E "^[[:space:]]*DocumentRoot[[:space:]]+" "$vhost_file" 2>/dev/null | sed -E 's/^[[:space:]]*DocumentRoot[[:space:]]+//' | tr -d '"')
 	
+	echo "[DEBUG] Found DocumentRoot entries in $vhost_file:"
+	if [ -n "$all_docroots" ]; then
+		echo "$all_docroots" | sed 's/^/[DEBUG]   /'
+	else
+		echo "[DEBUG]   (none found)"
+	fi
+	
 	if [ -n "$all_docroots" ]; then
 		while IFS= read -r docroot; do
 			if [ -z "$docroot" ]; then
@@ -217,13 +224,28 @@ restore_original_errordocument_404() {
 			fi
 			
 			local htaccess_file="${docroot}/.htaccess"
+			echo "[DEBUG] Checking for .htaccess file: $htaccess_file"
 			
 			if [ -f "$htaccess_file" ]; then
+				echo "[DEBUG] .htaccess file exists, checking for commented ErrorDocument"
 				log_verbose "Checking .htaccess file: $htaccess_file"
+				
+				# Debug: show what we're looking for
+				echo "[DEBUG] Looking for pattern: 'NOTE: ErrorDocument 404.*configure-apache.sh'"
+				local note_lines
+				note_lines=$(grep "NOTE: ErrorDocument 404.*configure-apache.sh" "$htaccess_file" 2>/dev/null)
+				if [ -n "$note_lines" ]; then
+					echo "[DEBUG] Found note lines:"
+					echo "$note_lines" | sed 's/^/[DEBUG]   /'
+				else
+					echo "[DEBUG] No note lines found"
+				fi
+				
 				local htaccess_commented
 				htaccess_commented=$(grep -A1 "NOTE: ErrorDocument 404.*configure-apache.sh" "$htaccess_file" 2>/dev/null | grep -E "^[[:space:]]*#[[:space:]]*ErrorDocument[[:space:]]+404[[:space:]]+" | head -1)
 				
 				if [ -n "$htaccess_commented" ]; then
+					echo "[DEBUG] Found commented ErrorDocument line: $htaccess_commented"
 					local htaccess_original
 					htaccess_original=$(echo "$htaccess_commented" | sed -E 's/^[[:space:]]*#[[:space:]]*//')
 					
@@ -245,7 +267,11 @@ restore_original_errordocument_404() {
 						
 						log_action "Restored original ErrorDocument 404 to: $htaccess_file"
 					fi
+				else
+					echo "[DEBUG] No commented ErrorDocument found in .htaccess"
 				fi
+			else
+				echo "[DEBUG] .htaccess file does not exist"
 			fi
 		done <<< "$all_docroots"
 	fi
