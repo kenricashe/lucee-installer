@@ -291,9 +291,6 @@ restore_original_errordocument_404() {
 
 # cPanel-specific function to restore ErrorDocument 404 in .htaccess files using SITES_FILE
 restore_cpanel_htaccess_errordocuments() {
-	if [ "$IS_CPANEL" != true ]; then
-		return 0
-	fi
 	
 	echo "${PREVIEW_PREFIX}Processing cPanel .htaccess files for ErrorDocument restoration..."
 	local processed_count=0
@@ -721,7 +718,9 @@ main() {
 	fi
 	
 	# Process cPanel .htaccess files for ErrorDocument restoration
-	restore_cpanel_htaccess_errordocuments
+	if [ "$IS_CPANEL" = true ]; then
+		restore_cpanel_htaccess_errordocuments
+	fi
 	
 	# Add any VirtualHost files with commented ErrorDocument directives to the main list
 	if [ -n "$commented_vhosts" ]; then
