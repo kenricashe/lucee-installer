@@ -431,6 +431,7 @@ add_include_404_to_vhost() {
 		}
 	' "$vhost_file" > "$tmp"
 	if [ $? -eq 0 ]; then
+		normalize_conf_whitespace "$tmp"
 		cp -f --no-preserve=all "$tmp" "$vhost_file"
 		rm -f "$tmp"
 		return 0
@@ -539,6 +540,7 @@ ensure_include_detect_upgrade_in_vhost() {
 		}
 	' "$vhost_file" > "$tmp"
 	if [ $? -eq 0 ]; then
+		normalize_conf_whitespace "$tmp"
 		cp -f --no-preserve=all "$tmp" "$vhost_file"
 		rm -f "$tmp"
 		return 0
