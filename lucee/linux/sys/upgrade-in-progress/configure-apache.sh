@@ -1171,7 +1171,6 @@ extract_404_block_with_fallback() {
 	if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
 		block=$(extract_404_block "$docroot/.htaccess" || true)
 		if [ -n "$block" ]; then
-			echo "  ${PREVIEW_PREFIX}Using 404 from .htaccess for $port_desc per-site include" >&2
 			from_htaccess="true"
 		fi
 	fi
@@ -1180,7 +1179,6 @@ extract_404_block_with_fallback() {
 	if [ -z "$block" ] && [ -f "$docroot/.htaccess" ] && grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
 		block=$(extract_404_block_allow_commented "$docroot/.htaccess" || true)
 		if [ -n "$block" ]; then
-			echo "  ${PREVIEW_PREFIX}Recovered 404 from commented .htaccess for $port_desc per-site include" >&2
 			from_htaccess="true"
 		fi
 	fi
@@ -1189,15 +1187,12 @@ extract_404_block_with_fallback() {
 	if [ -z "$block" ] && [ -n "$vhost_file" ]; then
 		if last_404_is_cf "$vhost_file"; then
 			block=$(extract_404_block "$vhost_file" || true)
-			if [ -n "$block" ]; then
-				echo "  ${PREVIEW_PREFIX}Using local 404 from $port_desc vhost for per-site include" >&2
-			fi
 		fi
 	fi
 	
-	# Set output variables using eval (since we can't use nameref in older bash)
-	eval "$output_var_name=\"$block\""
-	eval "$output_source_var=\"$from_htaccess\""
+	# Output the values for the caller to capture
+	echo "$block"
+	echo "$from_htaccess"
 }
 
 # Process vhost for per-site includes (check existing, extract 404, configure)
@@ -1233,7 +1228,19 @@ process_vhost_for_includes() {
 			block="$reuse_block"
 		else
 			# Extract 404 block with fallback logic
-			extract_404_block_with_fallback "$docroot" "$vhost_file" "$port_desc" "block" "from_htaccess"
+			local result
+			result=$(extract_404_block_with_fallback "$docroot" "$vhost_file" "$port_desc" "block" "from_htaccess")
+			block=$(echo "$result" | sed -n '1p')
+			from_htaccess=$(echo "$result" | sed -n '2p')
+			
+			# Display appropriate message based on what was found
+			if [ -n "$block" ]; then
+				if [ "$from_htaccess" = "true" ]; then
+					echo "  ${PREVIEW_PREFIX}Using 404 from .htaccess for $port_desc per-site include" >&2
+				else
+					echo "  ${PREVIEW_PREFIX}Using local 404 from $port_desc vhost for per-site include" >&2
+				fi
+			fi
 		fi
 		
 		# Generate per-site include file if we have a 404 block
