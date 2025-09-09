@@ -163,7 +163,7 @@ normalize_conf_whitespace() {
 	
 	# Normalize blank lines while preserving VirtualHost formatting
 	awk '
-	BEGIN { blank=0; prev_line="" }
+	BEGIN { blank=0 }
 	/^$/ { 
 		blank++
 		# Allow up to 2 consecutive blank lines, but reduce excessive spacing
@@ -171,12 +171,11 @@ normalize_conf_whitespace() {
 		next 
 	}
 	{
-		# If this is </VirtualHost> and previous non-blank line wasn'\''t blank, add one
-		if (/^[[:space:]]*<\/VirtualHost>/ && prev_line != "" && blank == 0) {
+		# If this is </VirtualHost> and we have no preceding blank lines, add one
+		if (/^[[:space:]]*<\/VirtualHost>/ && blank == 0) {
 			print ""
 		}
 		blank = 0
-		prev_line = $0
 		print
 	}
 	' "$tmp" > "${tmp}.norm"
