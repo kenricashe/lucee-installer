@@ -323,9 +323,9 @@ generate_site_404_include() {
 	local error_block="$3"
 	
 	# Create site includes directory if it doesn't exist (and either not in preview mode or it's for port 443)
-	if [ ! -d "$SITE_INCLUDES_404_DIR" ] && ( [ "$PREVIEW_MODE" = false ] || [ "$port" = "443" ] ); then
+	if [ ! -d "${SITE_INCLUDES_404_DIR}" ] && [ "$PREVIEW_MODE" = false ]; then
 		echo -n "  "
-		execute_or_simulate "create_dir" "$SITE_INCLUDES_404_DIR"
+		execute_or_simulate "create_dir" "${SITE_INCLUDES_404_DIR}"
 	fi
 	
 	# Generate include file path
