@@ -335,7 +335,14 @@ process_uninstall_operations() {
 		local lucee_proxy_disabled="${CONF_DIR}/lucee-proxy.conf.disabled"
 		local lucee_proxy_conf="${CONF_DIR}/lucee-proxy.conf"
 		
-		if [ -f "$lucee_proxy_disabled" ]; then
+		# Check for cPanel simulation mode - look for the cpanel-specific disabled file
+		local cpanel_sim_disabled="/etc/httpd/conf.d/lucee-proxy.conf.disabled-for-cpanel-sim"
+		local cpanel_sim_target="/etc/httpd/conf.d/lucee-proxy.conf"
+		
+		if [ -f "$cpanel_sim_disabled" ]; then
+			echo "${PREVIEW_PREFIX}Restoring cPanel simulation disabled lucee-proxy.conf..."
+			execute_or_simulate "rename_file" "$cpanel_sim_disabled" "$cpanel_sim_target"
+		elif [ -f "$lucee_proxy_disabled" ]; then
 			echo "${PREVIEW_PREFIX}Restoring disabled lucee-proxy.conf..."
 			execute_or_simulate "rename_file" "$lucee_proxy_disabled" "$lucee_proxy_conf"
 		fi
