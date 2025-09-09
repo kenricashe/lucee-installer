@@ -139,6 +139,7 @@ while true; do
 			;;
 		u|U)
 			run_uninstall
+			press_enter_to_continue
 			;;
 		*)
 			echo "Invalid selection."
