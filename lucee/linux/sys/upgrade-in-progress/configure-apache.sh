@@ -223,42 +223,42 @@ execute_or_simulate() {
 	fi
 
 	if [ "$PREVIEW_MODE" = true ]; then
-		printf "Pending: "
+		printf "Pending: " >&2
 	fi
 
 	case "$action" in
 		"create_dir")
-			echo "Create Directory (if not exists): $1"
+			echo "Create Directory (if not exists): $1" >&2
 			;;
 		"create_file")
-			echo "Create File: $1"
+			echo "Create File: $1" >&2
 			;;
 		"copy_file")
-			echo "Copy: $1 -> $2"
+			echo "Copy: $1 -> $2" >&2
 			;;
 		"rename_file")
-			echo "Rename: $1 -> $2"
+			echo "Rename: $1 -> $2" >&2
 			;;
 		"delete_file")
-			echo "Delete: $1"
+			echo "Delete: $1" >&2
 			;;
 		"backup_file")
-			echo "Backup: $1"
+			echo "Backup: $1" >&2
 			;;
 		"enable_conf")
-			echo "Enable: $1"
+			echo "Enable: $1" >&2
 			;;
 		"disable_conf")
-			echo "Disable: $1"
+			echo "Disable: $1" >&2
 			;;
 		"build_ip_all_conf_from_txt")
-			echo "Create File: ${HTTPD_LUCEE_ROOT}/ip-allow.conf"
+			echo "Create File: ${HTTPD_LUCEE_ROOT}/ip-allow.conf" >&2
 			;;
 		"apache_reload")
-			echo "Apache Reload"
+			echo "Apache Reload" >&2
 			;;
 		*)
-			echo "$action $*"
+			echo "$action $*" >&2
 			;;
 	esac
 	if [ "$PREVIEW_MODE" = false ]; then
@@ -497,11 +497,11 @@ ensure_include_detect_upgrade_in_vhost() {
 	
 	[ -f "$vhost_file" ] || return 1
 	
-	echo "  ${PREVIEW_PREFIX}Ensuring lucee-detect-upgrade.conf is included in $vhost_file"
+	echo "  ${PREVIEW_PREFIX}Ensuring lucee-detect-upgrade.conf is included in $vhost_file" >&2
 	
 	# Check if the include already exists in the file
 	if grep -q "${HTTPD_LUCEE_ROOT}/lucee-detect-upgrade.conf" "$vhost_file"; then
-		echo "  ${PREVIEW_PREFIX}Include directive already exists in $vhost_file"
+		echo "  ${PREVIEW_PREFIX}Include directive already exists in $vhost_file" >&2
 		return 0
 	fi
 	
@@ -1152,146 +1152,102 @@ copy_upgrade_html() {
 	execute_or_simulate "copy_file" "${UPG_DIR}/lucee-upgrade-in-progress.html" "${docroot}/lucee-upgrade-in-progress.html"
 }
 
-# Function to configure Debian sites
-configure_site_debian() {
+# Extract 404 block with fallback logic (htaccess -> commented htaccess -> vhost)
+extract_404_block_with_fallback() {
+	local docroot="$1"
+	local vhost_file="$2"
+	local port_desc="$3"  # e.g., "SSL" or "HTTP"
+	local output_var_name="$4"     # Variable name to store the 404 block
+	local output_source_var="$5"   # Variable name to store source flag (htaccess/vhost)
+	
+	local block=""
+	local from_htaccess="false"
+	
+	# Try .htaccess first (more specific)
+	if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
+		block=$(extract_404_block "$docroot/.htaccess" || true)
+		if [ -n "$block" ]; then
+			echo "  ${PREVIEW_PREFIX}Using 404 from .htaccess for $port_desc per-site include" >&2
+			from_htaccess="true"
+		fi
+	fi
+	
+	# If .htaccess was already commented by a prior run, recover the 404 from it
+	if [ -z "$block" ] && [ -f "$docroot/.htaccess" ] && grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
+		block=$(extract_404_block_allow_commented "$docroot/.htaccess" || true)
+		if [ -n "$block" ]; then
+			echo "  ${PREVIEW_PREFIX}Recovered 404 from commented .htaccess for $port_desc per-site include" >&2
+			from_htaccess="true"
+		fi
+	fi
+	
+	# If no .htaccess 404, fallback to local vhost 404
+	if [ -z "$block" ] && [ -n "$vhost_file" ]; then
+		if last_404_is_cf "$vhost_file"; then
+			block=$(extract_404_block "$vhost_file" || true)
+			if [ -n "$block" ]; then
+				echo "  ${PREVIEW_PREFIX}Using local 404 from $port_desc vhost for per-site include" >&2
+			fi
+		fi
+	fi
+	
+	# Set output variables using eval (since we can't use nameref in older bash)
+	eval "$output_var_name=\"$block\""
+	eval "$output_source_var=\"$from_htaccess\""
+}
+
+# Process vhost for per-site includes (check existing, extract 404, configure)
+process_vhost_for_includes() {
+	local domain="$1"
+	local port="$2"
+	local vhost_file="$3"
+	local docroot="$4"
+	local port_desc="$5"      # e.g., "SSL" or "HTTP"
+	local reuse_block="$6"    # Optional: existing 404 block to reuse
+	
+	if [ ! -f "$vhost_file" ]; then
+		return 0
+	fi
+	
+	# output to stderr to avoid polluting stdout, otherwise user messages
+	# would also be output to stdout along with the return value, causing
+	# formatting issues when messages appear on the same line
+	echo -n "  " >&2
+	execute_or_simulate "backup_file" "$vhost_file"
+	
+	# Check if per-site 404 include already exists
+	if has_site_include_file_for_404 "$domain" "$port"; then
+		echo "  ${PREVIEW_PREFIX}Per-site include already exists for ${domain}:${port}; ensuring vhost includes it" >&2
+		add_include_404_to_vhost "$vhost_file" "$domain" "$port"
+	else
+		local block=""
+		local from_htaccess="false"
+		
+		# If we have a block to reuse, use it
+		if [ -n "$reuse_block" ]; then
+			echo "  ${PREVIEW_PREFIX}Reusing 404 from SSL vhost for $port_desc per-site include" >&2
+			block="$reuse_block"
+		else
+			# Extract 404 block with fallback logic
+			extract_404_block_with_fallback "$docroot" "$vhost_file" "$port_desc" "block" "from_htaccess"
+		fi
+		
+		# Generate per-site include file if we have a 404 block
+		configure_site_includes "$domain" "$port" "$vhost_file" "$docroot" "$block" "$from_htaccess"
+	fi
+	
+	# Ensure detection include is present
+	ensure_include_detect_upgrade_in_vhost "$vhost_file" "$domain" "$port"
+	
+	# Return the extracted block for potential reuse
+	printf "%s" "$block"
+}
+
+# Normalize .htaccess by commenting out 404s if per-site includes exist
+normalize_htaccess_404s() {
 	local domain="$1"
 	local docroot="$2"
 	
-	echo ""
-	echo "${PREVIEW_PREFIX}Processing site $domain with DocumentRoot: $docroot"
-	
-	copy_upgrade_html "$docroot"
-	
-	# Find the SSL site configuration file in sites-available directly
-	ssl_conf_file="/etc/apache2/sites-available/${domain}-ssl.conf"
-	if [ ! -f "$ssl_conf_file" ]; then
-		# Try to find by ServerName
-		ssl_conf_file=$(grep -l "ServerName $domain" /etc/apache2/sites-available/*-ssl.conf 2>/dev/null | head -1)
-	fi
-	
-	local ssl_404_block=""
-	if [ -f "$ssl_conf_file" ]; then
-		echo -n "  "
-		execute_or_simulate "backup_file" "$ssl_conf_file"
-		
-		# Check if per-site 404 include already exists
-		if has_site_include_file_for_404 "$domain" "443"; then
-			echo "  ${PREVIEW_PREFIX}Per-site include already exists for ${domain}:443; ensuring vhost includes it"
-			add_include_404_to_vhost "$ssl_conf_file" "$domain" "443"
-		else
-			# Extract 404 block for per-site include generation
-			local ssl_from_htaccess="false"
-			
-			# Prefer .htaccess (more specific) over vhost for effective 404
-			if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
-				ssl_404_block=$(extract_404_block "$docroot/.htaccess" || true)
-				if [ -n "$ssl_404_block" ]; then
-					echo "  ${PREVIEW_PREFIX}Using 404 from .htaccess for SSL per-site include"
-					ssl_from_htaccess="true"
-				fi
-			fi
-			
-			# If .htaccess has already been commented by a prior run, recover the 404 from it
-			if [ -z "$ssl_404_block" ] && [ -f "$docroot/.htaccess" ] && grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
-				ssl_404_block=$(extract_404_block_allow_commented "$docroot/.htaccess" || true)
-				if [ -n "$ssl_404_block" ]; then
-					echo "  ${PREVIEW_PREFIX}Recovered 404 from commented .htaccess for SSL per-site include"
-					ssl_from_htaccess="true"
-				fi
-			fi
-			
-			# If no .htaccess 404, fallback to local vhost 404
-			if [ -z "$ssl_404_block" ]; then
-				if last_404_is_cf "$ssl_conf_file"; then
-					ssl_404_block=$(extract_404_block "$ssl_conf_file" || true)
-					if [ -n "$ssl_404_block" ]; then
-						echo "  ${PREVIEW_PREFIX}Using local 404 from SSL vhost for per-site include"
-					fi
-				fi
-			fi
-			
-			# Generate per-site include file if we have a 404 block
-			configure_site_includes "$domain" "443" "$ssl_conf_file" "$docroot" "$ssl_404_block" "$ssl_from_htaccess"
-		fi
-		
-		# Ensure detection include is present
-		ensure_include_detect_upgrade_in_vhost "$ssl_conf_file" "$domain" "443"
-	
-	else
-		echo "  ${PREVIEW_PREFIX}No SSL VirtualHost found for $domain"
-	fi
-
-	# Also update the HTTP (port 80) VirtualHost if present
-	# Find the HTTP site configuration file in sites-available
-	http_conf_file="/etc/apache2/sites-available/${domain}.conf"
-	if [ ! -f "$http_conf_file" ]; then
-		# Try to find by ServerName, excluding -ssl.conf
-		http_conf_file=$(grep -l "ServerName $domain" /etc/apache2/sites-available/*.conf 2>/dev/null | grep -v -- '-ssl\.conf' | head -1)
-	fi
-
-	if [ -f "$http_conf_file" ]; then
-		echo -n "  "
-		execute_or_simulate "backup_file" "$http_conf_file"
-		
-		# Check if per-site 404 include already exists
-		if has_site_include_file_for_404 "$domain" "80"; then
-			echo "  ${PREVIEW_PREFIX}Per-site include already exists for ${domain}:80; ensuring vhost includes it"
-			add_include_404_to_vhost "$http_conf_file" "$domain" "80"
-		else
-			# Extract 404 block for per-site include generation
-			local http_404_block=""
-			local http_from_htaccess="false"
-			
-			# If we already have SSL 404 block, reuse it for HTTP
-			if [ -n "$ssl_404_block" ]; then
-				echo "  ${PREVIEW_PREFIX}Reusing 404 from SSL vhost for HTTP per-site include"
-				http_404_block="$ssl_404_block"
-			else
-				# Extract from .htaccess or vhost as fallback
-				if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
-					http_404_block=$(extract_404_block "$docroot/.htaccess" || true)
-					if [ -n "$http_404_block" ]; then
-						echo "  ${PREVIEW_PREFIX}Using 404 from .htaccess for HTTP per-site include"
-						http_from_htaccess="true"
-					fi
-				fi
-				
-				# If .htaccess has already been commented by a prior run, recover the 404 from it
-				if [ -z "$http_404_block" ] && [ -f "$docroot/.htaccess" ] && grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
-					http_404_block=$(extract_404_block_allow_commented "$docroot/.htaccess" || true)
-					if [ -n "$http_404_block" ]; then
-						echo "  ${PREVIEW_PREFIX}Recovered 404 from commented .htaccess for HTTP per-site include"
-						http_from_htaccess="true"
-					fi
-				fi
-				
-				# If no .htaccess 404, fallback to local vhost 404
-				if [ -z "$http_404_block" ]; then
-					if last_404_is_cf "$http_conf_file"; then
-						http_404_block=$(extract_404_block "$http_conf_file" || true)
-						if [ -n "$http_404_block" ]; then
-							echo "  ${PREVIEW_PREFIX}Using local 404 from HTTP vhost for per-site include"
-						fi
-					fi
-				fi
-			fi
-			
-			# Generate per-site include file if we have a 404 block
-			configure_site_includes "$domain" "80" "$http_conf_file" "$docroot" "$http_404_block" "$http_from_htaccess"
-		fi
-		
-		# Ensure detection include is present
-		ensure_include_detect_upgrade_in_vhost "$http_conf_file" "$domain" "80"
-		
-		# Best-effort warning if HTTP VirtualHost may not redirect to HTTPS
-		if ! grep -Eiq '(Redirect(\s+(permanent|temp|301|302))?\s+/?\s+https?://|RewriteRule\s+.*https://)' "$http_conf_file"; then
-			echo "  ${PREVIEW_PREFIX}Warning: HTTP vhost for $domain may not redirect to HTTPS. Ensure a proper 80->443 redirect is configured to avoid exposure over HTTP."
-		fi
-	
-	else
-		echo "  ${PREVIEW_PREFIX}Info: No HTTP configuration file found for $domain"
-	fi
-
 	# Final normalization: if per-site includes exist and .htaccess still has any 404s, comment them out
 	if [ -f "$docroot/.htaccess" ] && grep -qiE "$ANY404_REGEX" "$docroot/.htaccess"; then
 		if has_site_include_file_for_404 "$domain" "443" || has_site_include_file_for_404 "$domain" "80"; then
@@ -1303,6 +1259,53 @@ configure_site_debian() {
 			fi
 		fi
 	fi
+}
+
+# Function to configure Debian sites
+configure_site_debian() {
+	local domain="$1"
+	local docroot="$2"
+	
+	echo ""
+	echo "${PREVIEW_PREFIX}Processing site $domain with DocumentRoot: $docroot"
+	
+	copy_upgrade_html "$docroot"
+	
+	# Find the SSL site configuration file in sites-available directly
+	local ssl_conf_file="/etc/apache2/sites-available/${domain}-ssl.conf"
+	if [ ! -f "$ssl_conf_file" ]; then
+		# Try to find by ServerName
+		ssl_conf_file=$(grep -l "ServerName $domain" /etc/apache2/sites-available/*-ssl.conf 2>/dev/null | head -1)
+	fi
+	
+	local ssl_404_block=""
+	if [ -f "$ssl_conf_file" ]; then
+		ssl_404_block=$(process_vhost_for_includes "$domain" "443" "$ssl_conf_file" "$docroot" "SSL")
+	else
+		echo "  ${PREVIEW_PREFIX}No SSL VirtualHost found for $domain"
+	fi
+
+	# Also update the HTTP (port 80) VirtualHost if present
+	# Find the HTTP site configuration file in sites-available
+	local http_conf_file="/etc/apache2/sites-available/${domain}.conf"
+	if [ ! -f "$http_conf_file" ]; then
+		# Try to find by ServerName, excluding -ssl.conf
+		http_conf_file=$(grep -l "ServerName $domain" /etc/apache2/sites-available/*.conf 2>/dev/null | grep -v -- '-ssl\.conf' | head -1)
+	fi
+
+	if [ -f "$http_conf_file" ]; then
+		process_vhost_for_includes "$domain" "80" "$http_conf_file" "$docroot" "HTTP" "$ssl_404_block"
+		
+		# Best-effort warning if HTTP VirtualHost may not redirect to HTTPS
+		if ! grep -Eiq '(Redirect(\s+(permanent|temp|301|302))?\s+/?\s+https?://|RewriteRule\s+.*https://)' "$http_conf_file"; then
+			echo "  ${PREVIEW_PREFIX}Warning: HTTP vhost for $domain may not redirect to HTTPS. Ensure a proper 80->443 redirect is configured to avoid exposure over HTTP."
+		fi
+	else
+		echo "  ${PREVIEW_PREFIX}Info: No HTTP configuration file found for $domain"
+	fi
+
+	# Final normalization: if per-site includes exist and .htaccess still has any 404s, comment them out
+	normalize_htaccess_404s "$domain" "$docroot"
 }
 
 # Function to configure cPanel sites
@@ -1438,6 +1441,32 @@ EOF
 	fi
 }
 
+# Helper function to find vhost file for RHEL systems
+find_redhat_vhost_file() {
+	local domain="$1"
+	local docroot="$2"
+	local port_pattern="$3"  # e.g., ":443" or ":80"
+	
+	while IFS= read -r line; do
+		local site_domain site_docroot site_vhost_file
+		site_domain=$(echo "$line" | awk '{print $1}')
+		site_docroot=$(echo "$line" | awk '{print $2}')
+		site_vhost_file=$(echo "$line" | awk '{print $3}')
+		
+		if [ "$site_domain" = "$domain" ] && [ "$site_docroot" = "$docroot" ]; then
+			if [ -f "$site_vhost_file" ]; then
+				if [ "$port_pattern" = ":443" ] && grep -Eq '<VirtualHost[^>]*:443' "$site_vhost_file" 2>/dev/null; then
+					printf "%s" "$site_vhost_file"
+					return 0
+				elif [ "$port_pattern" = ":80" ] && (grep -Eq '<VirtualHost[^>]*:80' "$site_vhost_file" 2>/dev/null || ! grep -Eq '<VirtualHost[^>]*:443' "$site_vhost_file" 2>/dev/null); then
+					printf "%s" "$site_vhost_file"
+					return 0
+				fi
+			fi
+		fi
+	done < "$SITES_FILE"
+}
+
 # Function to configure RHEL sites
 configure_site_redhat() {
 	local domain="$1"
@@ -1449,156 +1478,28 @@ configure_site_redhat() {
 	copy_upgrade_html "$docroot"
 
 	# Find SSL VirtualHost file from sites-configured.txt
-	local ssl_conf_file=""
-	while IFS= read -r line; do
-		local site_domain site_docroot site_vhost_file
-		site_domain=$(echo "$line" | awk '{print $1}')
-		site_docroot=$(echo "$line" | awk '{print $2}')
-		site_vhost_file=$(echo "$line" | awk '{print $3}')
-		
-		if [ "$site_domain" = "$domain" ] && [ "$site_docroot" = "$docroot" ]; then
-			if [ -f "$site_vhost_file" ] && grep -Eq '<VirtualHost[^>]*:443' "$site_vhost_file" 2>/dev/null; then
-				ssl_conf_file="$site_vhost_file"
-				break
-			fi
-		fi
-	done < "$SITES_FILE"
+	local ssl_conf_file
+	ssl_conf_file=$(find_redhat_vhost_file "$domain" "$docroot" ":443")
 
 	local ssl_404_block=""
 	if [ -n "$ssl_conf_file" ]; then
-		echo -n "  "
-		execute_or_simulate "backup_file" "$ssl_conf_file"
-		
-		# Check if per-site include already exists
-		if has_site_include_file_for_404 "$domain" "443"; then
-			echo "  ${PREVIEW_PREFIX}Per-site include already exists for ${domain}:443; ensuring vhost includes it"
-			add_include_404_to_vhost "$ssl_conf_file" "$domain" "443"
-		else
-			# Extract 404 block for per-site include generation
-			local ssl_from_htaccess="false"
-			
-			# Prefer .htaccess (more specific)
-			if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
-				ssl_404_block=$(extract_404_block "$docroot/.htaccess" || true)
-				if [ -n "$ssl_404_block" ]; then
-					echo "  ${PREVIEW_PREFIX}Using 404 from .htaccess for SSL per-site include"
-					ssl_from_htaccess="true"
-				fi
-			fi
-			
-			# If .htaccess was already commented by a prior run, recover the 404 from it
-			if [ -z "$ssl_404_block" ] && [ -f "$docroot/.htaccess" ] && grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
-				ssl_404_block=$(extract_404_block_allow_commented "$docroot/.htaccess" || true)
-				if [ -n "$ssl_404_block" ]; then
-					echo "  ${PREVIEW_PREFIX}Recovered 404 from commented .htaccess for SSL per-site include"
-					ssl_from_htaccess="true"
-				fi
-			fi
-			
-			# If no .htaccess 404, fallback to local vhost 404
-			if [ -z "$ssl_404_block" ]; then
-				if last_404_is_cf "$ssl_conf_file"; then
-					ssl_404_block=$(extract_404_block "$ssl_conf_file" || true)
-					if [ -n "$ssl_404_block" ]; then
-						echo "  ${PREVIEW_PREFIX}Using local 404 from SSL vhost for per-site include"
-					fi
-				fi
-			fi
-			
-			# Generate per-site include file if we have a 404 block
-			configure_site_includes "$domain" "443" "$ssl_conf_file" "$docroot" "$ssl_404_block" "$ssl_from_htaccess"
-		fi
-		
-		# Ensure detection include is present
-		ensure_include_detect_upgrade_in_vhost "$ssl_conf_file" "$domain" "443"
-	
+		ssl_404_block=$(process_vhost_for_includes "$domain" "443" "$ssl_conf_file" "$docroot" "SSL")
 	else
 		echo "  No SSL VirtualHost found for $domain"
 	fi
 
 	# Find HTTP VirtualHost file from sites-configured.txt
-	local http_conf_file=""
-	while IFS= read -r line; do
-		local site_domain site_docroot site_vhost_file
-		site_domain=$(echo "$line" | awk '{print $1}')
-		site_docroot=$(echo "$line" | awk '{print $2}')
-		site_vhost_file=$(echo "$line" | awk '{print $3}')
-		
-		if [ "$site_domain" = "$domain" ] && [ "$site_docroot" = "$docroot" ]; then
-			if [ -f "$site_vhost_file" ] && (grep -Eq '<VirtualHost[^>]*:80' "$site_vhost_file" 2>/dev/null || ! grep -Eq '<VirtualHost[^>]*:443' "$site_vhost_file" 2>/dev/null); then
-				http_conf_file="$site_vhost_file"
-				break
-			fi
-		fi
-	done < "$SITES_FILE"
+	local http_conf_file
+	http_conf_file=$(find_redhat_vhost_file "$domain" "$docroot" ":80")
 
 	if [ -n "$http_conf_file" ]; then
-		echo -n "  "
-		execute_or_simulate "backup_file" "$http_conf_file"
-		
-		# Check if per-site include already exists
-		if has_site_include_file_for_404 "$domain" "80"; then
-			echo "  ${PREVIEW_PREFIX}Per-site include already exists for ${domain}:80; ensuring vhost includes it"
-			add_include_404_to_vhost "$http_conf_file" "$domain" "80"
-		else
-			# Extract 404 block for per-site include generation
-			local http_404_block=""
-			local http_from_htaccess="false"
-			
-			# If we already have SSL 404 block, reuse it for HTTP
-			if [ -n "$ssl_404_block" ]; then
-				echo "  ${PREVIEW_PREFIX}Reusing 404 from SSL vhost for HTTP per-site include"
-				http_404_block="$ssl_404_block"
-			else
-				# Extract from .htaccess or vhost as fallback
-				if [ -f "$docroot/.htaccess" ] && last_404_is_cf "$docroot/.htaccess"; then
-					http_404_block=$(extract_404_block "$docroot/.htaccess" || true)
-					if [ -n "$http_404_block" ]; then
-						echo "  ${PREVIEW_PREFIX}Using 404 from .htaccess for HTTP per-site include"
-						http_from_htaccess="true"
-					fi
-				fi
-				
-				# If .htaccess was already commented by a prior run, recover the 404 from it
-				if [ -z "$http_404_block" ] && [ -f "$docroot/.htaccess" ] && grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
-					http_404_block=$(extract_404_block_allow_commented "$docroot/.htaccess" || true)
-					if [ -n "$http_404_block" ]; then
-						echo "  ${PREVIEW_PREFIX}Recovered 404 from commented .htaccess for HTTP per-site include"
-						http_from_htaccess="true"
-					fi
-				fi
-				
-				# If no .htaccess 404, fallback to local vhost 404
-				if [ -z "$http_404_block" ]; then
-					if last_404_is_cf "$http_conf_file"; then
-						http_404_block=$(extract_404_block "$http_conf_file" || true)
-						if [ -n "$http_404_block" ]; then
-							echo "  ${PREVIEW_PREFIX}Using local 404 from HTTP vhost for per-site include"
-						fi
-					fi
-				fi
-			fi
-			
-			# Generate per-site include file if we have a 404 block
-			configure_site_includes "$domain" "80" "$http_conf_file" "$docroot" "$http_404_block" "$http_from_htaccess"
-		fi
-		
-		# Ensure detection include is present
-		ensure_include_detect_upgrade_in_vhost "$http_conf_file" "$domain" "80"
-	
+		process_vhost_for_includes "$domain" "80" "$http_conf_file" "$docroot" "HTTP" "$ssl_404_block"
 	else
 		echo "  Info: No HTTP VirtualHost found for $domain"
 	fi
 
 	# Final normalization: if per-site includes exist and .htaccess still has any 404s, comment them out
-	if [ -f "$docroot/.htaccess" ] && grep -qiE "$ANY404_REGEX" "$docroot/.htaccess"; then
-		if has_site_include_file_for_404 "$domain" "443" || has_site_include_file_for_404 "$domain" "80"; then
-			echo "  ${PREVIEW_PREFIX}Commenting out 404 ErrorDocument in $docroot/.htaccess and adding note"
-			[ -f "$docroot/.htaccess" ] && echo -n "  "
-			execute_or_simulate "backup_file" "$docroot/.htaccess"
-			comment_all_404_lines "$docroot/.htaccess"
-		fi
-	fi
+	normalize_htaccess_404s "$domain" "$docroot"
 }
 
 # Function to process all sites from the configuration file
