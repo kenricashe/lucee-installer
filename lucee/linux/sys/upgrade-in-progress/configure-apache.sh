@@ -1190,8 +1190,10 @@ extract_404_block_with_fallback() {
 		fi
 	fi
 	
-	# Output the values for the caller to capture
+	# Output the values for the caller to capture (use delimiter to handle multi-line blocks)
+	echo "BLOCK_START"
 	echo "$block"
+	echo "BLOCK_END"
 	echo "$from_htaccess"
 }
 
@@ -1230,8 +1232,8 @@ process_vhost_for_includes() {
 			# Extract 404 block with fallback logic
 			local result
 			result=$(extract_404_block_with_fallback "$docroot" "$vhost_file" "$port_desc" "block" "from_htaccess")
-			block=$(echo "$result" | sed -n '1p')
-			from_htaccess=$(echo "$result" | sed -n '2p')
+			block=$(echo "$result" | sed -n '/^BLOCK_START$/,/^BLOCK_END$/{/^BLOCK_START$/d; /^BLOCK_END$/d; p;}')
+			from_htaccess=$(echo "$result" | tail -n 1)
 			
 			# Display appropriate message based on what was found
 			if [ -n "$block" ]; then
@@ -1250,8 +1252,6 @@ process_vhost_for_includes() {
 	# Ensure detection include is present
 	ensure_include_detect_upgrade_in_vhost "$vhost_file" "$domain" "$port"
 	
-	# Return the extracted block for potential reuse
-	printf "%s" "$block"
 }
 
 # Normalize .htaccess by commenting out 404s if per-site includes exist
@@ -1289,9 +1289,8 @@ configure_site_debian() {
 		ssl_conf_file=$(grep -l "ServerName $domain" /etc/apache2/sites-available/*-ssl.conf 2>/dev/null | head -1)
 	fi
 	
-	local ssl_404_block=""
 	if [ -f "$ssl_conf_file" ]; then
-		ssl_404_block=$(process_vhost_for_includes "$domain" "443" "$ssl_conf_file" "$docroot" "SSL")
+		process_vhost_for_includes "$domain" "443" "$ssl_conf_file" "$docroot" "SSL"
 	else
 		echo "  ${PREVIEW_PREFIX}No SSL VirtualHost found for $domain"
 	fi
@@ -1304,14 +1303,14 @@ configure_site_debian() {
 		http_conf_file=$(grep -l "ServerName $domain" /etc/apache2/sites-available/*.conf 2>/dev/null | grep -v -- '-ssl\.conf' | head -1)
 	fi
 
-	if [ -f "$http_conf_file" ]; then
-		process_vhost_for_includes "$domain" "80" "$http_conf_file" "$docroot" "HTTP" "$ssl_404_block"
-		
+	if [ -n "$http_conf_file" ]; then
+		process_vhost_for_includes "$domain" "80" "$http_conf_file" "$docroot" "HTTP"	
 		# Best-effort warning if HTTP VirtualHost may not redirect to HTTPS
 		if ! grep -Eiq '(Redirect(\s+(permanent|temp|301|302))?\s+/?\s+https?://|RewriteRule\s+.*https://)' "$http_conf_file"; then
 			echo "  ${PREVIEW_PREFIX}Warning: HTTP vhost for $domain may not redirect to HTTPS. Ensure a proper 80->443 redirect is configured to avoid exposure over HTTP."
 		fi
 	else
+{{ ... }}
 		echo "  ${PREVIEW_PREFIX}Info: No HTTP configuration file found for $domain"
 	fi
 
@@ -1504,7 +1503,7 @@ configure_site_redhat() {
 	http_conf_file=$(find_redhat_vhost_file "$domain" "$docroot" ":80")
 
 	if [ -n "$http_conf_file" ]; then
-		process_vhost_for_includes "$domain" "80" "$http_conf_file" "$docroot" "HTTP" "$ssl_404_block"
+		process_vhost_for_includes "$domain" "80" "$http_conf_file" "$docroot" "HTTP"
 	else
 		echo "  Info: No HTTP VirtualHost found for $domain"
 	fi
