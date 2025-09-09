@@ -161,13 +161,14 @@ normalize_conf_whitespace() {
 	# Trim trailing whitespace and normalize consecutive blank lines
 	sed -i 's/[ \t]*$//' "$tmp"
 	
-	# Replace multiple consecutive blank lines with single blank line
+	# Replace 3+ consecutive blank lines with 2 blank lines
+	# This preserves single and double blank lines but reduces excessive spacing
 	awk '
 	BEGIN { blank=0 }
 	/^$/ { 
 		blank++
-		# Only print the first blank line in a sequence
-		if (blank == 1) print
+		# Allow up to 2 consecutive blank lines
+		if (blank <= 2) print
 		next 
 	}
 	{
