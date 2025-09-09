@@ -302,7 +302,7 @@ restore_cpanel_htaccess_errordocuments() {
 	fi
 	local processed_count=0
 	
-	while IFS='|' read -r domain docroot _; do
+	while read -r domain docroot _; do
 		if [ -z "$domain" ] || [ -z "$docroot" ]; then
 			continue
 		fi
