@@ -527,6 +527,11 @@ process_uninstall_operations() {
 		echo ""
 	fi
 	
+	# Process cPanel .htaccess files for ErrorDocument restoration
+	if [ "$IS_CPANEL" = true ]; then
+		restore_cpanel_htaccess_errordocuments
+	fi
+	
 	# Remove upgrade HTML files
 	if [ -n "$upgrade_html_files" ]; then
 		echo "${PREVIEW_PREFIX}Removing upgrade HTML files..."
@@ -715,13 +720,6 @@ main() {
 			fi
 		done <<< "$commented_vhosts"
 		echo ""
-	fi
-	
-	# Process cPanel .htaccess files for ErrorDocument restoration
-	if [ "$IS_CPANEL" = true ]; then
-		restore_cpanel_htaccess_errordocuments
-	else
-		log_verbose "Not a cPanel environment, skipping cPanel .htaccess ErrorDocument restoration"
 	fi
 	
 	# Add any VirtualHost files with commented ErrorDocument directives to the main list
