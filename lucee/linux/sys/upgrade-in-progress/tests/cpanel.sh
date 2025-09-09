@@ -101,13 +101,18 @@ create_httpd_conf() {
 						# Add IncludeOptional directive before the VirtualHost block
 						echo "# From: $conf_file" >> "$cpanel_config"
 						
-						# Add the VirtualHost block with IncludeOptional
+						# Add the VirtualHost block with IncludeOptional inside
 						{
-							# Print the VirtualHost block
-							cat "$conf_file"
-							# Add IncludeOptional directive inside the VirtualHost block
-							echo -e "\t# cPanel includes"
-							echo -e "\tIncludeOptional \"/etc/apache2/conf.d/userdata/${ssl_dir}/2_4/${user}/${domain}/*.conf\""
+							# Process the VirtualHost block line by line to insert IncludeOptional before closing tag
+							while IFS= read -r line; do
+								if [[ "$line" =~ ^[[:space:]]*\</VirtualHost\> ]]; then
+									# Insert IncludeOptional before closing VirtualHost tag
+									echo -e "\t# cPanel includes"
+									echo -e "\tIncludeOptional \"/etc/apache2/conf.d/userdata/${ssl_dir}/2_4/${user}/${domain}/*.conf\""
+									echo ""
+								fi
+								echo "$line"
+							done < "$conf_file"
 						} >> "$cpanel_config" 2>/dev/null || {
 							echo "Warning: Failed to process VirtualHost blocks from $conf_file" >&2
 						}
