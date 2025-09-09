@@ -720,6 +720,8 @@ main() {
 	# Process cPanel .htaccess files for ErrorDocument restoration
 	if [ "$IS_CPANEL" = true ]; then
 		restore_cpanel_htaccess_errordocuments
+	else
+		log_verbose "Not a cPanel environment, skipping cPanel .htaccess ErrorDocument restoration"
 	fi
 	
 	# Add any VirtualHost files with commented ErrorDocument directives to the main list
