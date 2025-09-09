@@ -567,10 +567,14 @@ configure_site_includes() {
 		# Comment out original 404s
 		comment_all_404_lines "$conf_file"
 		
-		if [ "$from_htaccess" = "true" ] && ! grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
-			[ -f "$docroot/.htaccess" ] && echo -n "  "
-			execute_or_simulate "backup_file" "$docroot/.htaccess"
-			comment_all_404_lines "$docroot/.htaccess"
+		if [ "$from_htaccess" = "true" ]; then
+			if ! grep -qi 'NOTE: ErrorDocument 404 moved' "$docroot/.htaccess"; then
+				[ -f "$docroot/.htaccess" ] && echo -n "  "
+				execute_or_simulate "backup_file" "$docroot/.htaccess"
+				comment_all_404_lines "$docroot/.htaccess"
+			else
+				echo "  ${PREVIEW_PREFIX}Skipping .htaccess comment (already processed): $docroot/.htaccess"
+			fi
 		fi
 		
 		# Add per-site include to vhost
