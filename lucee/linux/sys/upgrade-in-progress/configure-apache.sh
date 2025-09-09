@@ -422,7 +422,6 @@ add_include_404_to_vhost() {
 			if ($0 ~ /<\/VirtualHost>/) {
 				if (inblk && block_inserted==0 && (dom=="" || match_this) && (port=="" || blk_port==port)) {
 					print "\t" inc_line
-					print ""
 					block_inserted=1
 				}
 				inblk=0; match_this=0
@@ -531,7 +530,6 @@ ensure_include_detect_upgrade_in_vhost() {
 			if ($0 ~ /<\/VirtualHost>/) {
 				if (inblk && inserted==0 && (dom=="" || match_this) && (port=="" || blk_port==port) && had_inc==0) {
 					print "\t" inc_line
-					print ""
 					inserted=1
 				}
 				inblk=0; match_this=0; had_inc=0
