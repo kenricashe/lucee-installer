@@ -188,7 +188,8 @@ create_dummy_files() {
 	fi
 
 	# Copy lucee-detect-upgrade.conf
-	cp "${UPG_DIR}/lucee-detect-upgrade.conf" /etc/apache2/lucee-upgrade-in-progress/
+	mkdir -p /etc/apache2/lucee-upgrade-in-progress
+	cp -f --no-preserve=all "${UPG_DIR}/lucee-detect-upgrade.conf" /etc/apache2/lucee-upgrade-in-progress/
 	echo "  Created: /etc/apache2/lucee-upgrade-in-progress/lucee-detect-upgrade.conf"
 
 }
