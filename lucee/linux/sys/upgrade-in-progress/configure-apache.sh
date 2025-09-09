@@ -1414,7 +1414,7 @@ EOF
 		if [ -f "$ssl_include" ]; then
 			printf "\nInclude $ssl_include" >> ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf
 		fi
-		printf "\nInclude ${HTTPD_LUCEE_ROOT}/lucee-detect-upgrade.conf" >> ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf
+		printf "\nInclude ${HTTPD_LUCEE_ROOT}/lucee-detect-upgrade.conf\n" >> ${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf
 	fi
 	
 	# HTTP userdata file
@@ -1432,7 +1432,7 @@ EOF
 		if [ -f "$http_include" ]; then
 			printf "\nInclude $http_include" >> ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf
 		fi
-		printf "\nInclude ${HTTPD_LUCEE_ROOT}/lucee-detect-upgrade.conf" >> ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf
+		printf "\nInclude ${HTTPD_LUCEE_ROOT}/lucee-detect-upgrade.conf\n" >> ${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf
 	fi
 }
 
