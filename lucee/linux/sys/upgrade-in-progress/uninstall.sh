@@ -187,9 +187,7 @@ restore_htaccess_errordocument() {
 		log_verbose "Found commented ErrorDocument 404 in .htaccess: $htaccess_original"
 		
 		if [ "$PREVIEW_MODE" = true ]; then
-			echo "Would uncomment ErrorDocument 404 in $htaccess_file:"
-			echo "  $htaccess_original"
-			echo "Would remove note comment from $htaccess_file"
+			echo "Would restore ErrorDocument 404 in $htaccess_file"
 		else
 			# Backup if requested
 			if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
