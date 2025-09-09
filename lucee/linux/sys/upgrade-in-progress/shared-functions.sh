@@ -158,8 +158,11 @@ normalize_conf_whitespace() {
 	# Use cat to ensure we don't lose content
 	cat "$conf_file" > "$tmp"
 	
-	# Only trim trailing whitespace - safer operation
+	# Trim trailing whitespace and normalize consecutive blank lines
 	sed -i 's/[ \t]*$//' "$tmp"
+	
+	# Replace multiple consecutive blank lines with single blank line
+	sed -i '/^$/N;/^\n$/d' "$tmp"
 	
 	# Ensure exactly one newline at EOF (safer approach)
 	if [ -s "$tmp" ] && [ "$(tail -c 1 "$tmp" | wc -l)" -eq 0 ]; then

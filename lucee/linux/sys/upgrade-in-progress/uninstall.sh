@@ -194,6 +194,9 @@ restore_original_errordocument_404() {
 			# Uncomment the ErrorDocument line
 			sed -i 's/^\([[:space:]]*\)#[[:space:]]*\(ErrorDocument[[:space:]]\+404.*\)/\1\2/' "$vhost_file"
 			
+			# Normalize whitespace to clean up any extra blank lines
+			normalize_conf_whitespace "$vhost_file"
+			
 			log_action "Restored original ErrorDocument 404 to: $vhost_file"
 		fi
 		return 0
@@ -225,6 +228,9 @@ restore_original_errordocument_404() {
 				
 				# Uncomment the ErrorDocument line
 				sed -i 's/^\([[:space:]]*\)#[[:space:]]*\(ErrorDocument[[:space:]]\+404.*\)/\1\2/' "$htaccess_file"
+				
+				# Normalize whitespace to clean up any extra blank lines
+				normalize_conf_whitespace "$htaccess_file"
 				
 				log_action "Restored original ErrorDocument 404 to: $htaccess_file"
 			fi
@@ -268,6 +274,9 @@ remove_include_directives() {
 		
 		# Try to restore original ErrorDocument 404 directives by uncommenting
 		restore_original_errordocument_404 "$vhost_file"
+		
+		# Normalize whitespace to clean up extra blank lines
+		normalize_conf_whitespace "$vhost_file"
 	fi
 }
 
