@@ -202,6 +202,8 @@ create_dummy_files() {
 	# Copy lucee-detect-upgrade.conf
 	mkdir -p /etc/apache2/lucee-upgrade-in-progress
 	cp -f --no-preserve=all "${UPG_DIR}/lucee-detect-upgrade.conf" /etc/apache2/lucee-upgrade-in-progress/
+	# replace /etc/httpd with /etc/apache2
+	sed -i 's|/etc/httpd|/etc/apache2|g' /etc/apache2/lucee-upgrade-in-progress/lucee-detect-upgrade.conf
 	echo "  Created: /etc/apache2/lucee-upgrade-in-progress/lucee-detect-upgrade.conf"
 
 }
