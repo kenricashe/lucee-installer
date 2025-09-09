@@ -79,52 +79,50 @@ create_httpd_conf() {
 		
 		# Use sites-configured.txt which already contains the list of VirtualHost files (third column)
 		# First check if the file exists
-		if [ -f "${SITES_FILE}" ]; then
-			awk '{print $3}' "${SITES_FILE}" | sort -u | while read -r conf_file; do
-				# Skip the primary config since we already included it
-				if [ -f "$conf_file" ] && [ "$conf_file" != "$APACHE_CONF_FILE" ]; then
-					contains_vhost=$(grep -q '<VirtualHost' "$conf_file" && echo true || echo false)
-					if [ "$contains_vhost" = true ]; then
-						echo "# From: $conf_file" >> "$cpanel_config"
-						# Extract ServerName, DocumentRoot and Port
-						user=$(grep -m1 '^\s*DocumentRoot\s' "$conf_file" | awk '{print $2}' | cut -d/ -f3)
-						domain=$(grep -m1 '^\s*ServerName\s' "$conf_file" | awk '{print $2}')
-						# Extract port from VirtualHost directive, handling multiple ports and formats like *:80 or 1.2.3.4:443
-						port=$(grep -m1 '^\s*<VirtualHost\s' "$conf_file" | grep -oE ':[0-9]+' | head -1 | cut -d: -f2 || echo '80')
-						
-						# Determine if this is SSL or standard
-						if [ "$port" = "443" ]; then
-							ssl_dir="ssl"
-						else
-							ssl_dir="std"
-						fi
-						
-						# Add IncludeOptional directive before the VirtualHost block
-						echo "# From: $conf_file" >> "$cpanel_config"
-						
-						# Add the VirtualHost block with IncludeOptional inside
-						{
-							# Process the VirtualHost block line by line to insert IncludeOptional before closing tag
-							while IFS= read -r line; do
-								if [[ "$line" =~ ^[[:space:]]*\</VirtualHost\> ]]; then
-									# Insert IncludeOptional before closing VirtualHost tag
-									echo -e "\t# cPanel includes"
-									echo -e "\tIncludeOptional \"/etc/apache2/conf.d/userdata/${ssl_dir}/2_4/${user}/${domain}/*.conf\""
-									echo ""
-								fi
-								echo "$line"
-							done < "$conf_file"
-						} >> "$cpanel_config" 2>/dev/null || {
-							echo "Warning: Failed to process VirtualHost blocks from $conf_file" >&2
-						}
-					fi
-				fi
-				# disable vhost files that would interfere with cPanel simulation
+		awk '{print $3}' "${SITES_FILE}" | sort -u | while read -r conf_file; do
+			# Skip the primary config since we already included it
+			if [ -f "$conf_file" ] && [ "$conf_file" != "$APACHE_CONF_FILE" ]; then
+				contains_vhost=$(grep -q '<VirtualHost' "$conf_file" && echo true || echo false)
 				if [ "$contains_vhost" = true ]; then
-					mv "${conf_file}" "${conf_file}.disabled-for-cpanel-sim"
+					echo "# From: $conf_file" >> "$cpanel_config"
+					# Extract ServerName, DocumentRoot and Port
+					user=$(grep -m1 '^\s*DocumentRoot\s' "$conf_file" | awk '{print $2}' | cut -d/ -f3)
+					domain=$(grep -m1 '^\s*ServerName\s' "$conf_file" | awk '{print $2}')
+					# Extract port from VirtualHost directive, handling multiple ports and formats like *:80 or 1.2.3.4:443
+					port=$(grep -m1 '^\s*<VirtualHost\s' "$conf_file" | grep -oE ':[0-9]+' | head -1 | cut -d: -f2 || echo '80')
+					
+					# Determine if this is SSL or standard
+					if [ "$port" = "443" ]; then
+						ssl_dir="ssl"
+					else
+						ssl_dir="std"
+					fi
+					
+					# Add IncludeOptional directive before the VirtualHost block
+					echo "# From: $conf_file" >> "$cpanel_config"
+					
+					# Add the VirtualHost block with IncludeOptional inside
+					{
+						# Process the VirtualHost block line by line to insert IncludeOptional before closing tag
+						while IFS= read -r line; do
+							if [[ "$line" =~ ^[[:space:]]*\</VirtualHost\> ]]; then
+								# Insert IncludeOptional before closing VirtualHost tag
+								echo -e "\t# cPanel includes"
+								echo -e "\tIncludeOptional \"/etc/apache2/conf.d/userdata/${ssl_dir}/2_4/${user}/${domain}/*.conf\""
+								echo ""
+							fi
+							echo "$line"
+						done < "$conf_file"
+					} >> "$cpanel_config" 2>/dev/null || {
+						echo "Warning: Failed to process VirtualHost blocks from $conf_file" >&2
+					}
 				fi
-			done
-		fi
+			fi
+			# disable vhost files that would interfere with cPanel simulation
+			if [ "$contains_vhost" = true ]; then
+				mv "${conf_file}" "${conf_file}.disabled-for-cpanel-sim"
+			fi
+		done
 	fi
 }
 
@@ -163,6 +161,20 @@ systemctl reload httpd.service
 EOF
 	chmod +x /scripts/restartsrv_httpd
 	echo "  Created: /scripts/restartsrv_httpd"
+}
+
+# The sites file must not contain /etc/apache2 left over from previous cpanel.sh run
+require_default_sites_file() {
+	if [ ! -f "$SITES_FILE" ]; then
+		echo "Error: $SITES_FILE not found."
+		echo "Run menu.sh to get sites."
+		exit 1
+	fi
+	if grep -q "/etc/apache2" "$SITES_FILE"; then
+		echo "Error: $SITES_FILE is left over from previous cpanel.sh run."
+		echo "Run menu.sh to get sites while NOT in cPanel simulation mode."
+		exit 1
+	fi
 }
 
 create_dummy_files() {
@@ -256,6 +268,7 @@ case "${1:-}" in
 		if [ -f "/etc/apache2/conf/httpd.conf" ]; then
 			printf "\ncPanel mode is already enabled.\nTo refresh the dummy files from an updated version of the toolkit,\nrun cpanel.sh off then cpanel.sh on again.\n"
 		else
+			require_default_sites_file
 			create_dummy_files
 			echo ""
 			echo "✓ cPanel simulation ENABLED"
