@@ -161,8 +161,26 @@ normalize_conf_whitespace() {
 	# Trim trailing whitespace and normalize consecutive blank lines
 	sed -i 's/[ \t]*$//' "$tmp"
 	
-	# Replace multiple consecutive blank lines with single blank line
-	sed -i '/^$/N;/^\n$/d' "$tmp"
+	# Normalize blank lines while preserving VirtualHost formatting
+	awk '
+	BEGIN { blank=0; prev_line="" }
+	/^$/ { 
+		blank++
+		# Allow up to 2 consecutive blank lines, but reduce excessive spacing
+		if (blank <= 2) print
+		next 
+	}
+	{
+		# If this is </VirtualHost> and previous non-blank line wasn'\''t blank, add one
+		if (/^[[:space:]]*<\/VirtualHost>/ && prev_line != "" && blank == 0) {
+			print ""
+		}
+		blank = 0
+		prev_line = $0
+		print
+	}
+	' "$tmp" > "${tmp}.norm"
+	mv "${tmp}.norm" "$tmp"
 	
 	# Ensure exactly one newline at EOF (safer approach)
 	if [ -s "$tmp" ] && [ "$(tail -c 1 "$tmp" | wc -l)" -eq 0 ]; then
