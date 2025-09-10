@@ -48,21 +48,25 @@ load_exclusions() {
 					EXCL_PATHS+=("$p")
 				fi
 				;;
-			*\*.*)
-				# Check if it's a subdomain wildcard like _wildcard_.* or bounce.*
-				if [[ "$line" == *".*" ]]; then
-					# subdomain wildcard like _wildcard_.* or bounce.*
-					pat="${line%.*}"
-					if [ -n "$pat" ]; then
-						EXCL_SUBDOMAIN_WILDCARDS+=("$pat")
+			\*.*)
+				# regular wildcard like *.example.com (starts with *.)
+				pat="$line"
+				pat="${pat#*.}"
+				if [ -n "$pat" ]; then
+					if [ "${DEBUG_MODE:-false}" = true ]; then
+						echo "[DEBUG] Loading regular wildcard: '$pat' from line '$line'"
 					fi
-				else
-					# regular wildcard like *.example.com
-					pat="$line"
-					pat="${pat#*.}"
-					if [ -n "$pat" ]; then
-						EXCL_WILDCARDS+=("$pat")
+					EXCL_WILDCARDS+=("$pat")
+				fi
+				;;
+			*.\*)
+				# subdomain wildcard like _wildcard_.* or bounce.* (ends with .*)
+				pat="${line%.*}"
+				if [ -n "$pat" ]; then
+					if [ "${DEBUG_MODE:-false}" = true ]; then
+						echo "[DEBUG] Loading subdomain wildcard: '$pat' from line '$line'"
 					fi
+					EXCL_SUBDOMAIN_WILDCARDS+=("$pat")
 				fi
 				;;
 			*)
@@ -88,6 +92,10 @@ is_excluded_domain() {
 		echo "[DEBUG] EXCL_DOMAINS array contains: ${#EXCL_DOMAINS[@]} entries"
 		for i in "${!EXCL_DOMAINS[@]}"; do
 			echo "[DEBUG]   [$i]: '${EXCL_DOMAINS[$i]}'"
+		done
+		echo "[DEBUG] EXCL_SUBDOMAIN_WILDCARDS array contains: ${#EXCL_SUBDOMAIN_WILDCARDS[@]} entries"
+		for i in "${!EXCL_SUBDOMAIN_WILDCARDS[@]}"; do
+			echo "[DEBUG]   [$i]: '${EXCL_SUBDOMAIN_WILDCARDS[$i]}'"
 		done
 	fi
 	
@@ -443,7 +451,7 @@ for docroot in "${!DOCROOT_TO_DOMAINS[@]}"; do
 	fi
 	
 	# Check domain exclusions first to avoid unnecessary file scanning
-	local has_non_excluded_domains=false
+	has_non_excluded_domains=false
 	for d in ${DOCROOT_TO_DOMAINS[$docroot]}; do
 		if ! is_excluded_domain "$d"; then
 			has_non_excluded_domains=true
