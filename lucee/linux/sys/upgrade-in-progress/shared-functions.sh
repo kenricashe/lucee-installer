@@ -31,19 +31,19 @@ ensure_default_exclusions_file() {
 # Domain patterns:
 #   exact domains: example.com
 #   wildcard domains: *.example.com
+#   subdomain wildcards: bounce.*
 # Path exclusions:
 #   path: /var/www/html/some-static-site
 
-# Common non-app / platform subdomains (cPanel, etc)
+# Commonly excluded subdomains (cPanel, etc)
 localhost
-cpanel
-whm
-webmail
-webdisk
-mail
-default
-localhost
-_wildcard_
+cpanel.*
+whm.*
+webmail.*
+webdisk.*
+mail.*
+default.*
+_wildcard_.*
 
 # cPanel and control panel vhosts
 proxy-subdomains-vhost
