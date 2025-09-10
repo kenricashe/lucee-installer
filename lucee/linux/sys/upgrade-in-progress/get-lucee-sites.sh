@@ -20,17 +20,32 @@ fi
 # Exclusions and Lucee detection
 # ------------------------------
 
-declare -a EXCL_REGEXES
+declare -a EXCL_DOMAINS
 declare -a EXCL_PATHS
 
+to_lower() {
+	# lowercases arg
+	printf '%s' "$1" | tr 'A-Z' 'a-z'
+}
+
+trim() {
+	local s="$1"
+	s="${s#"${s%%[![:space:]]*}"}"  # remove leading spaces
+	s="${s%"${s##*[![:space:]]}"}"  # remove trailing spaces
+	printf '%s' "$s"
+}
+
 load_exclusions() {
-	EXCL_REGEXES=()
+	EXCL_DOMAINS=()
 	EXCL_PATHS=()
 
 	ensure_default_exclusions_file
 
 	while IFS= read -r line || [ -n "$line" ]; do
-		# Trim
+		# Remove leading/trailing whitespace
+		line=$(trim "$line")
+
+		# Skip empty lines or comments
 		case "$line" in
 			""|\#*)
 				continue
@@ -38,60 +53,61 @@ load_exclusions() {
 			path:*|path\:*)
 				p="${line#path:}"
 				p="${p#path }"
-				p="${p%%[[:space:]]}"
-				p="${p%/}"
+				p=$(trim "$p")
+				p="${p%/}"  # remove trailing slash
 				if [ -n "$p" ]; then
 					EXCL_PATHS+=("$p")
+					echo "Loaded path exclusion: '$p'"
 				fi
 				;;
 			*)
-				# Convert exclusion pattern into regex
-				pat=$(to_lower "$line")
-
-				# Escape dots
-				pat="${pat//./\\.}"
-
-				# Handle wildcard "*"
-				pat="${pat//\*/.*}"
-
-				# Anchor it
-				regex="^${pat}$"
-
-				EXCL_REGEXES+=("$regex")
+				# Domain exclusion (exact or wildcard)
+				p=$(trim "$line")
+				if [ -n "$p" ]; then
+					EXCL_DOMAINS+=("$p")
+					echo "Loaded domain exclusion: '$p'"
+				fi
 				;;
 		esac
 	done < "$EXCLUSIONS_FILE"
 }
 
-to_lower() {
-	# lowercases arg
-	printf '%s' "$1" | tr 'A-Z' 'a-z'
-}
-
-is_excluded_domain() {
-	# $1 domain (lowercased)
-	local d="$1"
-	local r
-	for r in "${EXCL_REGEXES[@]}"; do
-		if [[ "$d" =~ $r ]]; then
-			return 0
-		fi
+is_excluded_path() {
+	# $1 = docroot
+	local p="${1%/}"  # remove trailing slash
+	local x
+	for x in "${EXCL_PATHS[@]}"; do
+		x="${x%/}"       # remove trailing slash
+		x=$(trim "$x")   # ensure fully trimmed
+		case "$p" in
+			"$x"|"$x"/*)
+				return 0
+				;;
+		esac
 	done
 	return 1
 }
 
-is_excluded_path() {
-	# $1 path
-	local p="${1%/}"
+is_excluded_domain() {
+	# $1 = domain (lowercased)
+	local d="$1"
 	local x
-	for x in "${EXCL_PATHS[@]}"; do
-		if [ -n "$x" ]; then
-			case "$p" in
-				"$x"|"$x"/*)
+	for x in "${EXCL_DOMAINS[@]}"; do
+		x=$(to_lower "$x")
+		case "$x" in
+			*\*.*)  # wildcard pattern
+				# convert *.example.com to pattern
+				pat="${x#*.}"
+				case "$d" in
+					*.$pat) return 0 ;;
+				esac
+				;;
+			*)  # exact match
+				if [ "$d" = "$x" ]; then
 					return 0
-					;;
-			esac
-		fi
+				fi
+				;;
+		esac
 	done
 	return 1
 }
