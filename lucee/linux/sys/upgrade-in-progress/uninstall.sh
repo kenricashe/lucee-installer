@@ -255,13 +255,6 @@ restore_original_errordocument_404() {
 	local all_docroots
 	all_docroots=$(grep -E "^[[:space:]]*DocumentRoot[[:space:]]+" "$vhost_file" 2>/dev/null | sed -E 's/^[[:space:]]*DocumentRoot[[:space:]]+//' | tr -d '"')
 	
-	echo "[DEBUG] Found DocumentRoot entries in $vhost_file:"
-	if [ -n "$all_docroots" ]; then
-		echo "$all_docroots" | sed 's/^/[DEBUG]   /'
-	else
-		echo "[DEBUG]   (none found)"
-	fi
-	
 	if [ -n "$all_docroots" ]; then
 		while IFS= read -r docroot; do
 			if [ -z "$docroot" ]; then
@@ -269,22 +262,11 @@ restore_original_errordocument_404() {
 			fi
 			
 			local htaccess_file="${docroot}/.htaccess"
-			echo "[DEBUG] Checking for .htaccess file: $htaccess_file"
-			
 			if [ -f "$htaccess_file" ]; then
-				echo "[DEBUG] .htaccess file exists, checking for commented ErrorDocument"
-				if restore_htaccess_errordocument "$htaccess_file"; then
-					echo "[DEBUG] Successfully restored ErrorDocument in .htaccess"
-				else
-					echo "[DEBUG] No commented ErrorDocument found in .htaccess"
-				fi
-			else
-				echo "[DEBUG] .htaccess file does not exist"
+				restore_htaccess_errordocument "$htaccess_file"
 			fi
 		done <<< "$all_docroots"
 	fi
-	
-	log_verbose "No commented ErrorDocument 404 found in $vhost_file or associated .htaccess"
 }
 
 # cPanel-specific function to restore ErrorDocument 404 in .htaccess files using SITES_FILE
@@ -371,20 +353,16 @@ restore_htaccess_files() {
 	latest_backup=$(find ${BACKUP_ROOT} -path "*${htaccess_file}" 2>/dev/null | sort -r | head -1)
 	
 	if [ -n "$latest_backup" ] && [ -f "$latest_backup" ]; then
-		if confirm_action "Restore $htaccess_file from backup $latest_backup?"; then
-			execute_or_simulate "restore_file" "$latest_backup" "$htaccess_file"
-		fi
+		execute_or_simulate "restore_file" "$latest_backup" "$htaccess_file"
 	else
 		# Check if file contains upgrade-related content
 		if grep -q "upgrade-in-progress\|lucee-upgrade" "$htaccess_file" 2>/dev/null; then
-			if confirm_action "Remove upgrade content from $htaccess_file (no backup found)?"; then
-				if [ "$BACKUP_BEFORE_REMOVE" = true ] && [ "$PREVIEW_MODE" = false ]; then
-					backup_file "$htaccess_file"
-				fi
-				# Remove upgrade-related lines
-				execute_or_simulate "remove_include_directive" "$htaccess_file" "upgrade-in-progress"
-				execute_or_simulate "remove_include_directive" "$htaccess_file" "lucee-upgrade"
+			if [ "$BACKUP_BEFORE_REMOVE" = true ] && [ "$PREVIEW_MODE" = false ]; then
+				backup_file "$htaccess_file"
 			fi
+			# Remove upgrade-related lines
+			execute_or_simulate "remove_include_directive" "$htaccess_file" "upgrade-in-progress"
+			execute_or_simulate "remove_include_directive" "$htaccess_file" "lucee-upgrade"
 		fi
 	fi
 }
