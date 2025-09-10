@@ -386,7 +386,7 @@ declare -a RESULT_VHOST_FILES
 
 for docroot in "${!DOCROOT_TO_DOMAINS[@]}"; do
 	if is_excluded_path "$docroot"; then
-		echo "Skipping excluded path: $docroot"
+		printf "\n Skipping excluded path: %s\n" "$docroot"
 		continue
 	fi
 
@@ -399,7 +399,7 @@ for docroot in "${!DOCROOT_TO_DOMAINS[@]}"; do
 		fi
 	done
 	if [ "$all_excluded" = true ]; then
-		echo "Skipping docroot (all domains excluded): $docroot"
+		printf "\n Skipping docroot (all domains excluded): %s\n" "$docroot"
 		continue
 	fi
 
