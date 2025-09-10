@@ -15,6 +15,9 @@ BACKUP_BEFORE_REMOVE=true
 FORCE=false
 INTERACTIVE=true
 
+# Track number of items actually removed/modified
+TOTAL_ITEMS_PROCESSED=0
+
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
 	case $1 in
@@ -98,11 +101,10 @@ log_action() {
 	echo "[ACTION] $*"
 }
 
-# Function to execute or simulate commands
 execute_or_simulate() {
 	local action="$1"
 	shift
-	
+
 	if [ "$PREVIEW_MODE" = true ]; then
 		if [ "$action" = "remove_include_directive" ]; then
 			local file="$1"
@@ -112,6 +114,7 @@ execute_or_simulate() {
 			if [ -n "$matching_lines" ]; then
 				echo "Would remove from $file:"
 				echo "$matching_lines" | sed 's/^/  /'
+				TOTAL_ITEMS_PROCESSED=$((TOTAL_ITEMS_PROCESSED + 1))
 			else
 				echo "No matching lines found in $file for pattern: $pattern"
 			fi
@@ -121,28 +124,36 @@ execute_or_simulate() {
 	else
 		log_action "$action $*"
 		case "$action" in
-			"remove_file")
+			backup_file)
+				backup_file "$1"
+				;;
+			remove_file)
 				rm -f "$1"
 				;;
-			"remove_dir")
+			remove_dir)
 				rm -rf "$1"
 				;;
-			"restore_file")
+			restore_file)
 				cp --no-preserve=all "$1" "$2"
 				;;
-			"rename_file")
+			rename_file)
 				mv "$1" "$2"
 				;;
-			"remove_include_directive")
+			remove_include_directive)
 				local file="$1"
 				local pattern="$2"
 				sed_i_nopreserve "\|$pattern|d" "$file"
 				;;
-			"apache_reload")
+			apache_reload)
 				apache_reload || exit 1
 				;;
 		esac
 	fi
+	case "$action" in
+		remove_file|remove_dir|restore_file|rename_file)
+			TOTAL_ITEMS_PROCESSED=$((TOTAL_ITEMS_PROCESSED + 1))
+			;;
+	esac
 }
 
 # Function to prompt user for confirmation
@@ -310,7 +321,7 @@ remove_include_directives() {
 	
 	# Backup if requested and not in preview mode
 	if [ "$BACKUP_BEFORE_REMOVE" = true ] && [ "$PREVIEW_MODE" = false ]; then
-		backup_file "$vhost_file"
+		execute_or_simulate "backup_file" "$vhost_file"
 	fi
 	
 	# Remove Include directives that reference upgrade-in-progress files
@@ -414,7 +425,7 @@ process_uninstall_operations() {
 					local conf_name
 					conf_name=$(basename "$proxy_file" .conf)
 					if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
-						backup_file "$proxy_file"
+						execute_or_simulate "backup_file" "$proxy_file"
 					fi
 					if [ "$PREVIEW_MODE" = true ]; then
 						echo "Would execute: disable_and_remove_conf $conf_name"
@@ -424,7 +435,7 @@ process_uninstall_operations() {
 				else
 					# Non-Debian systems: just remove the file
 					if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
-						backup_file "$proxy_file"
+						execute_or_simulate "backup_file" "$proxy_file"
 					fi
 					execute_or_simulate "remove_file" "$proxy_file"
 				fi
@@ -443,7 +454,7 @@ process_uninstall_operations() {
 					local conf_name
 					conf_name=$(basename "$upgrade_file" .conf)
 					if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
-						backup_file "$upgrade_file"
+						execute_or_simulate "backup_file" "$upgrade_file"
 					fi
 					if [ "$PREVIEW_MODE" = true ]; then
 						echo "Would execute: disable_and_remove_conf $conf_name"
@@ -453,7 +464,7 @@ process_uninstall_operations() {
 				else
 					# Non-Debian systems: just remove the file
 					if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
-						backup_file "$upgrade_file"
+						execute_or_simulate "backup_file" "$upgrade_file"
 					fi
 					execute_or_simulate "remove_file" "$upgrade_file"
 				fi
@@ -473,7 +484,7 @@ process_uninstall_operations() {
 		while IFS= read -r html_file; do
 			if [ -n "$html_file" ] && [ -f "$html_file" ]; then
 				if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
-					backup_file "$html_file"
+					execute_or_simulate "backup_file" "$html_file"
 				fi
 				execute_or_simulate "remove_file" "$html_file"
 			fi
@@ -487,7 +498,7 @@ process_uninstall_operations() {
 		while IFS= read -r include_file; do
 			if [ -n "$include_file" ] && [ -f "$include_file" ]; then
 				if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
-					backup_file "$include_file"
+					execute_or_simulate "backup_file" "$include_file"
 				fi
 				execute_or_simulate "remove_file" "$include_file"
 			fi
@@ -501,7 +512,7 @@ process_uninstall_operations() {
 		while IFS= read -r legacy_file; do
 			if [ -n "$legacy_file" ] && [ -f "$legacy_file" ]; then
 				if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
-					backup_file "$legacy_file"
+					execute_or_simulate "backup_file" "$legacy_file"
 				fi
 				execute_or_simulate "remove_file" "$legacy_file"
 			fi
@@ -513,7 +524,7 @@ process_uninstall_operations() {
 	if [ -f "/var/lucee-upgrade-in-progress" ]; then
 		echo "${PREVIEW_PREFIX}Removing upgrade flag file..."
 		if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
-			backup_file "/var/lucee-upgrade-in-progress"
+			execute_or_simulate "backup_file" "/var/lucee-upgrade-in-progress"
 		fi
 		execute_or_simulate "remove_file" "/var/lucee-upgrade-in-progress"
 		echo ""
@@ -533,22 +544,9 @@ process_uninstall_operations() {
 		echo ""
 	fi
 	
-	# Summary
-	if [ "$PREVIEW_MODE" = true ]; then
-		return  # Don't show summary in preview mode, handled by caller
-	else
-		local total_items=0
-		[ -n "$vhost_files" ] && total_items=$((total_items + $(echo "$vhost_files" | wc -l)))
-		[ -n "$proxy_configs" ] && total_items=$((total_items + $(echo "$proxy_configs" | wc -l)))
-		[ -n "$upgrade_configs" ] && total_items=$((total_items + $(echo "$upgrade_configs" | wc -l)))
-		[ -n "$upgrade_html_files" ] && total_items=$((total_items + $(echo "$upgrade_html_files" | wc -l)))
-		[ -n "$site_includes" ] && total_items=$((total_items + $(echo "$site_includes" | wc -l)))
-		[ -n "$legacy_files" ] && total_items=$((total_items + $(echo "$legacy_files" | wc -l)))
-		
-		echo "Uninstall complete. $total_items items processed."
-		if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
-			echo "Backups created in: ${BACKUP_ROOT}/${BACKUP_TS}"
-		fi
+	echo "${PREVIEW_PREFIX}Uninstall complete. $TOTAL_ITEMS_PROCESSED items processed."
+	if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
+		echo "${PREVIEW_PREFIX}Backups created in: ${BACKUP_ROOT}/${BACKUP_TS}"
 	fi
 }
 
@@ -664,25 +662,6 @@ main() {
 		fi
 	fi
 	
-	# Count total items to remove
-	local total_items=0
-	[ -n "$vhost_files" ] && total_items=$((total_items + $(echo "$vhost_files" | wc -l)))
-	[ -n "$proxy_configs" ] && total_items=$((total_items + $(echo "$proxy_configs" | wc -l)))
-	[ -n "$upgrade_configs" ] && total_items=$((total_items + $(echo "$upgrade_configs" | wc -l)))
-	[ -n "$upgrade_html_files" ] && total_items=$((total_items + $(echo "$upgrade_html_files" | wc -l)))
-	[ -n "$site_includes" ] && total_items=$((total_items + $(echo "$site_includes" | wc -l)))
-	[ -n "$legacy_files" ] && total_items=$((total_items + $(echo "$legacy_files" | wc -l)))
-	# Count the lucee-upgrade-in-progress directory if it exists
-	[ "$has_upgrade_dir" = true ] && total_items=$((total_items + 1))
-	
-	if [ "$total_items" -eq 0 ]; then
-		echo "No upgrade configurations found to remove."
-		exit 0
-	fi
-	
-	echo "Found $total_items upgrade-related items to process."
-	echo ""
-	
 	# If in preview mode, show preview and prompt for confirmation
 	if [ "$PREVIEW_MODE" = true ]; then
 		echo "PREVIEW OF PENDING CHANGES:"
@@ -692,10 +671,6 @@ main() {
 		# Run through all operations in preview mode
 		process_uninstall_operations "$vhost_files" "$proxy_configs" "$upgrade_configs" "$upgrade_html_files" "$site_includes" "$legacy_files"
 		
-		echo ""
-		echo "Preview complete. $total_items items would be processed."
-		echo ""
-		
 		if [ "$FORCE" = false ]; then
 			if confirm_action "Execute these changes now?"; then
 				PREVIEW_MODE=false
@@ -704,6 +679,7 @@ main() {
 				echo "EXECUTING CHANGES:"
 				echo "=================="
 				echo ""
+				TOTAL_ITEMS_PROCESSED=0
 				process_uninstall_operations "$vhost_files" "$proxy_configs" "$upgrade_configs" "$upgrade_html_files" "$site_includes" "$legacy_files"
 			else
 				echo "Uninstall cancelled."
@@ -724,4 +700,4 @@ main() {
 }
 
 # Run main function
-main
+main "$@"
