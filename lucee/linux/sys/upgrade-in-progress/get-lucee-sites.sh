@@ -50,7 +50,7 @@ load_exclusions() {
 				;;
 			*\*.*)
 				# Check if it's a subdomain wildcard like _wildcard_.* or bounce.*
-				if [[ "$line" == *".\\*" ]]; then
+				if [[ "$line" == *".*" ]]; then
 					# subdomain wildcard like _wildcard_.* or bounce.*
 					pat="${line%.*}"
 					if [ -n "$pat" ]; then
@@ -441,19 +441,38 @@ for docroot in "${!DOCROOT_TO_DOMAINS[@]}"; do
 		echo "Skipping excluded path: $docroot"
 		continue
 	fi
-	printf '\n Scanning for Lucee files in: %s\n' "$docroot"
-	if has_cfml_files "$docroot"; then
-		for d in ${DOCROOT_TO_DOMAINS[$docroot]}; do
-			if is_excluded_domain "$d"; then
-				echo "  - Excluded domain: $d"
-				continue
-			fi
-			RESULT_DOMAINS+=("$d")
-			RESULT_DOCROOTS+=("$docroot")
-			RESULT_VHOST_FILES+=("${DOCROOT_TO_VHOST_FILES[$d]}")
-		done
+	
+	# Check domain exclusions first to avoid unnecessary file scanning
+	local has_non_excluded_domains=false
+	for d in ${DOCROOT_TO_DOMAINS[$docroot]}; do
+		if ! is_excluded_domain "$d"; then
+			has_non_excluded_domains=true
+			break
+		fi
+	done
+	
+	# Only scan for files if there are non-excluded domains
+	if [ "$has_non_excluded_domains" = true ]; then
+		printf '\n Scanning for Lucee files in: %s\n' "$docroot"
+		if has_cfml_files "$docroot"; then
+			for d in ${DOCROOT_TO_DOMAINS[$docroot]}; do
+				if is_excluded_domain "$d"; then
+					echo "  - Excluded domain: $d"
+					continue
+				fi
+				RESULT_DOMAINS+=("$d")
+				RESULT_DOCROOTS+=("$docroot")
+				RESULT_VHOST_FILES+=("${DOCROOT_TO_VHOST_FILES[$d]}")
+			done
+		else
+			echo "  - No Lucee files detected"
+		fi
 	else
-		echo "  - No Lucee files detected"
+		# All domains are excluded, just report them
+		printf '\n Scanning for Lucee files in: %s\n' "$docroot"
+		for d in ${DOCROOT_TO_DOMAINS[$docroot]}; do
+			echo "  - Excluded domain: $d"
+		done
 	fi
 done
 
