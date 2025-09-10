@@ -337,45 +337,14 @@ remove_include_directives() {
 	fi
 }
 
-# Function to restore .htaccess files from backups
-restore_htaccess_files() {
-	local htaccess_file="$1"
-	
-	if [ ! -f "$htaccess_file" ]; then
-		return 0
-	fi
-	
-	log_verbose "Checking .htaccess file: $htaccess_file"
-	
-	# Look for backup in the backup directory
-	local backup_pattern="${BACKUP_ROOT}/*${htaccess_file}"
-	local latest_backup
-	latest_backup=$(find ${BACKUP_ROOT} -path "*${htaccess_file}" 2>/dev/null | sort -r | head -1)
-	
-	if [ -n "$latest_backup" ] && [ -f "$latest_backup" ]; then
-		execute_or_simulate "restore_file" "$latest_backup" "$htaccess_file"
-	else
-		# Check if file contains upgrade-related content
-		if grep -q "upgrade-in-progress\|lucee-upgrade" "$htaccess_file" 2>/dev/null; then
-			if [ "$BACKUP_BEFORE_REMOVE" = true ] && [ "$PREVIEW_MODE" = false ]; then
-				backup_file "$htaccess_file"
-			fi
-			# Remove upgrade-related lines
-			execute_or_simulate "remove_include_directive" "$htaccess_file" "upgrade-in-progress"
-			execute_or_simulate "remove_include_directive" "$htaccess_file" "lucee-upgrade"
-		fi
-	fi
-}
-
 # Function to process all uninstall operations
 process_uninstall_operations() {
 	local vhost_files="$1"
 	local proxy_configs="$2"
 	local upgrade_configs="$3"
-	local modified_htaccess="$4"
-	local upgrade_html_files="$5"
-	local site_includes="$6"
-	local legacy_files="$7"
+	local upgrade_html_files="$4"
+	local site_includes="$5"
+	local legacy_files="$6"
 
 	# Restore lucee-proxy.conf functionality FIRST
 	if [ "$IS_DEBIAN" = true ]; then
@@ -493,15 +462,6 @@ process_uninstall_operations() {
 		echo ""
 	fi
 	
-	# Process .htaccess files
-	if [ -n "$modified_htaccess" ]; then
-		echo "${PREVIEW_PREFIX}Processing modified .htaccess files..."
-		while IFS= read -r htaccess_file; do
-			[ -n "$htaccess_file" ] && restore_htaccess_files "$htaccess_file"
-		done <<< "$modified_htaccess"
-		echo ""
-	fi
-	
 	# Process cPanel .htaccess files for ErrorDocument restoration
 	if [ "$IS_CPANEL" = true ]; then
 		restore_cpanel_htaccess_errordocuments
@@ -581,7 +541,6 @@ process_uninstall_operations() {
 		[ -n "$vhost_files" ] && total_items=$((total_items + $(echo "$vhost_files" | wc -l)))
 		[ -n "$proxy_configs" ] && total_items=$((total_items + $(echo "$proxy_configs" | wc -l)))
 		[ -n "$upgrade_configs" ] && total_items=$((total_items + $(echo "$upgrade_configs" | wc -l)))
-		[ -n "$modified_htaccess" ] && total_items=$((total_items + $(echo "$modified_htaccess" | wc -l)))
 		[ -n "$upgrade_html_files" ] && total_items=$((total_items + $(echo "$upgrade_html_files" | wc -l)))
 		[ -n "$site_includes" ] && total_items=$((total_items + $(echo "$site_includes" | wc -l)))
 		[ -n "$legacy_files" ] && total_items=$((total_items + $(echo "$legacy_files" | wc -l)))
@@ -659,13 +618,12 @@ main() {
 	fi
 	
 	# Parse JSON output to get file lists
-	local vhost_files proxy_configs upgrade_configs modified_htaccess upgrade_html_files site_includes legacy_files
+	local vhost_files proxy_configs upgrade_configs upgrade_html_files site_includes legacy_files
 	
 	# Extract file arrays from JSON (handle multi-line arrays with proper whitespace matching)
 	vhost_files=$(echo "$discovery_output" | sed -n '/[[:space:]]*"vhost_files": \[/,/[[:space:]]*\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
 	proxy_configs=$(echo "$discovery_output" | sed -n '/[[:space:]]*"proxy_configs": \[/,/[[:space:]]*\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
 	upgrade_configs=$(echo "$discovery_output" | sed -n '/[[:space:]]*"upgrade_configs": \[/,/[[:space:]]*\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
-	modified_htaccess=$(echo "$discovery_output" | sed -n '/[[:space:]]*"modified_htaccess": \[/,/[[:space:]]*\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
 	upgrade_html_files=$(echo "$discovery_output" | sed -n '/[[:space:]]*"upgrade_html_files": \[/,/[[:space:]]*\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
 	site_includes=$(echo "$discovery_output" | sed -n '/[[:space:]]*"site_includes": \[/,/[[:space:]]*\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
 	legacy_files=$(echo "$discovery_output" | sed -n '/[[:space:]]*"legacy_files": \[/,/[[:space:]]*\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
@@ -680,7 +638,6 @@ main() {
 		log_verbose "Proxy configs: $proxy_configs"
 	fi
 	log_verbose "Found upgrade_configs: $(echo "$upgrade_configs" | wc -l) files"
-	log_verbose "Found modified_htaccess: $(echo "$modified_htaccess" | wc -l) files"
 	log_verbose "Found upgrade_html_files: $(echo "$upgrade_html_files" | wc -l) files"
 	log_verbose "Found site_includes: $(echo "$site_includes" | wc -l) files"
 	log_verbose "Found legacy_files: $(echo "$legacy_files" | wc -l) files"
@@ -712,7 +669,6 @@ main() {
 	[ -n "$vhost_files" ] && total_items=$((total_items + $(echo "$vhost_files" | wc -l)))
 	[ -n "$proxy_configs" ] && total_items=$((total_items + $(echo "$proxy_configs" | wc -l)))
 	[ -n "$upgrade_configs" ] && total_items=$((total_items + $(echo "$upgrade_configs" | wc -l)))
-	[ -n "$modified_htaccess" ] && total_items=$((total_items + $(echo "$modified_htaccess" | wc -l)))
 	[ -n "$upgrade_html_files" ] && total_items=$((total_items + $(echo "$upgrade_html_files" | wc -l)))
 	[ -n "$site_includes" ] && total_items=$((total_items + $(echo "$site_includes" | wc -l)))
 	[ -n "$legacy_files" ] && total_items=$((total_items + $(echo "$legacy_files" | wc -l)))
@@ -734,7 +690,7 @@ main() {
 		echo ""
 		
 		# Run through all operations in preview mode
-		process_uninstall_operations "$vhost_files" "$proxy_configs" "$upgrade_configs" "$modified_htaccess" "$upgrade_html_files" "$site_includes" "$legacy_files"
+		process_uninstall_operations "$vhost_files" "$proxy_configs" "$upgrade_configs" "$upgrade_html_files" "$site_includes" "$legacy_files"
 		
 		echo ""
 		echo "Preview complete. $total_items items would be processed."
@@ -748,7 +704,7 @@ main() {
 				echo "EXECUTING CHANGES:"
 				echo "=================="
 				echo ""
-				process_uninstall_operations "$vhost_files" "$proxy_configs" "$upgrade_configs" "$modified_htaccess" "$upgrade_html_files" "$site_includes" "$legacy_files"
+				process_uninstall_operations "$vhost_files" "$proxy_configs" "$upgrade_configs" "$upgrade_html_files" "$site_includes" "$legacy_files"
 			else
 				echo "Uninstall cancelled."
 				exit 0
@@ -763,7 +719,7 @@ main() {
 			fi
 			echo ""
 		fi
-		process_uninstall_operations "$vhost_files" "$proxy_configs" "$upgrade_configs" "$modified_htaccess" "$upgrade_html_files" "$site_includes" "$legacy_files"
+		process_uninstall_operations "$vhost_files" "$proxy_configs" "$upgrade_configs" "$upgrade_html_files" "$site_includes" "$legacy_files"
 	fi
 }
 
