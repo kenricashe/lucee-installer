@@ -22,11 +22,13 @@ fi
 
 declare -a EXCL_DOMAINS
 declare -a EXCL_WILDCARDS
+declare -a EXCL_SUBDOMAIN_WILDCARDS
 declare -a EXCL_PATHS
 
 load_exclusions() {
 	EXCL_DOMAINS=()
 	EXCL_WILDCARDS=()
+	EXCL_SUBDOMAIN_WILDCARDS=()
 	EXCL_PATHS=()
 
 	ensure_default_exclusions_file
@@ -47,11 +49,20 @@ load_exclusions() {
 				fi
 				;;
 			*\*.*)
-				# wildcard like *.example.com
-				pat="$line"
-				pat="${pat#*.}"
-				if [ -n "$pat" ]; then
-					EXCL_WILDCARDS+=("$pat")
+				# Check if it's a subdomain wildcard like _wildcard_.* or bounce.*
+				if [[ "$line" == *".\\*" ]]; then
+					# subdomain wildcard like _wildcard_.* or bounce.*
+					pat="${line%.*}"
+					if [ -n "$pat" ]; then
+						EXCL_SUBDOMAIN_WILDCARDS+=("$pat")
+					fi
+				else
+					# regular wildcard like *.example.com
+					pat="$line"
+					pat="${pat#*.}"
+					if [ -n "$pat" ]; then
+						EXCL_WILDCARDS+=("$pat")
+					fi
 				fi
 				;;
 			*)
@@ -98,6 +109,17 @@ is_excluded_domain() {
 			*.$x)
 				if [ "${DEBUG_MODE:-false}" = true ]; then
 					echo "[DEBUG] WILDCARD MATCH: '$d' matches '*.$x'"
+				fi
+				return 0
+				;;
+		esac
+	done
+	for x in "${EXCL_SUBDOMAIN_WILDCARDS[@]}"; do
+		# prefix match: _wildcard_.boony.com matches _wildcard_.*
+		case "$d" in
+			$x.*)
+				if [ "${DEBUG_MODE:-false}" = true ]; then
+					echo "[DEBUG] SUBDOMAIN WILDCARD MATCH: '$d' matches '$x.*'"
 				fi
 				return 0
 				;;
