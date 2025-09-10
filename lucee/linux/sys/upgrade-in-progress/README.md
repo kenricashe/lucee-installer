@@ -4,14 +4,17 @@ Web-based status notifications during Lucee upgrades are a Catch-22 because Luce
 
 In actual practice it's safest to keep displaying the "Upgrade in Progress" notification not just until after the upgrade is done, but more importantly until *thorough QA testing* has been completed.
 
-**Apache-level advantages over app-level maintenance mode:**
+Temporary firewalls are often used to allow access from only specific IP addresses, but again that's not the best appearance for end users
+because it has the same appearance as a network issue.
+
+## Apache-level advantages over app-level maintenance mode:
 
 - **No dependency on Lucee**: Works even when Lucee/Tomcat is completely stopped or broken.
 - **Performance**: No application overhead - handled before reaching Lucee
 - **Security**: No user or bot interference with QA testing. App-level maintenance mode may also be vulnerable to attacks due to untested app.
 - **Reliability**: Cannot fail due to application errors, memory issues, code bugs, etc.
 
-**Implementation:**
+## Implementation:
 
 When you enable "Upgrade in Progress" mode via the app menu, a status notification is displayed in response to every Lucee-bound request. That applies to *every website on your server* that has been configured for this flip-a-switch style automation.
 

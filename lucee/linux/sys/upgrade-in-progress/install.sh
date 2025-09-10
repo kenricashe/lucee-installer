@@ -7,7 +7,7 @@
 # curl -fsSL https://raw.githubusercontent.com/kenricashe/lucee-installer/master/lucee/linux/sys/upgrade-in-progress/install.sh | sudo env LUCEE_ROOT=/opt/lucee6 bash
 #
 # Example with non-master branch name in URL e.g. for QA testing:
-# (URL="https://raw.githubusercontent.com/kenricashe/lucee-installer/feature/upgrade-in-progress-apache/lucee/linux/sys/upgrade-in-progress/install.sh"; curl -fsSL "$URL" | sudo env SOURCE_URL="$URL" bash)
+# (URL="https://raw.githubusercontent.com/kenricashe/lucee-installer/refs/heads/feature/upgrade-in-progress-apache/lucee/linux/sys/upgrade-in-progress/install.sh"; curl -fsSL "$URL" | sudo env SOURCE_URL="$URL" bash)
 #
 # GitHub CDN caching can last 5 minutes. For quicker testing, in the URL replace branch with the commit sha:
 # (URL="https://raw.githubusercontent.com/kenricashe/lucee-installer/<commit-sha>/lucee/linux/sys/upgrade-in-progress/install.sh"; curl -fsSL "$URL" | sudo env SOURCE_URL="$URL" bash)

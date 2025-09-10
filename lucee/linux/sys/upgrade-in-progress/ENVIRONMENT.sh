@@ -12,18 +12,24 @@ fi
 
 # IS_DEBIAN (if not already defined)
 if [ -z "${IS_DEBIAN:-}" ]; then
+	echo "[DEBUG] Detecting distribution type..."
 	if command -v a2enconf >/dev/null 2>&1; then
+		echo "[DEBUG] Debian-based system detected (a2enconf found)"
 		IS_DEBIAN=true
 	else
+		echo "[DEBUG] Non-Debian system (a2enconf not found)"
 		IS_DEBIAN=false
 	fi
 fi
 
 # IS_CPANEL
 if [ -z "${IS_CPANEL:-}" ]; then
+	echo "[DEBUG] Checking for cPanel..."
 	if [ -f "/usr/local/cpanel/cpanel" ]; then
+		echo "[DEBUG] cPanel installation detected"
 		IS_CPANEL=true
 	else
+		echo "[DEBUG] No cPanel installation found"
 		IS_CPANEL=false
 	fi
 fi
@@ -32,12 +38,18 @@ fi
 # Prefer control commands (apache2ctl/apachectl) over direct binaries (apache2/httpd)
 # as they properly set up the environment variables
 if [ -z "${HTTPD_ROOT:-}" ]; then
+	echo "[DEBUG] Detecting HTTPD_ROOT..."
 	if [ "$IS_CPANEL" = true ]; then
+		echo "[DEBUG] cPanel detected, using /etc/apache2"
 		HTTPD_ROOT="/etc/apache2"
 	else
+		echo "[DEBUG] Looking for Apache control command..."
 		cmd=$(command -v apache2ctl || command -v apachectl || command -v httpd)
 		if [ -n "$cmd" ]; then
+			echo "[DEBUG] Found Apache command: $cmd"
+			echo "[DEBUG] Running $cmd -V to get HTTPD_ROOT..."
 			HTTPD_ROOT=$($cmd -V 2>/dev/null | awk -F'"' '/HTTPD_ROOT/ {print $2}')
+			echo "[DEBUG] HTTPD_ROOT detected as: $HTTPD_ROOT"
 		else
 			printf "\nERROR: No Apache controller found. Verify that Apache is installed and try again.\n"
 			exit 1
