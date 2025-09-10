@@ -389,6 +389,20 @@ for docroot in "${!DOCROOT_TO_DOMAINS[@]}"; do
 		echo "Skipping excluded path: $docroot"
 		continue
 	fi
+
+	# Check if ALL domains under this docroot are excluded
+	all_excluded=true
+	for d in ${DOCROOT_TO_DOMAINS[$docroot]}; do
+		if ! is_excluded_domain "$d"; then
+			all_excluded=false
+			break
+		fi
+	done
+	if [ "$all_excluded" = true ]; then
+		echo "Skipping docroot (all domains excluded): $docroot"
+		continue
+	fi
+
 	printf '\n Scanning for Lucee files in: %s\n' "$docroot"
 	if has_cfml_files "$docroot"; then
 		for d in ${DOCROOT_TO_DOMAINS[$docroot]}; do
