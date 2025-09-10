@@ -184,15 +184,9 @@ parse_vhosts_file() {
 		/^[ \t]*#/ { next }
 		/<[ \t]*VirtualHost[> ]/ { in_vh=1; server=""; docroot=""; for (k in alias) delete alias[k]; ac=0; next }
 		in_vh==1 && /<[ \t]*\/[ \t]*VirtualHost[> ]/ {
-			# Emit ServerName mapping
+			# Only emit ServerName mapping, ignore ServerAlias to avoid duplicates
 			if (docroot != "" && server != "") {
 				printf "%s|%s|%s\n", server, docroot, vhost_file
-			}
-			# Also emit ServerAlias mappings for exclusion checking
-			for (i=1; i<=ac; i++) {
-				if (docroot != "" && alias[i] != "") {
-					printf "%s|%s|%s\n", alias[i], docroot, vhost_file
-				}
 			}
 			in_vh=0; server=""; docroot=""; for (k in alias) delete alias[k]; ac=0; next
 		}
