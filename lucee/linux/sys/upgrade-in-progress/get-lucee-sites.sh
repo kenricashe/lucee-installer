@@ -20,13 +20,11 @@ fi
 # Exclusions and Lucee detection
 # ------------------------------
 
-declare -a EXCL_DOMAINS
-declare -a EXCL_WILDCARDS
+declare -a EXCL_REGEXES
 declare -a EXCL_PATHS
 
 load_exclusions() {
-	EXCL_DOMAINS=()
-	EXCL_WILDCARDS=()
+	EXCL_REGEXES=()
 	EXCL_PATHS=()
 
 	ensure_default_exclusions_file
@@ -46,16 +44,20 @@ load_exclusions() {
 					EXCL_PATHS+=("$p")
 				fi
 				;;
-			*\*.*)
-				# wildcard like *.example.com
-				pat="$line"
-				pat="${pat#*.}"
-				if [ -n "$pat" ]; then
-					EXCL_WILDCARDS+=("$pat")
-				fi
-				;;
 			*)
-				EXCL_DOMAINS+=("$line")
+				# Convert exclusion pattern into regex
+				pat=$(to_lower "$line")
+
+				# Escape dots
+				pat="${pat//./\\.}"
+
+				# Handle wildcard "*"
+				pat="${pat//\*/.*}"
+
+				# Anchor it
+				regex="^${pat}$"
+
+				EXCL_REGEXES+=("$regex")
 				;;
 		esac
 	done < "$EXCLUSIONS_FILE"
@@ -69,19 +71,11 @@ to_lower() {
 is_excluded_domain() {
 	# $1 domain (lowercased)
 	local d="$1"
-	local x
-	for x in "${EXCL_DOMAINS[@]}"; do
-		if [ "$d" = "$(to_lower "$x")" ]; then
+	local r
+	for r in "${EXCL_REGEXES[@]}"; do
+		if [[ "$d" =~ $r ]]; then
 			return 0
 		fi
-	done
-	for x in "${EXCL_WILDCARDS[@]}"; do
-		# suffix match: example.com matches *.example.com
-		case "$d" in
-			*.$x)
-				return 0
-				;;
-		esac
 	done
 	return 1
 }
