@@ -22,13 +22,11 @@ fi
 
 declare -a EXCL_DOMAINS
 declare -a EXCL_WILDCARDS
-declare -a EXCL_SUBDOMAIN_WILDCARDS
 declare -a EXCL_PATHS
 
 load_exclusions() {
 	EXCL_DOMAINS=()
 	EXCL_WILDCARDS=()
-	EXCL_SUBDOMAIN_WILDCARDS=()
 	EXCL_PATHS=()
 
 	ensure_default_exclusions_file
@@ -48,25 +46,12 @@ load_exclusions() {
 					EXCL_PATHS+=("$p")
 				fi
 				;;
-			\*.*)
-				# regular wildcard like *.example.com (starts with *.)
+			*\*.*)
+				# wildcard like *.example.com
 				pat="$line"
 				pat="${pat#*.}"
 				if [ -n "$pat" ]; then
-					if [ "${DEBUG_MODE:-false}" = true ]; then
-						echo "[DEBUG] Loading regular wildcard: '$pat' from line '$line'"
-					fi
 					EXCL_WILDCARDS+=("$pat")
-				fi
-				;;
-			*.\*)
-				# subdomain wildcard like _wildcard_.* or bounce.* (ends with .*)
-				pat="${line%.*}"
-				if [ -n "$pat" ]; then
-					if [ "${DEBUG_MODE:-false}" = true ]; then
-						echo "[DEBUG] Loading subdomain wildcard: '$pat' from line '$line'"
-					fi
-					EXCL_SUBDOMAIN_WILDCARDS+=("$pat")
 				fi
 				;;
 			*)
@@ -85,29 +70,8 @@ is_excluded_domain() {
 	# $1 domain (lowercased)
 	local d="$1"
 	local x
-	
-	# Debug output if DEBUG_MODE is enabled
-	if [ "${DEBUG_MODE:-false}" = true ]; then
-		printf "\n\n[DEBUG] Checking exclusion for domain: '$d'"
-		echo "[DEBUG] EXCL_DOMAINS array contains: ${#EXCL_DOMAINS[@]} entries"
-		for i in "${!EXCL_DOMAINS[@]}"; do
-			echo "[DEBUG]   [$i]: '${EXCL_DOMAINS[$i]}'"
-		done
-		echo "[DEBUG] EXCL_SUBDOMAIN_WILDCARDS array contains: ${#EXCL_SUBDOMAIN_WILDCARDS[@]} entries"
-		for i in "${!EXCL_SUBDOMAIN_WILDCARDS[@]}"; do
-			echo "[DEBUG]   [$i]: '${EXCL_SUBDOMAIN_WILDCARDS[$i]}'"
-		done
-	fi
-	
 	for x in "${EXCL_DOMAINS[@]}"; do
-		local x_lower="$(to_lower "$x")"
-		if [ "${DEBUG_MODE:-false}" = true ]; then
-			echo "[DEBUG] Comparing '$d' with '$x_lower'"
-		fi
-		if [ "$d" = "$x_lower" ]; then
-			if [ "${DEBUG_MODE:-false}" = true ]; then
-				echo "[DEBUG] MATCH FOUND: '$d' matches '$x_lower'"
-			fi
+		if [ "$d" = "$(to_lower "$x")" ]; then
 			return 0
 		fi
 	done
@@ -115,29 +79,10 @@ is_excluded_domain() {
 		# suffix match: example.com matches *.example.com
 		case "$d" in
 			*.$x)
-				if [ "${DEBUG_MODE:-false}" = true ]; then
-					echo "[DEBUG] WILDCARD MATCH: '$d' matches '*.$x'"
-				fi
 				return 0
 				;;
 		esac
 	done
-	for x in "${EXCL_SUBDOMAIN_WILDCARDS[@]}"; do
-		# prefix match: _wildcard_.boony.com matches _wildcard_.*
-		# Also handles multi-level patterns like www.bounce.* matching www.bounce.example.com
-		case "$d" in
-			$x.*)
-				if [ "${DEBUG_MODE:-false}" = true ]; then
-					echo "[DEBUG] SUBDOMAIN WILDCARD MATCH: '$d' matches '$x.*'"
-				fi
-				return 0
-				;;
-		esac
-	done
-	
-	if [ "${DEBUG_MODE:-false}" = true ]; then
-		echo "[DEBUG] No exclusion match found for '$d'"
-	fi
 	return 1
 }
 
@@ -445,72 +390,24 @@ declare -a RESULT_DOMAINS
 declare -a RESULT_DOCROOTS
 declare -a RESULT_VHOST_FILES
 
-# Cache exclusion results to avoid redundant checks
-declare -A EXCLUSION_CACHE
-
 for docroot in "${!DOCROOT_TO_DOMAINS[@]}"; do
 	if is_excluded_path "$docroot"; then
 		echo "Skipping excluded path: $docroot"
 		continue
 	fi
-	
-	# Check domain exclusions first and cache results
-	declare -a excluded_domains
-	declare -a included_domains
-	
-	for d in ${DOCROOT_TO_DOMAINS[$docroot]}; do
-		# Check cache first
-		if [ -n "${EXCLUSION_CACHE[$d]+x}" ]; then
-			if [ "${EXCLUSION_CACHE[$d]}" = "excluded" ]; then
-				excluded_domains+=("$d")
-			else
-				included_domains+=("$d")
-			fi
-		else
-			# Not in cache, check exclusion and cache result
+	printf '\n Scanning for Lucee files in: %s\n' "$docroot"
+	if has_cfml_files "$docroot"; then
+		for d in ${DOCROOT_TO_DOMAINS[$docroot]}; do
 			if is_excluded_domain "$d"; then
-				EXCLUSION_CACHE[$d]="excluded"
-				excluded_domains+=("$d")
-			else
-				EXCLUSION_CACHE[$d]="included"
-				included_domains+=("$d")
+				echo "  - Excluded domain: $d"
+				continue
 			fi
-		fi
-	done
-	
-	# Only scan for files if there are non-excluded domains
-	if [ ${#included_domains[@]} -gt 0 ]; then
-		printf '\n Scanning for Lucee files in: %s\n' "$docroot"
-		if [ "${DEBUG_MODE:-false}" = true ]; then
-			echo "[DEBUG] File scanning: PERFORMING (${#included_domains[@]} non-excluded domains)"
-		fi
-		if has_cfml_files "$docroot"; then
-			# Add excluded domains to output
-			for d in "${excluded_domains[@]}"; do
-				echo "  - Excluded domain: $d"
-			done
-			# Add included domains to results
-			for d in "${included_domains[@]}"; do
-				RESULT_DOMAINS+=("$d")
-				RESULT_DOCROOTS+=("$docroot")
-				RESULT_VHOST_FILES+=("${DOCROOT_TO_VHOST_FILES[$d]}")
-			done
-		else
-			echo "  - No Lucee files detected"
-			# Still report excluded domains
-			for d in "${excluded_domains[@]}"; do
-				echo "  - Excluded domain: $d"
-			done
-		fi
-	else
-		# All domains are excluded, skip file scanning entirely
-		if [ "${DEBUG_MODE:-false}" = true ]; then
-			echo "[DEBUG] File scanning: SKIPPED (all ${#excluded_domains[@]} domains excluded)"
-		fi
-		printf '\n Skipping file scan for: %s (all domains excluded)\n' "$docroot"
-		for d in "${excluded_domains[@]}"; do
-			echo "  - Excluded domain: $d"
+			RESULT_DOMAINS+=("$d")
+			RESULT_DOCROOTS+=("$docroot")
+			RESULT_VHOST_FILES+=("${DOCROOT_TO_VHOST_FILES[$d]}")
 		done
+	else
+		echo "  - No Lucee files detected"
 	fi
 done
 
