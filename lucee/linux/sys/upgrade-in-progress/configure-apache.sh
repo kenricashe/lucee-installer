@@ -1576,6 +1576,9 @@ run_main_logic() {
 
 	echo ""
 	execute_or_simulate "apache_reload"
+
+	echo ""
+	echo "${PREVIEW_PREFIX}Backups created in: ${UPG_DIR}/backups/${BACKUP_TS}"
 }
 
 # MAIN SCRIPT EXECUTION

@@ -7,6 +7,9 @@ SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "${SCRIPT_DIR}/ENVIRONMENT.sh"
 . "${SCRIPT_DIR}/shared-functions.sh"
 
+# Set backup timestamp for this run to keep all backups in the same directory
+BACKUP_TS="$(date +%Y-%m-%d-%H%M%S)"
+
 # Default options
 PREVIEW_MODE=true
 PREVIEW_PREFIX="[PREVIEW] "
@@ -545,8 +548,10 @@ process_uninstall_operations() {
 	fi
 	
 	echo "${PREVIEW_PREFIX}Uninstall complete. $TOTAL_ITEMS_PROCESSED items processed."
+	
 	if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
-		echo "${PREVIEW_PREFIX}Backups created in: ${BACKUP_ROOT}/${BACKUP_TS}"
+		echo ""
+		echo "${PREVIEW_PREFIX}Backups created in: ${UPG_DIR}/backups/${BACKUP_TS}"
 	fi
 }
 
@@ -672,6 +677,7 @@ main() {
 		process_uninstall_operations "$vhost_files" "$proxy_configs" "$upgrade_configs" "$upgrade_html_files" "$site_includes" "$legacy_files"
 		
 		if [ "$FORCE" = false ]; then
+			echo ""
 			if confirm_action "Execute these changes now?"; then
 				PREVIEW_MODE=false
 				PREVIEW_PREFIX=""
