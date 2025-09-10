@@ -89,25 +89,16 @@ is_excluded_path() {
 }
 
 is_excluded_domain() {
-	# $1 = domain (lowercased)
 	local d="$1"
 	local x
 	for x in "${EXCL_DOMAINS[@]}"; do
 		x=$(to_lower "$x")
-		case "$x" in
-			*\*.*)  # wildcard pattern
-				# convert *.example.com to pattern
-				pat="${x#*.}"
-				case "$d" in
-					*.$pat) return 0 ;;
-				esac
-				;;
-			*)  # exact match
-				if [ "$d" = "$x" ]; then
-					return 0
-				fi
-				;;
-		esac
+		# convert wildcard to regex
+		regex="^${x//./\\.}$"      # escape dots
+		regex="${regex//\*/.*}"    # convert * to .*
+		if [[ "$d" =~ $regex ]]; then
+			return 0
+		fi
 	done
 	return 1
 }
@@ -359,6 +350,7 @@ load_exclusions
 
 declare -A DOCROOT_TO_DOMAINS
 
+echo ""
 echo "Collecting Apache VirtualHosts..."
 if [ "$IS_DEBIAN" = true ]; then
 	PAIR_LINES=$(collect_debian_vhosts)
