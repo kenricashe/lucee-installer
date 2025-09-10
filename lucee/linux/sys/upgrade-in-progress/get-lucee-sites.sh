@@ -70,8 +70,25 @@ is_excluded_domain() {
 	# $1 domain (lowercased)
 	local d="$1"
 	local x
+	
+	# Debug output if DEBUG_MODE is enabled
+	if [ "${DEBUG_MODE:-false}" = true ]; then
+		echo "[DEBUG] Checking exclusion for domain: '$d'"
+		echo "[DEBUG] EXCL_DOMAINS array contains: ${#EXCL_DOMAINS[@]} entries"
+		for i in "${!EXCL_DOMAINS[@]}"; do
+			echo "[DEBUG]   [$i]: '${EXCL_DOMAINS[$i]}'"
+		done
+	fi
+	
 	for x in "${EXCL_DOMAINS[@]}"; do
-		if [ "$d" = "$(to_lower "$x")" ]; then
+		local x_lower="$(to_lower "$x")"
+		if [ "${DEBUG_MODE:-false}" = true ]; then
+			echo "[DEBUG] Comparing '$d' with '$x_lower'"
+		fi
+		if [ "$d" = "$x_lower" ]; then
+			if [ "${DEBUG_MODE:-false}" = true ]; then
+				echo "[DEBUG] MATCH FOUND: '$d' matches '$x_lower'"
+			fi
 			return 0
 		fi
 	done
@@ -79,10 +96,17 @@ is_excluded_domain() {
 		# suffix match: example.com matches *.example.com
 		case "$d" in
 			*.$x)
+				if [ "${DEBUG_MODE:-false}" = true ]; then
+					echo "[DEBUG] WILDCARD MATCH: '$d' matches '*.$x'"
+				fi
 				return 0
 				;;
 		esac
 	done
+	
+	if [ "${DEBUG_MODE:-false}" = true ]; then
+		echo "[DEBUG] No exclusion match found for '$d'"
+	fi
 	return 1
 }
 
