@@ -307,8 +307,8 @@ write_results_noninteractive() {
 		local r="${RESULT_DOCROOTS[$i]}"
 		local v="${RESULT_VHOST_FILES[$i]}"
 		if [ -n "$d" ] && [ -n "$r" ] && [ -n "$v" ]; then
-			append_with_single_newline "$d $r $v" "$tmp_all"
-			append_with_single_newline "$d" "$tmp_domains"
+			printf "%s\n" "$d $r $v" >> "$tmp_all"
+			printf "%s\n" "$d" >> "$tmp_domains"
 		fi
 	done
 	
@@ -421,7 +421,7 @@ TMP_SORTED="$(mktemp)"
 
 # Write domain, docroot, and vhost file triplets to temporary file
 for i in "${!RESULT_DOMAINS[@]}"; do
-	append_with_single_newline "${RESULT_DOMAINS[$i]}|${RESULT_DOCROOTS[$i]}|${RESULT_VHOST_FILES[$i]}" "$TMP_UNSORTED"
+	printf "%s\n" "${RESULT_DOMAINS[$i]}|${RESULT_DOCROOTS[$i]}|${RESULT_VHOST_FILES[$i]}" >> "$TMP_UNSORTED"
 done
 
 # Sort the temporary file (case-insensitive)
