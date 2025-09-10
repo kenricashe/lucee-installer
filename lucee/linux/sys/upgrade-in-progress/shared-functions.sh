@@ -31,7 +31,9 @@ ensure_default_exclusions_file() {
 # Domain patterns:
 #   exact domains: example.com
 #   wildcard domains: *.example.com
-#   subdomain wildcards: bounce.*
+#   subdomain wildcards:
+#     bounce.*
+#     www.bounce.*
 # Path exclusions:
 #   path: /var/www/html/some-static-site
 
