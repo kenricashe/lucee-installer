@@ -4,23 +4,25 @@
 # Location (after deploy): /opt/lucee/sys/upgrade-in-progress/menu.sh
 
 # Determine script directory and source shared env
-echo "[DEBUG] Starting menu.sh initialization..."
 SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-echo "[DEBUG] Script directory: $SCRIPT_DIR"
 
-echo "[DEBUG] Loading ENVIRONMENT.sh..."
+# Load ENVIRONMENT.sh first to get DEBUG_MODE
 . "${SCRIPT_DIR}/ENVIRONMENT.sh"
-echo "[DEBUG] ENVIRONMENT.sh loaded"
 
-echo "[DEBUG] Loading shared-functions.sh..."
+# Now use DEBUG_MODE for conditional output
+[ "$DEBUG_MODE" = true ] && echo "[DEBUG] Starting menu.sh initialization..."
+[ "$DEBUG_MODE" = true ] && echo "[DEBUG] Script directory: $SCRIPT_DIR"
+[ "$DEBUG_MODE" = true ] && echo "[DEBUG] ENVIRONMENT.sh loaded"
+
+[ "$DEBUG_MODE" = true ] && echo "[DEBUG] Loading shared-functions.sh..."
 . "${SCRIPT_DIR}/shared-functions.sh"
-echo "[DEBUG] shared-functions.sh loaded"
+[ "$DEBUG_MODE" = true ] && echo "[DEBUG] shared-functions.sh loaded"
 
-echo "[DEBUG] Loading version.sh..."
+[ "$DEBUG_MODE" = true ] && echo "[DEBUG] Loading version.sh..."
 . "${SCRIPT_DIR}/version.sh"
-echo "[DEBUG] version.sh loaded"
+[ "$DEBUG_MODE" = true ] && echo "[DEBUG] version.sh loaded"
 
-echo "[DEBUG] Initialization complete, starting menu loop..."
+[ "$DEBUG_MODE" = true ] && echo "[DEBUG] Initialization complete, starting menu loop..."
 
 run_edit_exclusions() {
 	ensure_default_exclusions_file
