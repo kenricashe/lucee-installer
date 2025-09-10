@@ -88,7 +88,7 @@ is_excluded_domain() {
 	
 	# Debug output if DEBUG_MODE is enabled
 	if [ "${DEBUG_MODE:-false}" = true ]; then
-		echo "[DEBUG] Checking exclusion for domain: '$d'"
+		printf "\n\n[DEBUG] Checking exclusion for domain: '$d'"
 		echo "[DEBUG] EXCL_DOMAINS array contains: ${#EXCL_DOMAINS[@]} entries"
 		for i in "${!EXCL_DOMAINS[@]}"; do
 			echo "[DEBUG]   [$i]: '${EXCL_DOMAINS[$i]}'"
@@ -444,41 +444,70 @@ declare -a RESULT_DOMAINS
 declare -a RESULT_DOCROOTS
 declare -a RESULT_VHOST_FILES
 
+# Cache exclusion results to avoid redundant checks
+declare -A EXCLUSION_CACHE
+
 for docroot in "${!DOCROOT_TO_DOMAINS[@]}"; do
 	if is_excluded_path "$docroot"; then
 		echo "Skipping excluded path: $docroot"
 		continue
 	fi
 	
-	# Check domain exclusions first to avoid unnecessary file scanning
-	has_non_excluded_domains=false
+	# Check domain exclusions first and cache results
+	declare -a excluded_domains
+	declare -a included_domains
+	
 	for d in ${DOCROOT_TO_DOMAINS[$docroot]}; do
-		if ! is_excluded_domain "$d"; then
-			has_non_excluded_domains=true
-			break
+		# Check cache first
+		if [ -n "${EXCLUSION_CACHE[$d]+x}" ]; then
+			if [ "${EXCLUSION_CACHE[$d]}" = "excluded" ]; then
+				excluded_domains+=("$d")
+			else
+				included_domains+=("$d")
+			fi
+		else
+			# Not in cache, check exclusion and cache result
+			if is_excluded_domain "$d"; then
+				EXCLUSION_CACHE[$d]="excluded"
+				excluded_domains+=("$d")
+			else
+				EXCLUSION_CACHE[$d]="included"
+				included_domains+=("$d")
+			fi
 		fi
 	done
 	
 	# Only scan for files if there are non-excluded domains
-	if [ "$has_non_excluded_domains" = true ]; then
+	if [ ${#included_domains[@]} -gt 0 ]; then
 		printf '\n Scanning for Lucee files in: %s\n' "$docroot"
+		if [ "${DEBUG_MODE:-false}" = true ]; then
+			echo "[DEBUG] File scanning: PERFORMING (${#included_domains[@]} non-excluded domains)"
+		fi
 		if has_cfml_files "$docroot"; then
-			for d in ${DOCROOT_TO_DOMAINS[$docroot]}; do
-				if is_excluded_domain "$d"; then
-					echo "  - Excluded domain: $d"
-					continue
-				fi
+			# Add excluded domains to output
+			for d in "${excluded_domains[@]}"; do
+				echo "  - Excluded domain: $d"
+			done
+			# Add included domains to results
+			for d in "${included_domains[@]}"; do
 				RESULT_DOMAINS+=("$d")
 				RESULT_DOCROOTS+=("$docroot")
 				RESULT_VHOST_FILES+=("${DOCROOT_TO_VHOST_FILES[$d]}")
 			done
 		else
 			echo "  - No Lucee files detected"
+			# Still report excluded domains
+			for d in "${excluded_domains[@]}"; do
+				echo "  - Excluded domain: $d"
+			done
 		fi
 	else
-		# All domains are excluded, just report them
-		printf '\n Scanning for Lucee files in: %s\n' "$docroot"
-		for d in ${DOCROOT_TO_DOMAINS[$docroot]}; do
+		# All domains are excluded, skip file scanning entirely
+		if [ "${DEBUG_MODE:-false}" = true ]; then
+			echo "[DEBUG] File scanning: SKIPPED (all ${#excluded_domains[@]} domains excluded)"
+		fi
+		printf '\n Skipping file scan for: %s (all domains excluded)\n' "$docroot"
+		for d in "${excluded_domains[@]}"; do
 			echo "  - Excluded domain: $d"
 		done
 	fi
