@@ -268,7 +268,6 @@ execute_or_simulate() {
 				mkdir -p "$1"
 				;;
 			create_file)
-				touch "$1"
 				;;
 			copy_file)
 				cp -f --no-preserve=all "$1" "$2"
@@ -1416,7 +1415,8 @@ configure_site_cpanel() {
 	# SSL userdata file
 	[ -f "${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf" ] && echo -n "  "
 	execute_or_simulate "backup_file" "${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf"
-	[ -f "${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf" ] && echo -n "  "
+	
+	echo -n "  "
 	execute_or_simulate "create_file" "${CPANEL_USERDATA_SSL_PATH}/${user}/${domain}/lucee.conf"
 	
 	if [ "$PREVIEW_MODE" = false ]; then
