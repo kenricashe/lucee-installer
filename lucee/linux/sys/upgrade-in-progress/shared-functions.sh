@@ -280,7 +280,7 @@ discover_apache_configs() {
 	if [ "$IS_DEBIAN" = true ]; then
 		apache_dirs=("/etc/apache2")
 	elif [ "$IS_CPANEL" = true ]; then
-		apache_dirs=("/usr/local/apache/conf" "/etc/apache2" "/etc/httpd")
+		apache_dirs=("/etc/apache2")
 	else
 		apache_dirs=("/etc/httpd" "/etc/apache2")
 	fi
@@ -550,6 +550,27 @@ discover_apache_configs() {
 				fi
 			done
 		fi
+
+		# Check APACHE_CONF_FILE
+		if [ -f "$APACHE_CONF_FILE" ]; then
+			# Extract all DocumentRoot directives from main Apache config file
+			while IFS= read -r line; do
+				if [[ "$line" =~ ^[[:space:]]*DocumentRoot[[:space:]]+ ]]; then
+					local docroot
+					docroot=$(echo "$line" | awk '{print $2}' | tr -d '"')
+					if [ -n "$docroot" ]; then
+						# Check for each HTML file name
+						for html_name in "${html_names[@]}"; do
+							if [ -f "${docroot}/${html_name}" ] && [ -z "${seen_html["${docroot}/${html_name}"]+x}" ]; then
+								upgrade_html_files+=("${docroot}/${html_name}")
+								seen_html["${docroot}/${html_name}"]=1
+							fi
+						done
+					fi
+				fi
+			done < "$APACHE_CONF_FILE"
+		fi
+	
 	done
 	
 	# Search for per-site include directories and files (avoid duplicates)
