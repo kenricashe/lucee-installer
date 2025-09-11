@@ -1433,7 +1433,10 @@ EOF
 	fi
 	
 	# HTTP userdata file
+	[ -f "${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf" ] && echo -n "  "
 	execute_or_simulate "backup_file" "${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf"
+	
+	echo -n "  "
 	execute_or_simulate "create_file" "${CPANEL_USERDATA_STD_PATH}/${user}/${domain}/lucee.conf"
 	
 	if [ "$PREVIEW_MODE" = false ]; then
