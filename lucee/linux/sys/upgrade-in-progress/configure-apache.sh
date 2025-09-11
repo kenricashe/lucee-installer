@@ -227,34 +227,34 @@ execute_or_simulate() {
 	fi
 
 	case "$action" in
-		"create_dir")
+		create_dir)
 			echo "Create Directory (if not exists): $1" >&2
 			;;
-		"create_file")
+		create_file)
 			echo "Create File: $1" >&2
 			;;
-		"copy_file")
+		copy_file)
 			echo "Copy: $1 -> $2" >&2
 			;;
-		"rename_file")
+		rename_file)
 			echo "Rename: $1 -> $2" >&2
 			;;
-		"delete_file")
+		delete_file)
 			echo "Delete: $1" >&2
 			;;
-		"backup_file")
+		backup_file)
 			echo "Backup: $1" >&2
 			;;
-		"enable_conf")
+		enable_conf)
 			echo "Enable: $1" >&2
 			;;
-		"disable_conf")
+		disable_conf)
 			echo "Disable: $1" >&2
 			;;
-		"build_ip_all_conf_from_txt")
+		build_ip_all_conf_from_txt)
 			echo "Create File: ${HTTPD_LUCEE_ROOT}/ip-allow.conf" >&2
 			;;
-		"apache_reload")
+		apache_reload)
 			echo "Apache Reload" >&2
 			;;
 		*)
@@ -264,34 +264,34 @@ execute_or_simulate() {
 	if [ "$PREVIEW_MODE" = false ]; then
 		# create and modify are handled by calling functions
 		case "$action" in
-			"create_dir")
+			create_dir)
 				mkdir -p "$1"
 				;;
-			"create_file")
+			create_file)
 				touch "$1"
 				;;
-			"copy_file")
+			copy_file)
 				cp -f --no-preserve=all "$1" "$2"
 				;;
-			"rename_file")
+			rename_file)
 				mv -f "$1" "$2"
 				;;
-			"delete_file")
+			delete_file)
 				rm -f "$1"
 				;;
-			"backup_file")
+			backup_file)
 				backup_file "$1"
 				;;
-			"enable_conf")
+			enable_conf)
 				enable_conf "$1"
 				;;
-			"disable_conf")
+			disable_conf)
 				disable_conf "$1"
 				;;
-			"build_ip_all_conf_from_txt")
+			build_ip_all_conf_from_txt)
 				build_ip_all_conf_from_txt
 				;;
-			"apache_reload")
+			apache_reload)
 				# apache_reload handles output of config test on error
 				apache_reload || exit 1
 				;;
