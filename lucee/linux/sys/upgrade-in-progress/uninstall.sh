@@ -358,7 +358,6 @@ process_uninstall_operations() {
 	local upgrade_configs="$3"
 	local upgrade_html_files="$4"
 	local site_includes="$5"
-	local legacy_files="$6"
 
 	# Restore lucee-proxy.conf functionality FIRST
 	if [ "$IS_DEBIAN" = true ]; then
@@ -509,20 +508,6 @@ process_uninstall_operations() {
 		echo ""
 	fi
 	
-	# Remove legacy files
-	if [ -n "$legacy_files" ]; then
-		echo "${PREVIEW_PREFIX}Removing legacy upgrade files..."
-		while IFS= read -r legacy_file; do
-			if [ -n "$legacy_file" ] && [ -f "$legacy_file" ]; then
-				if [ "$BACKUP_BEFORE_REMOVE" = true ]; then
-					execute_or_simulate "backup_file" "$legacy_file"
-				fi
-				execute_or_simulate "remove_file" "$legacy_file"
-			fi
-		done <<< "$legacy_files"
-		echo ""
-	fi
-	
 	# Remove upgrade flag file
 	if [ -f "/var/lucee-upgrade-in-progress" ]; then
 		echo "${PREVIEW_PREFIX}Removing upgrade flag file..."
@@ -621,7 +606,7 @@ main() {
 	fi
 	
 	# Parse JSON output to get file lists
-	local vhost_files proxy_configs upgrade_configs upgrade_html_files site_includes legacy_files
+	local vhost_files proxy_configs upgrade_configs upgrade_html_files site_includes
 	
 	# Extract file arrays from JSON (handle multi-line arrays with proper whitespace matching)
 	vhost_files=$(echo "$discovery_output" | sed -n '/[[:space:]]*"vhost_files": \[/,/[[:space:]]*\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
@@ -629,7 +614,6 @@ main() {
 	upgrade_configs=$(echo "$discovery_output" | sed -n '/[[:space:]]*"upgrade_configs": \[/,/[[:space:]]*\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
 	upgrade_html_files=$(echo "$discovery_output" | sed -n '/[[:space:]]*"upgrade_html_files": \[/,/[[:space:]]*\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
 	site_includes=$(echo "$discovery_output" | sed -n '/[[:space:]]*"site_includes": \[/,/[[:space:]]*\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
-	legacy_files=$(echo "$discovery_output" | sed -n '/[[:space:]]*"legacy_files": \[/,/[[:space:]]*\]/p' | grep -o '"/[^"]*"' | sed 's/"//g' | grep -v '^$')
 	
 	# Debug output to show what's being detected
 	log_verbose "Found vhost_files: $(echo "$vhost_files" | wc -l) files"
@@ -643,7 +627,6 @@ main() {
 	log_verbose "Found upgrade_configs: $(echo "$upgrade_configs" | wc -l) files"
 	log_verbose "Found upgrade_html_files: $(echo "$upgrade_html_files" | wc -l) files"
 	log_verbose "Found site_includes: $(echo "$site_includes" | wc -l) files"
-	log_verbose "Found legacy_files: $(echo "$legacy_files" | wc -l) files"
 	
 	# Process VirtualHost files with commented ErrorDocument directives separately
 	if [ -n "$commented_vhosts" ]; then
@@ -674,7 +657,7 @@ main() {
 		echo ""
 		
 		# Run through all operations in preview mode
-		process_uninstall_operations "$vhost_files" "$proxy_configs" "$upgrade_configs" "$upgrade_html_files" "$site_includes" "$legacy_files"
+		process_uninstall_operations "$vhost_files" "$proxy_configs" "$upgrade_configs" "$upgrade_html_files" "$site_includes"
 		
 		if [ "$FORCE" = false ]; then
 			echo ""
@@ -686,7 +669,7 @@ main() {
 				echo "=================="
 				echo ""
 				TOTAL_ITEMS_PROCESSED=0
-				process_uninstall_operations "$vhost_files" "$proxy_configs" "$upgrade_configs" "$upgrade_html_files" "$site_includes" "$legacy_files"
+				process_uninstall_operations "$vhost_files" "$proxy_configs" "$upgrade_configs" "$upgrade_html_files" "$site_includes"
 			else
 				echo "Uninstall cancelled."
 				exit 0
@@ -701,7 +684,7 @@ main() {
 			fi
 			echo ""
 		fi
-		process_uninstall_operations "$vhost_files" "$proxy_configs" "$upgrade_configs" "$upgrade_html_files" "$site_includes" "$legacy_files"
+		process_uninstall_operations "$vhost_files" "$proxy_configs" "$upgrade_configs" "$upgrade_html_files" "$site_includes"
 	fi
 }
 

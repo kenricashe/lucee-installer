@@ -503,7 +503,8 @@ discover_apache_configs() {
 	fi
 	
 	# Search in DocumentRoots from VirtualHost files (all distributions)
-	local html_name="lucee-upgrade-in-progress.html"
+	# Look for both new and legacy HTML file names
+	local html_names=("lucee-upgrade-in-progress.html" "upgrade-in-progress.html")
 	# Avoid duplicates from vhosts sharing docroot e.g. for ports 80 and 443
 	local -A seen_html
 	for apache_dir in "${apache_dirs[@]}"; do
@@ -517,10 +518,13 @@ discover_apache_configs() {
 				local docroot
 				docroot=$(grep -i '^[[:space:]]*DocumentRoot' "$vhost_file" | head -1 | awk '{print $2}' | tr -d '"')
 				if [ -n "$docroot" ]; then
-					if [ -f "${docroot}/${html_name}" ] && [ -z "${seen_html["${docroot}/${html_name}"]+x}" ]; then
-						upgrade_html_files+=("${docroot}/${html_name}")
-						seen_html["${docroot}/${html_name}"]=1
-					fi
+					# Check for each HTML file name
+					for html_name in "${html_names[@]}"; do
+						if [ -f "${docroot}/${html_name}" ] && [ -z "${seen_html["${docroot}/${html_name}"]+x}" ]; then
+							upgrade_html_files+=("${docroot}/${html_name}")
+							seen_html["${docroot}/${html_name}"]=1
+						fi
+					done
 				fi
 			done
 		fi
@@ -536,10 +540,13 @@ discover_apache_configs() {
 				local docroot
 				docroot=$(grep -i '^[[:space:]]*DocumentRoot' "$vhost_file" | head -1 | awk '{print $2}' | tr -d '"')
 				if [ -n "$docroot" ]; then
-					if [ -f "${docroot}/${html_name}" ] && [ -z "${seen_html["${docroot}/${html_name}"]+x}" ]; then
-						upgrade_html_files+=("${docroot}/${html_name}")
-						seen_html["${docroot}/${html_name}"]=1
-					fi
+					# Check for each HTML file name
+					for html_name in "${html_names[@]}"; do
+						if [ -f "${docroot}/${html_name}" ] && [ -z "${seen_html["${docroot}/${html_name}"]+x}" ]; then
+							upgrade_html_files+=("${docroot}/${html_name}")
+							seen_html["${docroot}/${html_name}"]=1
+						fi
+					done
 				fi
 			done
 		fi

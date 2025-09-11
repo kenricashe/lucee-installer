@@ -1153,6 +1153,16 @@ copy_upgrade_html() {
 	execute_or_simulate "backup_file" "${docroot}/lucee-upgrade-in-progress.html"
 	echo -n "  "
 	execute_or_simulate "copy_file" "${UPG_DIR}/lucee-upgrade-in-progress.html" "${docroot}/lucee-upgrade-in-progress.html"
+	
+	# Set ownership to match docroot parent if not in preview mode
+	if [ "$PREVIEW_MODE" = false ]; then
+		local owner_group
+		owner_group=$(stat -c "%U:%G" "$docroot" 2>/dev/null)
+		if [ -n "$owner_group" ]; then
+			chown $owner_group "${docroot}/lucee-upgrade-in-progress.html" 2>/dev/null || true
+			echo "  Set ownership of ${docroot}/lucee-upgrade-in-progress.html to $owner_group"
+		fi
+	fi
 }
 
 # Extract 404 block with fallback logic (htaccess -> commented htaccess -> vhost)
