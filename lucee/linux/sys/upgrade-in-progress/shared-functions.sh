@@ -468,6 +468,66 @@ discover_apache_configs() {
 		done < <(find "$apache_dir" -type f -name "*upgrade-in-progress*" -print0 2>/dev/null)
 	done
 	
+	# Helper function to collect all document roots from Apache configs
+	# (Can't just reference sites-configured.txt because sites may have been removed from that file.)
+	collect_document_roots() {
+		local -A seen_docroots
+		local -a result_docroots
+		
+		# Check all Apache directories for VirtualHost files
+		for apache_dir in "${apache_dirs[@]}"; do
+			[ -d "$apache_dir" ] || continue
+			
+			# Check Debian-style sites directories
+			sites_dir="$apache_dir/sites-available"
+			if [ -d "$sites_dir" ]; then
+				for vhost_file in "$sites_dir"/*.conf; do
+					[ -f "$vhost_file" ] || continue
+					local docroot
+					docroot=$(grep -i '^[[:space:]]*DocumentRoot' "$vhost_file" | head -1 | awk '{print $2}' | tr -d '"')
+					if [ -n "$docroot" ] && [ -z "${seen_docroots[$docroot]+x}" ]; then
+						result_docroots+=("$docroot")
+						seen_docroots["$docroot"]=1
+					fi
+				done
+			fi
+			
+			# Check RHEL/Rocky-style conf.d files
+			if [ -d "$apache_dir/conf.d" ]; then
+				for vhost_file in "$apache_dir/conf.d"/*.conf; do
+					[ -f "$vhost_file" ] || continue
+					# Skip our own config files
+					[[ "$vhost_file" == *"lucee-proxy"* ]] && continue
+					[[ "$vhost_file" == *"upgrade-in-progress"* ]] && continue
+					
+					local docroot
+					docroot=$(grep -i '^[[:space:]]*DocumentRoot' "$vhost_file" | head -1 | awk '{print $2}' | tr -d '"')
+					if [ -n "$docroot" ] && [ -z "${seen_docroots[$docroot]+x}" ]; then
+						result_docroots+=("$docroot")
+						seen_docroots["$docroot"]=1
+					fi
+				done
+			fi
+			
+			# Check main Apache config file
+			if [ -f "$APACHE_CONF_FILE" ]; then
+				while IFS= read -r line; do
+					if [[ "$line" =~ ^[[:space:]]*DocumentRoot[[:space:]]+ ]]; then
+						local docroot
+						docroot=$(echo "$line" | awk '{print $2}' | tr -d '"')
+						if [ -n "$docroot" ] && [ -z "${seen_docroots[$docroot]+x}" ]; then
+							result_docroots+=("$docroot")
+							seen_docroots["$docroot"]=1
+						fi
+					fi
+				done < "$APACHE_CONF_FILE"
+			fi
+		done
+		
+		# Return the array
+		echo "${result_docroots[@]}"
+	}
+	
 	# Search for modified .htaccess files (containing commented ErrorDocument 404)
 	if [ "$show_progress" = "true" ]; then
 		echo "Checking .htaccess files in DocumentRoots..." >&2
@@ -476,24 +536,17 @@ discover_apache_configs() {
 	# Avoid duplicates from vhosts sharing docroot e.g. for ports 80 and 443
 	local -A seen_htaccess
 	
-	# Check all Apache directories for VirtualHost files to find DocumentRoots
-	for apache_dir in "${apache_dirs[@]}"; do
-		[ -d "$apache_dir" ] || continue
-		
-		# Look in sites-available directories
-		sites_dir="$apache_dir/sites-available"
-		if [ -d "$sites_dir" ]; then
-			for vhost_file in "$sites_dir"/*.conf; do
-				[ -f "$vhost_file" ] || continue
-				local docroot
-				docroot=$(grep -i '^[[:space:]]*DocumentRoot' "$vhost_file" | head -1 | awk '{print $2}' | tr -d '"')
-				if [ -n "$docroot" ] && [ -f "${docroot}/.htaccess" ] && [ -z "${seen_htaccess["${docroot}/.htaccess"]+x}" ]; then
-					if grep -q "# NOTE: ErrorDocument 404 moved\|# ErrorDocument.*404.*\.cfm" "${docroot}/.htaccess" 2>/dev/null; then
-						modified_htaccess+=("${docroot}/.htaccess")
-						seen_htaccess["${docroot}/.htaccess"]=1
-					fi
-				fi
-			done
+	# Get all document roots
+	local -a all_docroots
+	all_docroots=($(collect_document_roots))
+	
+	# Check each docroot for .htaccess files
+	for docroot in "${all_docroots[@]}"; do
+		if [ -n "$docroot" ] && [ -f "${docroot}/.htaccess" ] && [ -z "${seen_htaccess["${docroot}/.htaccess"]+x}" ]; then
+			if grep -q "# NOTE: ErrorDocument 404 moved\|# ErrorDocument.*404.*\.cfm" "${docroot}/.htaccess" 2>/dev/null; then
+				modified_htaccess+=("${docroot}/.htaccess")
+				seen_htaccess["${docroot}/.htaccess"]=1
+			fi
 		fi
 	done
 	
@@ -507,70 +560,19 @@ discover_apache_configs() {
 	local html_names=("lucee-upgrade-in-progress.html" "upgrade-in-progress.html")
 	# Avoid duplicates from vhosts sharing docroot e.g. for ports 80 and 443
 	local -A seen_html
-	for apache_dir in "${apache_dirs[@]}"; do
-		[ -d "$apache_dir" ] || continue
-		
-		# Check Debian-style sites directories
-		sites_dir="$apache_dir/sites-available"
-		if [ -d "$sites_dir" ]; then
-			for vhost_file in "$sites_dir"/*.conf; do
-				[ -f "$vhost_file" ] || continue
-				local docroot
-				docroot=$(grep -i '^[[:space:]]*DocumentRoot' "$vhost_file" | head -1 | awk '{print $2}' | tr -d '"')
-				if [ -n "$docroot" ]; then
-					# Check for each HTML file name
-					for html_name in "${html_names[@]}"; do
-						if [ -f "${docroot}/${html_name}" ] && [ -z "${seen_html["${docroot}/${html_name}"]+x}" ]; then
-							upgrade_html_files+=("${docroot}/${html_name}")
-							seen_html["${docroot}/${html_name}"]=1
-						fi
-					done
-				fi
-			done
-		fi
-		
-		# Check RHEL/Rocky-style conf.d files
-		if [ -d "$apache_dir/conf.d" ]; then
-			for vhost_file in "$apache_dir/conf.d"/*.conf; do
-				[ -f "$vhost_file" ] || continue
-				# Skip our own config files
-				[[ "$vhost_file" == *"lucee-proxy"* ]] && continue
-				[[ "$vhost_file" == *"upgrade-in-progress"* ]] && continue
-				
-				local docroot
-				docroot=$(grep -i '^[[:space:]]*DocumentRoot' "$vhost_file" | head -1 | awk '{print $2}' | tr -d '"')
-				if [ -n "$docroot" ]; then
-					# Check for each HTML file name
-					for html_name in "${html_names[@]}"; do
-						if [ -f "${docroot}/${html_name}" ] && [ -z "${seen_html["${docroot}/${html_name}"]+x}" ]; then
-							upgrade_html_files+=("${docroot}/${html_name}")
-							seen_html["${docroot}/${html_name}"]=1
-						fi
-					done
-				fi
-			done
-		fi
-
-		# Check APACHE_CONF_FILE
-		if [ -f "$APACHE_CONF_FILE" ]; then
-			# Extract all DocumentRoot directives from main Apache config file
-			while IFS= read -r line; do
-				if [[ "$line" =~ ^[[:space:]]*DocumentRoot[[:space:]]+ ]]; then
-					local docroot
-					docroot=$(echo "$line" | awk '{print $2}' | tr -d '"')
-					if [ -n "$docroot" ]; then
-						# Check for each HTML file name
-						for html_name in "${html_names[@]}"; do
-							if [ -f "${docroot}/${html_name}" ] && [ -z "${seen_html["${docroot}/${html_name}"]+x}" ]; then
-								upgrade_html_files+=("${docroot}/${html_name}")
-								seen_html["${docroot}/${html_name}"]=1
-							fi
-						done
-					fi
-				fi
-			done < "$APACHE_CONF_FILE"
-		fi
 	
+	# We already have all document roots from the helper function
+	# No need to scan Apache configs again
+	for docroot in "${all_docroots[@]}"; do
+		if [ -n "$docroot" ]; then
+			# Check for each HTML file name
+			for html_name in "${html_names[@]}"; do
+				if [ -f "${docroot}/${html_name}" ] && [ -z "${seen_html["${docroot}/${html_name}"]+x}" ]; then
+					upgrade_html_files+=("${docroot}/${html_name}")
+					seen_html["${docroot}/${html_name}"]=1
+				fi
+			done
+		fi
 	done
 	
 	# Search for per-site include directories and files (avoid duplicates)
