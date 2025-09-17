@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "${SCRIPT_DIR}/shared-functions.sh"
 
 # preflight: check that required Apache modules are enabled
-# mod_proxy, mod_setenvif, mod_headers
+# mod_proxy, mod_setenvif, mod_headers, mod_rewrite
 # Group by module; detect per environment; emit a single error per missing module
 
 report_missing_module() {
